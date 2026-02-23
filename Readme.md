@@ -10,7 +10,7 @@ Instead of installing tools globally and allowing them to mutate your system sta
 Delete a workspace → everything related to it is gone.
 
 
-## Main goals
+## Principles
 
     •	All state lives under a single root directory: ~/.groot
 	•	Each workspace has its own isolated $HOME
