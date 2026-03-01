@@ -52,5 +52,5 @@ func (a *App) ToolchainDir() string {
 }
 
 func (a *App) CacheDir() string {
-	return filepath.Join(a.Root, "toolchains")
+	return filepath.Join(a.Root, "cache")
 }
