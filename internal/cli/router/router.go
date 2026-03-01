@@ -25,7 +25,7 @@ func NewRouter(cmds ...interfaces.Cmd) *Router {
 }
 
 func (r *Router) Run(a *app.App, args []string) error {
-	if len(args) == 0 || args[0] == "help" || args[0] == "-h" || args[0] == "--help" {
+	if len(args) == 0 || args[0] == "help" || args[0] == "-h" || args[0] == "--help" || args[0] == "-help" {
 		r.PrintHelp(os.Stdout)
 		return nil
 	}
@@ -51,6 +51,6 @@ func (r *Router) PrintHelp(w io.Writer) {
 		cmd := r.cmds[name]
 		fmt.Fprintf(w, "  %-12s %s\n", cmd.Name(), cmd.Help())
 	}
-
+	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Run 'groot <command> -h' for more information on a command.")
 }

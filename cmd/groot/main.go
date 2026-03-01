@@ -7,6 +7,7 @@ import (
 
 	"github.com/totoual/groot/internal/app"
 	"github.com/totoual/groot/internal/cli/commands"
+	workspacecmds "github.com/totoual/groot/internal/cli/commands/workspace_cmds"
 	"github.com/totoual/groot/internal/cli/router"
 	"github.com/totoual/groot/internal/helpers"
 )
@@ -18,7 +19,10 @@ func main() {
 	}
 	groot_app := app.NewApp(root)
 	fmt.Println(groot_app)
-	groot_router := router.NewRouter(commands.InitCmd{})
+
+	wscmd := commands.NewWorkspaceCmd(&workspacecmds.CreateCmd{})
+
+	groot_router := router.NewRouter(&commands.InitCmd{}, wscmd)
 
 	groot_router.Run(groot_app, os.Args[1:])
 }

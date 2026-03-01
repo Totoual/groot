@@ -54,3 +54,11 @@ func (a *App) ToolchainDir() string {
 func (a *App) CacheDir() string {
 	return filepath.Join(a.Root, "cache")
 }
+
+func (a *App) CreateNewWorkspace(name string) error {
+	path := filepath.Join(a.WorkspaceDir(), name)
+	if err := os.MkdirAll(path, 0o700); err != nil {
+		return fmt.Errorf("init mkdir %s: %w", path, err)
+	}
+	return nil
+}
