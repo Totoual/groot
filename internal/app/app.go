@@ -56,9 +56,24 @@ func (a *App) CacheDir() string {
 }
 
 func (a *App) CreateNewWorkspace(name string) error {
-	path := filepath.Join(a.WorkspaceDir(), name)
-	if err := os.MkdirAll(path, 0o700); err != nil {
-		return fmt.Errorf("init mkdir %s: %w", path, err)
+	wsPath := filepath.Join(a.WorkspaceDir(), name)
+
+	if _, err := os.Stat(wsPath); err == nil {
+		return fmt.Errorf("workspace %q already exists", name)
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("workspace stat %s: %w", wsPath, err)
 	}
+
+	for _, d := range []string{
+		wsPath,
+		filepath.Join(wsPath, "home"),
+		filepath.Join(wsPath, "state"),
+		filepath.Join(wsPath, "logs"),
+	} {
+		if err := os.MkdirAll(d, 0o700); err != nil {
+			return fmt.Errorf("mkdir %s: %w", d, err)
+		}
+	}
+
 	return nil
 }

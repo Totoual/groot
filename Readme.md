@@ -31,3 +31,25 @@ Delete a workspace → everything related to it is gone.
       project/
       logs/
 ```
+
+## Architecture Overview
+
+```mermaid
+flowchart TD
+    U[User] --> CLI[groot CLI]
+    CLI --> APP[App Runtime Core]
+
+    APP -->|create/read/update| WS[Workspace Folder]
+    APP -->|spawn shell| SH[Shell Process]
+    APP -->|start services| EX[Execution Backend]
+
+    WS --> MANIFEST[manifest.json<br/>desired state]
+    WS --> HOME[home/<br/>isolated $HOME]
+    WS --> STATE[state/<br/>runtime metadata]
+    WS --> LOGS[logs/]
+
+    APP --> ROOT[~/.groot]
+    ROOT --> TOOLCHAINS[toolchains/]
+    ROOT --> BIN[bin/]
+    ROOT --> CACHE[cache/]
+```
