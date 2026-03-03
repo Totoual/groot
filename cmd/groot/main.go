@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"os"
 
@@ -18,11 +17,13 @@ func main() {
 		log.Fatalf("Failed to find the groot home!")
 	}
 	groot_app := app.NewApp(root)
-	fmt.Println(groot_app)
 
 	wscmd := commands.NewWorkspaceCmd(&workspacecmds.CreateCmd{})
 
 	groot_router := router.NewRouter(&commands.InitCmd{}, wscmd)
 
-	groot_router.Run(groot_app, os.Args[1:])
+	err = groot_router.Run(groot_app, os.Args[1:])
+	if err != nil {
+		log.Fatalf(err.Error())
+	}
 }

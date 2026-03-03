@@ -1,6 +1,7 @@
 package app
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -73,6 +74,28 @@ func (a *App) CreateNewWorkspace(name string) error {
 		if err := os.MkdirAll(d, 0o700); err != nil {
 			return fmt.Errorf("mkdir %s: %w", d, err)
 		}
+	}
+
+	return nil
+}
+
+func (a *App) CreateManifest(name string) error {
+	wsPath := filepath.Join(a.WorkspaceDir(), name)
+	if _, err := os.Stat(wsPath); err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("workspace %q doesn't exist (run: groot ws create %s)", name, name)
+		}
+		return fmt.Errorf("stat workspace %s: %w", wsPath, err)
+	}
+	manifest := NewManifest(name)
+
+	data, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		return err
+	}
+	path := filepath.Join(wsPath, "manifest.json")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		return err
 	}
 
 	return nil

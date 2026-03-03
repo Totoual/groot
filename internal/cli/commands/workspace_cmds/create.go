@@ -40,6 +40,13 @@ func (c *CreateCmd) Run(a *app.App, args []string) error {
 	name := fs.Arg(0)
 
 	fmt.Println("Creating workspace:", name)
-
-	return a.CreateNewWorkspace(name)
+	err := a.CreateNewWorkspace(name)
+	if err != nil {
+		return fmt.Errorf("Couldn't create workspace: %s", err)
+	}
+	err = a.CreateManifest(name)
+	if err != nil {
+		return fmt.Errorf("Couldn't create the manifest: %s", err)
+	}
+	return nil
 }
