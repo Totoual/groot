@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 type App struct {
@@ -80,6 +81,9 @@ func (a *App) CreateNewWorkspace(name string) error {
 }
 
 func (a *App) CreateManifest(name string) error {
+	if err := a.Init(); err != nil {
+		return err
+	}
 	wsPath := filepath.Join(a.WorkspaceDir(), name)
 	if _, err := os.Stat(wsPath); err != nil {
 		if os.IsNotExist(err) {
@@ -96,6 +100,27 @@ func (a *App) CreateManifest(name string) error {
 	path := filepath.Join(wsPath, "manifest.json")
 	if err := os.WriteFile(path, data, 0o600); err != nil {
 		return err
+	}
+
+	return nil
+}
+
+func (a *App) DeleteWorkspace(name string) error {
+	if name == "" || name == "." || name == ".." || strings.Contains(name, "/") {
+		return fmt.Errorf("invalid workspace name %q", name)
+	}
+
+	wsPath := filepath.Join(a.WorkspaceDir(), name)
+
+	if _, err := os.Stat(wsPath); err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("workspace %q doesn't exist", name)
+		}
+		return fmt.Errorf("stat workspace %s: %w", wsPath, err)
+	}
+
+	if err := os.RemoveAll(wsPath); err != nil {
+		return fmt.Errorf("remove workspace %s: %w", wsPath, err)
 	}
 
 	return nil

@@ -18,7 +18,10 @@ func main() {
 	}
 	groot_app := app.NewApp(root)
 
-	wscmd := commands.NewWorkspaceCmd(&workspacecmds.CreateCmd{})
+	wscmd := commands.NewWorkspaceCmd(
+		&workspacecmds.CreateCmd{},
+		&workspacecmds.DeleteCmd{},
+	)
 
 	groot_router := router.NewRouter(&commands.InitCmd{}, wscmd)
 
