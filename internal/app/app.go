@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -137,8 +138,48 @@ func (a *App) WorkspaceShell(name string) error {
 	}
 
 	wsHome := filepath.Join(wsPath, "home")
-	fmt.Println(wsHome)
-	return nil
+
+	shell := os.Getenv("SHELL")
+	if shell == "" {
+		shell = "/bin/sh"
+	}
+
+	args := []string{}
+	base := filepath.Base(shell)
+	if base == "bash" || base == "zsh" {
+		args = append(args, "-i")
+	}
+
+	cmd := exec.Command(shell, args...)
+	cmd.Dir = wsPath
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	env := os.Environ()
+	env = a.setEnv(env, "HOME", wsHome)
+	env = a.setEnv(env, "XDG_CONFIG_HOME", filepath.Join(wsHome, ".config"))
+	env = a.setEnv(env, "XDG_CACHE_HOME", filepath.Join(wsHome, ".cache"))
+	env = a.setEnv(env, "XDG_DATA_HOME", filepath.Join(wsHome, ".local", "share"))
+	env = a.setEnv(env, "GROOT_WORKSPACE", name)
+	env = a.setEnv(env, "GROOT_WORKSPACE_DIR", wsPath)
+
+	env = a.setEnv(env, "PS1", fmt.Sprintf("(groot:%s) $PS1", name))
+
+	cmd.Env = env
+
+	return cmd.Run()
+}
+
+func (a *App) setEnv(env []string, key, value string) []string {
+	prefix := key + "="
+	for i := range env {
+		if strings.HasPrefix(env[i], prefix) {
+			env[i] = prefix + value
+			return env
+		}
+	}
+	return append(env, prefix+value)
 }
 
 func (a *App) EnsureWorkspace(name string) (string, error) {
