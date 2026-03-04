@@ -9,18 +9,18 @@ import (
 	"github.com/totoual/groot/internal/app"
 )
 
-type CreateCmd struct{}
+type ShellCmd struct{}
 
-func (c *CreateCmd) Name() string { return "create" }
+func (c *ShellCmd) Name() string { return "shell" }
 
-func (c *CreateCmd) Help() string { return "Create a new workspace" }
+func (c *ShellCmd) Help() string { return "Activate a workspace" }
 
-func (c *CreateCmd) Run(a *app.App, args []string) error {
-	fs := flag.NewFlagSet("create", flag.ContinueOnError)
+func (c *ShellCmd) Run(a *app.App, args []string) error {
+	fs := flag.NewFlagSet("shell", flag.ContinueOnError)
 	fs.SetOutput(os.Stdout)
 
 	fs.Usage = func() {
-		fmt.Fprintln(fs.Output(), "usage: groot ws create <name>")
+		fmt.Fprintln(fs.Output(), "usage: groot ws shell <name>")
 		fmt.Fprintln(fs.Output())
 		fmt.Fprintln(fs.Output(), c.Help())
 	}
@@ -39,10 +39,10 @@ func (c *CreateCmd) Run(a *app.App, args []string) error {
 
 	name := fs.Arg(0)
 
-	fmt.Println("Creating workspace:", name)
-	err := a.CreateNewWorkspace(name)
+	fmt.Println("Activating workspace:", name)
+	err := a.WorkspaceShell(name)
 	if err != nil {
-		return fmt.Errorf("Couldn't create workspace: %w", err)
+		return fmt.Errorf("couldn't activate workspace: %w", err)
 	}
 	return nil
 }

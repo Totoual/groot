@@ -58,6 +58,12 @@ func (a *App) CacheDir() string {
 }
 
 func (a *App) CreateNewWorkspace(name string) error {
+	if name == "" || name == "." || name == ".." || strings.Contains(name, "/") {
+		return fmt.Errorf("invalid workspace name %q", name)
+	}
+	if err := a.Init(); err != nil {
+		return err
+	}
 	wsPath := filepath.Join(a.WorkspaceDir(), name)
 
 	if _, err := os.Stat(wsPath); err == nil {
@@ -77,19 +83,17 @@ func (a *App) CreateNewWorkspace(name string) error {
 		}
 	}
 
+	err := a.CreateManifest(name)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
 func (a *App) CreateManifest(name string) error {
-	if err := a.Init(); err != nil {
+	wsPath, err := a.EnsureWorkspace(name)
+	if err != nil {
 		return err
-	}
-	wsPath := filepath.Join(a.WorkspaceDir(), name)
-	if _, err := os.Stat(wsPath); err != nil {
-		if os.IsNotExist(err) {
-			return fmt.Errorf("workspace %q doesn't exist (run: groot ws create %s)", name, name)
-		}
-		return fmt.Errorf("stat workspace %s: %w", wsPath, err)
 	}
 	manifest := NewManifest(name)
 
@@ -124,4 +128,35 @@ func (a *App) DeleteWorkspace(name string) error {
 	}
 
 	return nil
+}
+
+func (a *App) WorkspaceShell(name string) error {
+	wsPath, err := a.EnsureWorkspace(name)
+	if err != nil {
+		return err
+	}
+
+	wsHome := filepath.Join(wsPath, "home")
+	fmt.Println(wsHome)
+	return nil
+}
+
+func (a *App) EnsureWorkspace(name string) (string, error) {
+	if name == "" || name == "." || name == ".." || strings.Contains(name, "/") {
+		return "", fmt.Errorf("invalid workspace name %q", name)
+	}
+	if err := a.Init(); err != nil {
+		return "", err
+	}
+
+	wsPath := filepath.Join(a.WorkspaceDir(), name)
+
+	if _, err := os.Stat(wsPath); err != nil {
+		if os.IsNotExist(err) {
+			return "", fmt.Errorf("workspace %q doesn't exist (run: groot ws create %s)", name, name)
+		}
+		return "", fmt.Errorf("stat workspace %s: %w", wsPath, err)
+	}
+
+	return wsPath, nil
 }
