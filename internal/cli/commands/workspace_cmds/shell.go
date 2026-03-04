@@ -11,18 +11,18 @@ import (
 
 type ShellCmd struct{}
 
-func (c *ShellCmd) Name() string { return "shell" }
+func (s *ShellCmd) Name() string { return "shell" }
 
-func (c *ShellCmd) Help() string { return "Activate a workspace" }
+func (s *ShellCmd) Help() string { return "Activate a workspace" }
 
-func (c *ShellCmd) Run(a *app.App, args []string) error {
+func (s *ShellCmd) Run(a *app.App, args []string) error {
 	fs := flag.NewFlagSet("shell", flag.ContinueOnError)
 	fs.SetOutput(os.Stdout)
 
 	fs.Usage = func() {
 		fmt.Fprintln(fs.Output(), "usage: groot ws shell <name>")
 		fmt.Fprintln(fs.Output())
-		fmt.Fprintln(fs.Output(), c.Help())
+		fmt.Fprintln(fs.Output(), s.Help())
 	}
 
 	if err := fs.Parse(args); err != nil {

@@ -11,18 +11,18 @@ import (
 
 type DeleteCmd struct{}
 
-func (c *DeleteCmd) Name() string { return "del" }
+func (d *DeleteCmd) Name() string { return "del" }
 
-func (c *DeleteCmd) Help() string { return "Delete a workspace" }
+func (d *DeleteCmd) Help() string { return "Delete a workspace" }
 
-func (c *DeleteCmd) Run(a *app.App, args []string) error {
+func (d *DeleteCmd) Run(a *app.App, args []string) error {
 	fs := flag.NewFlagSet("delete", flag.ContinueOnError)
 	fs.SetOutput(os.Stdout)
 
 	fs.Usage = func() {
 		fmt.Fprintln(fs.Output(), "usage: groot ws delete <name>")
 		fmt.Fprintln(fs.Output())
-		fmt.Fprintln(fs.Output(), c.Help())
+		fmt.Fprintln(fs.Output(), d.Help())
 	}
 
 	if err := fs.Parse(args); err != nil {
