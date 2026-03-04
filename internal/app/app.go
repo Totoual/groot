@@ -78,6 +78,7 @@ func (a *App) CreateNewWorkspace(name string) error {
 		filepath.Join(wsPath, "home"),
 		filepath.Join(wsPath, "state"),
 		filepath.Join(wsPath, "logs"),
+		filepath.Join(wsPath, "projects"),
 	} {
 		if err := os.MkdirAll(d, 0o700); err != nil {
 			return fmt.Errorf("mkdir %s: %w", d, err)
@@ -151,7 +152,7 @@ func (a *App) WorkspaceShell(name string) error {
 	}
 
 	cmd := exec.Command(shell, args...)
-	cmd.Dir = wsPath
+	cmd.Dir = filepath.Join(wsPath, "projects")
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -164,7 +165,13 @@ func (a *App) WorkspaceShell(name string) error {
 	env = a.setEnv(env, "GROOT_WORKSPACE", name)
 	env = a.setEnv(env, "GROOT_WORKSPACE_DIR", wsPath)
 
-	env = a.setEnv(env, "PS1", fmt.Sprintf("(groot:%s) $PS1", name))
+	if base == "zsh" {
+		p := fmt.Sprintf("(groot:%s) %%n@%%m %%1~ %%# ", name)
+		env = a.setEnv(env, "PROMPT", p)
+		env = a.setEnv(env, "PS1", p)
+	} else {
+		env = a.setEnv(env, "PS1", fmt.Sprintf("(groot:%s) ", name)+"$PS1")
+	}
 
 	cmd.Env = env
 
