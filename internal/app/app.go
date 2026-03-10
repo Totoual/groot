@@ -178,6 +178,32 @@ func (a *App) WorkspaceShell(name string) error {
 	return cmd.Run()
 }
 
+func (a *App) AttachToWorkspace(name string, args []string) error {
+	wsPath, err := a.EnsureWorkspace(name)
+	if err != nil {
+		return err
+	}
+	path := filepath.Join(wsPath, "manifest.json")
+	data, err := os.ReadFile(path)
+
+	var manifest Manifest
+	err = json.Unmarshal(data, &manifest)
+
+	components := a.createComponents(args)
+
+	manifest.Packages = append(manifest.Packages, components...)
+
+	data, err = json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (a *App) setEnv(env []string, key, value string) []string {
 	prefix := key + "="
 	for i := range env {
@@ -207,4 +233,18 @@ func (a *App) EnsureWorkspace(name string) (string, error) {
 	}
 
 	return wsPath, nil
+}
+
+func (a *App) createComponents(args []string) []Component {
+	components := make([]Component, 0)
+	for _, arg := range args {
+		argParts := strings.Split(arg, "@")
+		comp := Component{
+			Name:    argParts[0],
+			Version: argParts[1],
+		}
+		components = append(components, comp)
+	}
+
+	return components
 }

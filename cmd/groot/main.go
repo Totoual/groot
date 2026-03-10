@@ -22,6 +22,7 @@ func main() {
 		&workspacecmds.CreateCmd{},
 		&workspacecmds.DeleteCmd{},
 		&workspacecmds.ShellCmd{},
+		&workspacecmds.AttachCmd{},
 	)
 
 	groot_router := router.NewRouter(&commands.InitCmd{}, wscmd)
