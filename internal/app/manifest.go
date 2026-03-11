@@ -1,6 +1,9 @@
 package app
 
-import "time"
+import (
+	"path/filepath"
+	"time"
+)
 
 type Manifest struct {
 	SchemaVersion int               `json:"schema_version"`
@@ -25,4 +28,8 @@ func NewManifest(name string) *Manifest {
 		Services:      make([]Component, 0),
 		Env:           make(map[string]string),
 	}
+}
+
+func getManifestPath(wsPath string) string {
+	return filepath.Join(wsPath, "manifest.json")
 }

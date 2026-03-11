@@ -34,7 +34,7 @@ func (at *AttachCmd) Run(a *app.App, args []string) error {
 
 	if fs.NArg() < 2 {
 		fs.Usage()
-		return fmt.Errorf("workspace name required")
+		return fmt.Errorf("workspace name required and at least one tool")
 	}
 
 	name := fs.Arg(0)

@@ -23,12 +23,13 @@ func main() {
 		&workspacecmds.DeleteCmd{},
 		&workspacecmds.ShellCmd{},
 		&workspacecmds.AttachCmd{},
+		&workspacecmds.InstallCmd{},
 	)
 
 	groot_router := router.NewRouter(&commands.InitCmd{}, wscmd)
 
 	err = groot_router.Run(groot_app, os.Args[1:])
 	if err != nil {
-		log.Fatalf(err.Error())
+		log.Fatalf("groot command failed: %v", err)
 	}
 }
