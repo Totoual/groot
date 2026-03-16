@@ -24,6 +24,9 @@ func NewApp(root string) *App {
 
 	a.registerToolchain(toolchains.GoInstaller{})
 	a.registerToolchain(toolchains.NodeInstaller{})
+	a.registerToolchain(toolchains.DenoInstaller{})
+	a.registerToolchain(toolchains.BunInstaller{})
+	a.registerToolchain(toolchains.PHPInstaller{})
 	a.registerToolchain(toolchains.JavaInstaller{})
 	a.registerToolchain(toolchains.PythonInstaller{})
 	a.registerToolchain(toolchains.RustInstaller{})

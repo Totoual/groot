@@ -63,7 +63,10 @@ groot ws shell crawlly
 
 Groot currently supports these toolchains:
 
+- `bun`
+- `deno`
 - `go`
+- `php`
 - `node`
 - `java`
 - `python`
@@ -71,7 +74,10 @@ Groot currently supports these toolchains:
 
 Current install behavior:
 
+- `bun` downloads the official prebuilt ZIP archive for the current OS and architecture
+- `deno` downloads the official prebuilt ZIP archive for the current OS and architecture
 - `go` downloads the official prebuilt archive for the current OS and architecture
+- `php` downloads the official source tarball and builds it locally
 - `node` downloads the official prebuilt archive for the current OS and architecture
 - `java` resolves the latest matching Temurin JDK for the requested feature version
 - `python` downloads the official source tarball and builds it locally
@@ -81,7 +87,10 @@ Current install behavior:
 
 Version values are stored in the manifest and interpreted per toolchain.
 
+- `bun@1.3.10` means an exact Bun release
+- `deno@2.7.5` means an exact Deno release
 - `go@1.26.1` means an exact Go release
+- `php@8.5.4` means an exact PHP source release
 - `node@25.8.1` means an exact Node release
 - `java@21` means the latest available Temurin JDK for feature version `21`
 - `python@3.14.0` means an exact Python source release
@@ -90,8 +99,10 @@ Version values are stored in the manifest and interpreted per toolchain.
 Examples:
 
 ```bash
+groot ws attach frontend bun@1.3.10 deno@2.7.5
 groot ws attach backend go@1.26.1 node@25.8.1
 groot ws attach api java@21
+groot ws attach legacy php@8.5.4
 groot ws attach scripts python@3.14.0
 groot ws attach systems rust@stable
 ```
@@ -129,7 +140,7 @@ Example:
 - `ws install` downloads and installs attached toolchains into the shared Groot toolchain root
 - `ws shell` ensures attached toolchains are installed, prepends their `bin` directories to `PATH`, and sets toolchain-specific env vars when needed
 - host `PATH` is still inherited after Groot-managed bin paths, so isolation is intentionally soft for now
-- `python` installation is slower than the other supported toolchains because it is built from source
+- `php` and `python` installation are slower than the other supported toolchains because they are built from source
 
 ## Architecture Overview
 

@@ -17,6 +17,29 @@ func installArchiveIfNeeded(
 	installDir string,
 	verify func(archivePath string) error,
 ) error {
+	return installArchiveWithExtractorIfNeeded(ic, binaryPath, archiveURL, archiveName, installDir, verify, helpers.ExtractTarGz)
+}
+
+func installZipArchiveIfNeeded(
+	ic *itoolchain.InstallContext,
+	binaryPath string,
+	archiveURL string,
+	archiveName string,
+	installDir string,
+	verify func(archivePath string) error,
+) error {
+	return installArchiveWithExtractorIfNeeded(ic, binaryPath, archiveURL, archiveName, installDir, verify, helpers.ExtractZip)
+}
+
+func installArchiveWithExtractorIfNeeded(
+	ic *itoolchain.InstallContext,
+	binaryPath string,
+	archiveURL string,
+	archiveName string,
+	installDir string,
+	verify func(archivePath string) error,
+	extract func(archive, dest string) error,
+) error {
 	if _, err := os.Stat(binaryPath); err == nil {
 		return nil
 	} else if !os.IsNotExist(err) {
@@ -43,7 +66,7 @@ func installArchiveIfNeeded(
 	}
 
 	fmt.Println("Extracting", archivePath)
-	if err := helpers.ExtractTarGz(archivePath, installDir); err != nil {
+	if err := extract(archivePath, installDir); err != nil {
 		return err
 	}
 
