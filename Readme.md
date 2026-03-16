@@ -1,36 +1,146 @@
-
 ## 🪴 Groot
 
-A workspace-first runtime layer that keeps your system clean.
+Groot is a workspace-first runtime layer for local development.
 
-Groot is a lightweight control plane that makes environments first-class citizens.
+It gives each workspace its own home directory and manifest, while keeping shared runtime state under a single `~/.groot` root. The current version is focused on workspace lifecycle, manifest management, and shell activation.
 
-Instead of installing tools globally and allowing them to mutate your system state, Groot scopes toolchains and execution to isolated workspaces.
+## Current Scope
 
-Delete a workspace → everything related to it is gone.
-
+- Initialize a Groot root under `~/.groot`
+- Create and delete workspaces
+- Attach toolchain requirements to a workspace manifest
+- Open a workspace shell with workspace-scoped `HOME` and XDG directories
+- Scaffold an `install` command that reads the manifest and is the entrypoint for toolchain installation work
 
 ## Principles
 
-    •	All state lives under a single root directory: ~/.groot
-	•	Each workspace has its own isolated $HOME
-	•	Toolchains are installed into a shared store
-	•	Processes launched via Groot run inside a workspace context
-	•	No global mutation of your system
+- All Groot state lives under one root directory: `~/.groot`
+- Each workspace has its own isolated `HOME`
+- Toolchain requirements are declared in `manifest.json`
+- Workspaces are disposable units
+- Toolchain installation is moving toward a shared global store, not per-workspace duplication
 
 ## Runtime Layout
 
 ```bash
 ~/.groot/
-  store/          # installed toolchains & binaries
+  bin/
+  cache/
+  store/
+  toolchains/
   workspaces/
-    acme/
-      manifest.yaml
-      home/       # workspace-scoped $HOME
+    crawlly/
+      manifest.json
+      home/
       state/
-      project/
       logs/
+      projects/
 ```
+
+## Commands
+
+```bash
+groot init
+
+groot ws create <name>
+groot ws del <name>
+groot ws shell <name>
+groot ws attach <name> <tool@version> [tool@version...]
+groot ws install <name>
+```
+
+## Example Flow
+
+```bash
+groot init
+groot ws create crawlly
+groot ws attach crawlly go@1.25 node@22
+groot ws install crawlly
+groot ws shell crawlly
+```
+
+## Supported Toolchains
+
+Groot currently supports these toolchains:
+
+- `bun`
+- `deno`
+- `go`
+- `php`
+- `node`
+- `java`
+- `python`
+- `rust`
+
+Current install behavior:
+
+- `bun` downloads the official prebuilt ZIP archive for the current OS and architecture
+- `deno` downloads the official prebuilt ZIP archive for the current OS and architecture
+- `go` downloads the official prebuilt archive for the current OS and architecture
+- `php` downloads the official source tarball and builds it locally
+- `node` downloads the official prebuilt archive for the current OS and architecture
+- `java` resolves the latest matching Temurin JDK for the requested feature version
+- `python` downloads the official source tarball and builds it locally
+- `rust` bootstraps through `rustup-init` inside the workspace-managed toolchain root
+
+## Version Semantics
+
+Version values are stored in the manifest and interpreted per toolchain.
+
+- `bun@1.3.10` means an exact Bun release
+- `deno@2.7.5` means an exact Deno release
+- `go@1.26.1` means an exact Go release
+- `php@8.5.4` means an exact PHP source release
+- `node@25.8.1` means an exact Node release
+- `java@21` means the latest available Temurin JDK for feature version `21`
+- `python@3.14.0` means an exact Python source release
+- `rust@stable` means the Rust stable channel via `rustup`
+
+Examples:
+
+```bash
+groot ws attach frontend bun@1.3.10 deno@2.7.5
+groot ws attach backend go@1.26.1 node@25.8.1
+groot ws attach api java@21
+groot ws attach legacy php@8.5.4
+groot ws attach scripts python@3.14.0
+groot ws attach systems rust@stable
+```
+
+## Workspace Manifest
+
+Each workspace stores its desired state in `manifest.json`.
+
+Example:
+
+```json
+{
+  "schema_version": 1,
+  "created_at": "2026-03-04T15:43:56.144288Z",
+  "name": "crawlly",
+  "packages": [
+    {
+      "name": "go",
+      "version": "1.25"
+    },
+    {
+      "name": "node",
+      "version": "22"
+    }
+  ],
+  "services": [],
+  "env": {}
+}
+```
+
+## Current Behavior Notes
+
+- `ws attach` currently appends toolchain requirements into `packages`
+- `services` exists in the schema but is not actively used yet
+- `ws install` downloads and installs attached toolchains into the shared Groot toolchain root
+- `ws shell` ensures attached toolchains are installed, prepends their `bin` directories to `PATH`, and sets toolchain-specific env vars when needed
+- host `PATH` is still inherited after Groot-managed bin paths, so isolation is intentionally soft for now
+- `php` and `python` installation are slower than the other supported toolchains because they are built from source
 
 ## Architecture Overview
 
@@ -40,16 +150,18 @@ flowchart TD
     CLI --> APP[App Runtime Core]
 
     APP -->|create/read/update| WS[Workspace Folder]
+    APP -->|read/write| MANIFEST[manifest.json]
     APP -->|spawn shell| SH[Shell Process]
-    APP -->|start services| EX[Execution Backend]
+    APP -->|future install flow| STORE[Shared Toolchain Store]
 
-    WS --> MANIFEST[manifest.json<br/>desired state]
-    WS --> HOME[home/<br/>isolated $HOME]
-    WS --> STATE[state/<br/>runtime metadata]
+    WS --> HOME[home/]
+    WS --> STATE[state/]
     WS --> LOGS[logs/]
+    WS --> PROJECTS[projects/]
 
     APP --> ROOT[~/.groot]
     ROOT --> TOOLCHAINS[toolchains/]
     ROOT --> BIN[bin/]
     ROOT --> CACHE[cache/]
+    ROOT --> STORE
 ```
