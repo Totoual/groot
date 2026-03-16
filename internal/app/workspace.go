@@ -143,7 +143,10 @@ func (a *App) InstallToWorkspace(name string) error {
 		return err
 	}
 	fmt.Println(manifest)
-
+	if err := a.ensureToolchainInstalled(manifest.Packages[0]); err != nil {
+		fmt.Errorf("%v", err)
+		return err
+	}
 	return nil
 }
 

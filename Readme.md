@@ -1,36 +1,96 @@
-
 ## 🪴 Groot
 
-A workspace-first runtime layer that keeps your system clean.
+Groot is a workspace-first runtime layer for local development.
 
-Groot is a lightweight control plane that makes environments first-class citizens.
+It gives each workspace its own home directory and manifest, while keeping shared runtime state under a single `~/.groot` root. The current version is focused on workspace lifecycle, manifest management, and shell activation.
 
-Instead of installing tools globally and allowing them to mutate your system state, Groot scopes toolchains and execution to isolated workspaces.
+## Current Scope
 
-Delete a workspace → everything related to it is gone.
-
+- Initialize a Groot root under `~/.groot`
+- Create and delete workspaces
+- Attach toolchain requirements to a workspace manifest
+- Open a workspace shell with workspace-scoped `HOME` and XDG directories
+- Scaffold an `install` command that reads the manifest and is the entrypoint for toolchain installation work
 
 ## Principles
 
-    •	All state lives under a single root directory: ~/.groot
-	•	Each workspace has its own isolated $HOME
-	•	Toolchains are installed into a shared store
-	•	Processes launched via Groot run inside a workspace context
-	•	No global mutation of your system
+- All Groot state lives under one root directory: `~/.groot`
+- Each workspace has its own isolated `HOME`
+- Toolchain requirements are declared in `manifest.json`
+- Workspaces are disposable units
+- Toolchain installation is moving toward a shared global store, not per-workspace duplication
 
 ## Runtime Layout
 
 ```bash
 ~/.groot/
-  store/          # installed toolchains & binaries
+  bin/
+  cache/
+  store/
+  toolchains/
   workspaces/
-    acme/
-      manifest.yaml
-      home/       # workspace-scoped $HOME
+    crawlly/
+      manifest.json
+      home/
       state/
-      project/
       logs/
+      projects/
 ```
+
+## Commands
+
+```bash
+groot init
+
+groot ws create <name>
+groot ws del <name>
+groot ws shell <name>
+groot ws attach <name> <tool@version> [tool@version...]
+groot ws install <name>
+```
+
+## Example Flow
+
+```bash
+groot init
+groot ws create crawlly
+groot ws attach crawlly go@1.25 node@22
+groot ws install crawlly
+groot ws shell crawlly
+```
+
+## Workspace Manifest
+
+Each workspace stores its desired state in `manifest.json`.
+
+Example:
+
+```json
+{
+  "schema_version": 1,
+  "created_at": "2026-03-04T15:43:56.144288Z",
+  "name": "crawlly",
+  "packages": [
+    {
+      "name": "go",
+      "version": "1.25"
+    },
+    {
+      "name": "node",
+      "version": "22"
+    }
+  ],
+  "services": [],
+  "env": {}
+}
+```
+
+## Current Behavior Notes
+
+- `ws attach` currently appends toolchain requirements into `packages`
+- `services` exists in the schema but is not actively used yet
+- `ws install` currently loads the manifest and is the intended hook for download/install work
+- `ws shell` already isolates `HOME` and XDG directories, but host `PATH` is still inherited for now
 
 ## Architecture Overview
 
@@ -40,16 +100,18 @@ flowchart TD
     CLI --> APP[App Runtime Core]
 
     APP -->|create/read/update| WS[Workspace Folder]
+    APP -->|read/write| MANIFEST[manifest.json]
     APP -->|spawn shell| SH[Shell Process]
-    APP -->|start services| EX[Execution Backend]
+    APP -->|future install flow| STORE[Shared Toolchain Store]
 
-    WS --> MANIFEST[manifest.json<br/>desired state]
-    WS --> HOME[home/<br/>isolated $HOME]
-    WS --> STATE[state/<br/>runtime metadata]
+    WS --> HOME[home/]
+    WS --> STATE[state/]
     WS --> LOGS[logs/]
+    WS --> PROJECTS[projects/]
 
     APP --> ROOT[~/.groot]
     ROOT --> TOOLCHAINS[toolchains/]
     ROOT --> BIN[bin/]
     ROOT --> CACHE[cache/]
+    ROOT --> STORE
 ```
