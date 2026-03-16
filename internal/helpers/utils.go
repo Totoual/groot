@@ -5,10 +5,12 @@ import (
 	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -123,7 +125,7 @@ func ExtractTarGz(archive, dest string) error {
 		switch header.Typeflag {
 
 		case tar.TypeDir:
-			if err := os.MkdirAll(target, 0755); err != nil {
+			if err := os.MkdirAll(target, os.FileMode(header.Mode)); err != nil {
 				return err
 			}
 
@@ -132,7 +134,7 @@ func ExtractTarGz(archive, dest string) error {
 				return err
 			}
 
-			out, err := os.Create(target)
+			out, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.FileMode(header.Mode))
 			if err != nil {
 				return err
 			}
@@ -155,16 +157,20 @@ func VerifyDownloadedArchive(archivePath, archiveName, checksumURL string) error
 		return err
 	}
 
+	return VerifyDownloadedArchiveWithExpectedSHA256(archivePath, archiveName, expected)
+}
+
+func VerifyDownloadedArchiveWithExpectedSHA256(archivePath, archiveName, expected string) error {
 	actual, err := computeSHA256(archivePath)
 	if err != nil {
 		return err
 	}
 
-	if actual != expected {
+	if actual != strings.TrimSpace(expected) {
 		return fmt.Errorf(
 			"checksum mismatch for %s\nexpected: %s\nactual:   %s",
 			archiveName,
-			expected,
+			strings.TrimSpace(expected),
 			actual,
 		)
 	}
@@ -172,23 +178,109 @@ func VerifyDownloadedArchive(archivePath, archiveName, checksumURL string) error
 	return nil
 }
 
-func fetchChecksum(url string) (string, error) {
-	resp, err := http.Get(url)
+func VerifyDownloadedArchiveFromChecksumList(archivePath, archiveName, checksumURL string) error {
+	body, err := ReadURL(checksumURL)
 	if err != nil {
-		return "", err
+		return err
+	}
+
+	expected, err := checksumFromList(string(body), archiveName)
+	if err != nil {
+		return err
+	}
+
+	return VerifyDownloadedArchiveWithExpectedSHA256(archivePath, archiveName, expected)
+}
+
+func ReadURL(url string) ([]byte, error) {
+	client := &http.Client{
+		Timeout: 60 * time.Second,
+	}
+
+	resp, err := client.Get(url)
+	if err != nil {
+		return nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("checksum download failed: %s", resp.Status)
+		return nil, fmt.Errorf("request failed: %s", resp.Status)
 	}
 
-	data, err := io.ReadAll(resp.Body)
+	return io.ReadAll(resp.Body)
+}
+
+func ReadJSON(url string, dst any) error {
+	body, err := ReadURL(url)
+	if err != nil {
+		return err
+	}
+
+	if err := json.Unmarshal(body, dst); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func RunCommand(name string, args []string, dir string, env map[string]string) error {
+	cmd := exec.Command(name, args...)
+	cmd.Dir = dir
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if len(env) > 0 {
+		cmdEnv := os.Environ()
+		for key, value := range env {
+			cmdEnv = setEnv(cmdEnv, key, value)
+		}
+		cmd.Env = cmdEnv
+	}
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("run %s: %w", name, err)
+	}
+
+	return nil
+}
+
+func setEnv(env []string, key, value string) []string {
+	prefix := key + "="
+	for i := range env {
+		if strings.HasPrefix(env[i], prefix) {
+			env[i] = prefix + value
+			return env
+		}
+	}
+	return append(env, prefix+value)
+}
+
+func checksumFromList(contents, archiveName string) (string, error) {
+	for _, line := range strings.Split(contents, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		name := strings.TrimPrefix(fields[len(fields)-1], "*")
+		if filepath.Base(name) == archiveName {
+			return fields[0], nil
+		}
+	}
+
+	return "", fmt.Errorf("checksum for %s not found", archiveName)
+}
+
+func fetchChecksum(url string) (string, error) {
+	body, err := ReadURL(url)
 	if err != nil {
 		return "", err
 	}
 
-	sum := strings.TrimSpace(string(data))
+	sum := strings.TrimSpace(string(body))
+	fields := strings.Fields(sum)
+	if len(fields) > 0 {
+		return fields[0], nil
+	}
 
 	return sum, nil
 }

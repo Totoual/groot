@@ -59,6 +59,43 @@ groot ws install crawlly
 groot ws shell crawlly
 ```
 
+## Supported Toolchains
+
+Groot currently supports these toolchains:
+
+- `go`
+- `node`
+- `java`
+- `python`
+- `rust`
+
+Current install behavior:
+
+- `go` downloads the official prebuilt archive for the current OS and architecture
+- `node` downloads the official prebuilt archive for the current OS and architecture
+- `java` resolves the latest matching Temurin JDK for the requested feature version
+- `python` downloads the official source tarball and builds it locally
+- `rust` bootstraps through `rustup-init` inside the workspace-managed toolchain root
+
+## Version Semantics
+
+Version values are stored in the manifest and interpreted per toolchain.
+
+- `go@1.26.1` means an exact Go release
+- `node@25.8.1` means an exact Node release
+- `java@21` means the latest available Temurin JDK for feature version `21`
+- `python@3.14.0` means an exact Python source release
+- `rust@stable` means the Rust stable channel via `rustup`
+
+Examples:
+
+```bash
+groot ws attach backend go@1.26.1 node@25.8.1
+groot ws attach api java@21
+groot ws attach scripts python@3.14.0
+groot ws attach systems rust@stable
+```
+
 ## Workspace Manifest
 
 Each workspace stores its desired state in `manifest.json`.
@@ -89,8 +126,10 @@ Example:
 
 - `ws attach` currently appends toolchain requirements into `packages`
 - `services` exists in the schema but is not actively used yet
-- `ws install` currently loads the manifest and is the intended hook for download/install work
-- `ws shell` already isolates `HOME` and XDG directories, but host `PATH` is still inherited for now
+- `ws install` downloads and installs attached toolchains into the shared Groot toolchain root
+- `ws shell` ensures attached toolchains are installed, prepends their `bin` directories to `PATH`, and sets toolchain-specific env vars when needed
+- host `PATH` is still inherited after Groot-managed bin paths, so isolation is intentionally soft for now
+- `python` installation is slower than the other supported toolchains because it is built from source
 
 ## Architecture Overview
 

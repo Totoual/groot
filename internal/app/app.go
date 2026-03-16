@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/totoual/groot/internal/app/toolchains"
-	"github.com/totoual/groot/internal/helpers"
 	"github.com/totoual/groot/internal/itoolchain"
 )
 
@@ -24,6 +23,10 @@ func NewApp(root string) *App {
 	}
 
 	a.registerToolchain(toolchains.GoInstaller{})
+	a.registerToolchain(toolchains.NodeInstaller{})
+	a.registerToolchain(toolchains.JavaInstaller{})
+	a.registerToolchain(toolchains.PythonInstaller{})
+	a.registerToolchain(toolchains.RustInstaller{})
 	return a
 }
 
@@ -86,69 +89,32 @@ func (a *App) ensureToolchainInstalled(tc Component) error {
 	if !ok {
 		return fmt.Errorf("unsupported toolchain %q", tc.Name)
 	}
+	return installer.EnsureInstalled(a.installContext(), tc.Version)
+}
 
-	binaryPath := installer.BinaryPath(a.ToolchainDir(), tc.Version)
-
-	// already installed?
-	if _, err := os.Stat(binaryPath); err == nil {
-		return nil
-	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("stat toolchain binary: %w", err)
+func (a *App) toolchainBinDir(tc Component) (string, error) {
+	installer, ok := a.toolchains[tc.Name]
+	if !ok {
+		return "", fmt.Errorf("unsupported toolchain %q", tc.Name)
 	}
 
-	goos := runtime.GOOS
-	goarch := runtime.GOARCH
+	return installer.BinDir(a.installContext(), tc.Version)
+}
 
-	url, err := installer.DownloadURL(tc.Version, goos, goarch)
-	if err != nil {
-		return err
+func (a *App) toolchainEnv(tc Component) (map[string]string, error) {
+	installer, ok := a.toolchains[tc.Name]
+	if !ok {
+		return nil, fmt.Errorf("unsupported toolchain %q", tc.Name)
 	}
 
-	archiveName := installer.ArchiveName(tc.Version, goos, goarch)
-	archivePath := filepath.Join(a.CacheDir(), archiveName)
+	return installer.Env(a.installContext(), tc.Version)
+}
 
-	installDir := installer.InstallDir(a.ToolchainDir(), tc.Version)
-
-	// 1️⃣ Download archive if missing
-	if _, err := os.Stat(archivePath); os.IsNotExist(err) {
-		fmt.Println("Downloading", url)
-
-		if err := helpers.DownloadFile(url, archivePath); err != nil {
-			return err
-		}
+func (a *App) installContext() *itoolchain.InstallContext {
+	return &itoolchain.InstallContext{
+		ToolchainDir: a.ToolchainDir(),
+		CacheDir:     a.CacheDir(),
+		GOOS:         runtime.GOOS,
+		GOARCH:       runtime.GOARCH,
 	}
-
-	// 2️⃣ Verify checksum
-	checksumURL, err := installer.ChecksumURL(tc.Version)
-	if err != nil {
-		return err
-	}
-
-	fmt.Println("Verifying checksum")
-
-	if err := helpers.VerifyDownloadedArchive(
-		archivePath,
-		archiveName,
-		checksumURL,
-	); err != nil {
-		return fmt.Errorf("checksum verification failed: %w", err)
-	}
-
-	// 3️⃣ Extract archive
-	if err := os.MkdirAll(installDir, 0o755); err != nil {
-		return err
-	}
-
-	fmt.Println("Extracting", archivePath)
-
-	if err := helpers.ExtractTarGz(archivePath, installDir); err != nil {
-		return err
-	}
-
-	// 4️⃣ Sanity check binary exists
-	if _, err := os.Stat(binaryPath); err != nil {
-		return fmt.Errorf("toolchain installed but binary missing: %s", binaryPath)
-	}
-
-	return nil
 }

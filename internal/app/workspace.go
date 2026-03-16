@@ -69,6 +69,37 @@ func (a *App) WorkspaceShell(name string) error {
 	if err != nil {
 		return err
 	}
+	manifest, err := a.getManifest(wsPath)
+	if err != nil {
+		return err
+	}
+
+	toolchainBinDirs := make([]string, 0, len(manifest.Packages))
+	toolchainEnv := make(map[string]string)
+	seenBinDirs := make(map[string]struct{}, len(manifest.Packages))
+	for _, pkg := range manifest.Packages {
+		if err := a.ensureToolchainInstalled(pkg); err != nil {
+			return err
+		}
+
+		binDir, err := a.toolchainBinDir(pkg)
+		if err != nil {
+			return err
+		}
+		if _, ok := seenBinDirs[binDir]; ok {
+			continue
+		}
+		seenBinDirs[binDir] = struct{}{}
+		toolchainBinDirs = append(toolchainBinDirs, binDir)
+
+		extraEnv, err := a.toolchainEnv(pkg)
+		if err != nil {
+			return err
+		}
+		for key, value := range extraEnv {
+			toolchainEnv[key] = value
+		}
+	}
 
 	wsHome := filepath.Join(wsPath, "home")
 
@@ -96,6 +127,16 @@ func (a *App) WorkspaceShell(name string) error {
 	env = a.setEnv(env, "XDG_DATA_HOME", filepath.Join(wsHome, ".local", "share"))
 	env = a.setEnv(env, "GROOT_WORKSPACE", name)
 	env = a.setEnv(env, "GROOT_WORKSPACE_DIR", wsPath)
+	for key, value := range toolchainEnv {
+		env = a.setEnv(env, key, value)
+	}
+	if len(toolchainBinDirs) > 0 {
+		pathParts := append([]string{}, toolchainBinDirs...)
+		if currentPath := os.Getenv("PATH"); currentPath != "" {
+			pathParts = append(pathParts, currentPath)
+		}
+		env = a.setEnv(env, "PATH", strings.Join(pathParts, string(os.PathListSeparator)))
+	}
 
 	if base == "zsh" {
 		p := fmt.Sprintf("(groot:%s) %%n@%%m %%1~ %%# ", name)
@@ -143,9 +184,13 @@ func (a *App) InstallToWorkspace(name string) error {
 		return err
 	}
 	fmt.Println(manifest)
-	if err := a.ensureToolchainInstalled(manifest.Packages[0]); err != nil {
-		fmt.Errorf("%v", err)
-		return err
+	if len(manifest.Packages) == 0 {
+		return nil
+	}
+	for _, pkg := range manifest.Packages {
+		if err := a.ensureToolchainInstalled(pkg); err != nil {
+			return err
+		}
 	}
 	return nil
 }
