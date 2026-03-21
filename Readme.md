@@ -93,6 +93,7 @@ Version values are stored in the manifest and interpreted per toolchain.
 - `php@8.5.4` means an exact PHP source release
 - `node@25.8.1` means an exact Node release
 - `java@21` means the latest available Temurin JDK for feature version `21`
+- `python@3.14` means the latest available Python `3.14.x` source release
 - `python@3.14.0` means an exact Python source release
 - `rust@stable` means the Rust stable channel via `rustup`
 
@@ -103,6 +104,7 @@ groot ws attach frontend bun@1.3.10 deno@2.7.5
 groot ws attach backend go@1.26.1 node@25.8.1
 groot ws attach api java@21
 groot ws attach legacy php@8.5.4
+groot ws attach scripts python@3.14
 groot ws attach scripts python@3.14.0
 groot ws attach systems rust@stable
 ```
