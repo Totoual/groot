@@ -2,12 +2,13 @@
 
 Groot is a workspace-first runtime layer for local development.
 
-It gives each workspace its own home directory and manifest, while keeping shared runtime state under a single `~/.groot` root. The current version is focused on workspace lifecycle, manifest management, and shell activation.
+It gives each workspace its own home directory and manifest, while keeping shared runtime state under a single `~/.groot` root. The current version is focused on workspace lifecycle, manifest management, project binding, and shell activation.
 
 ## Current Scope
 
 - Initialize a Groot root under `~/.groot`
 - Create and delete workspaces
+- Bind a workspace to an existing project directory
 - Attach toolchain requirements to a workspace manifest
 - Open a workspace shell with workspace-scoped `HOME` and XDG directories
 - Scaffold an `install` command that reads the manifest and is the entrypoint for toolchain installation work
@@ -16,6 +17,7 @@ It gives each workspace its own home directory and manifest, while keeping share
 
 - All Groot state lives under one root directory: `~/.groot`
 - Each workspace has its own isolated `HOME`
+- Source code stays in its normal location outside the Groot runtime root
 - Toolchain requirements are declared in `manifest.json`
 - Workspaces are disposable units
 - Toolchain installation is moving toward a shared global store, not per-workspace duplication
@@ -34,7 +36,6 @@ It gives each workspace its own home directory and manifest, while keeping share
       home/
       state/
       logs/
-      projects/
 ```
 
 ## Commands
@@ -43,6 +44,7 @@ It gives each workspace its own home directory and manifest, while keeping share
 groot init
 
 groot ws create <name>
+groot ws bind <name> <path>
 groot ws delete <name>
 groot ws shell <name>
 groot ws attach <name> <tool@version> [tool@version...]
@@ -54,6 +56,7 @@ groot ws install <name>
 ```bash
 groot init
 groot ws create crawlly
+groot ws bind crawlly ~/Documents/crawlly
 groot ws attach crawlly go@1.25 node@22
 groot ws install crawlly
 groot ws shell crawlly
@@ -120,6 +123,7 @@ Example:
   "schema_version": 1,
   "created_at": "2026-03-04T15:43:56.144288Z",
   "name": "crawlly",
+  "project_path": "/Users/example/Documents/crawlly",
   "packages": [
     {
       "name": "go",
@@ -139,8 +143,10 @@ Example:
 
 - `ws attach` currently appends toolchain requirements into `packages`
 - `services` exists in the schema but is not actively used yet
+- `ws bind` stores the project location in `project_path`
 - `ws install` downloads and installs attached toolchains into the shared Groot toolchain root
 - `ws shell` ensures attached toolchains are installed, prepends their `bin` directories to `PATH`, and sets toolchain-specific env vars when needed
+- `ws shell` starts in the bound `project_path` when present, otherwise in the workspace root under `~/.groot/workspaces/<name>`
 - host `PATH` is still inherited after Groot-managed bin paths, so isolation is intentionally soft for now
 - `php` and `python` installation are slower than the other supported toolchains because they are built from source
 
@@ -159,11 +165,12 @@ flowchart TD
     WS --> HOME[home/]
     WS --> STATE[state/]
     WS --> LOGS[logs/]
-    WS --> PROJECTS[projects/]
+    WS --> MANIFESTLOCAL[project_path]
 
     APP --> ROOT[~/.groot]
     ROOT --> TOOLCHAINS[toolchains/]
     ROOT --> BIN[bin/]
     ROOT --> CACHE[cache/]
     ROOT --> STORE
+    MANIFESTLOCAL --> PROJECT[project directory outside root]
 ```

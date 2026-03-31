@@ -1,7 +1,6 @@
 package app
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -29,7 +28,6 @@ func (a *App) CreateNewWorkspace(name string) error {
 		filepath.Join(wsPath, "home"),
 		filepath.Join(wsPath, "state"),
 		filepath.Join(wsPath, "logs"),
-		filepath.Join(wsPath, "projects"),
 	} {
 		if err := os.MkdirAll(d, 0o700); err != nil {
 			return fmt.Errorf("mkdir %s: %w", d, err)
@@ -114,8 +112,13 @@ func (a *App) WorkspaceShell(name string) error {
 		args = append(args, "-i")
 	}
 
+	workDir := wsPath
+	if manifest.ProjectPath != "" {
+		workDir = manifest.ProjectPath
+	}
+
 	cmd := exec.Command(shell, args...)
-	cmd.Dir = filepath.Join(wsPath, "projects")
+	cmd.Dir = workDir
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -163,15 +166,51 @@ func (a *App) AttachToWorkspace(name string, args []string) error {
 	components := a.createComponents(args)
 	manifest.Packages = append(manifest.Packages, components...)
 
-	data, err := json.MarshalIndent(manifest, "", "  ")
+	return a.writeManifest(wsPath, manifest)
+}
+
+func (a *App) BindWorkspace(name, projectPath string) error {
+	wsPath, err := a.EnsureWorkspace(name)
 	if err != nil {
 		return err
 	}
-	path := getManifestPath(wsPath)
-	if err := os.WriteFile(path, data, 0o600); err != nil {
+
+	if projectPath == "" {
+		return fmt.Errorf("project path required")
+	}
+
+	if strings.HasPrefix(projectPath, "~") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return fmt.Errorf("resolve home directory: %w", err)
+		}
+		projectPath = filepath.Join(home, strings.TrimPrefix(projectPath, "~"))
+	}
+
+	cleanPath := filepath.Clean(projectPath)
+	absPath, err := filepath.Abs(cleanPath)
+	if err != nil {
+		return fmt.Errorf("resolve project path %q: %w", projectPath, err)
+	}
+
+	info, err := os.Stat(absPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("project path %q does not exist", absPath)
+		}
+		return fmt.Errorf("stat project path %q: %w", absPath, err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("project path %q is not a directory", absPath)
+	}
+
+	manifest, err := a.getManifest(wsPath)
+	if err != nil {
 		return err
 	}
-	return nil
+	manifest.ProjectPath = absPath
+
+	return a.writeManifest(wsPath, manifest)
 }
 
 func (a *App) InstallToWorkspace(name string) error {

@@ -5,9 +5,9 @@ This file tracks the next implementation milestones while Groot is still in acti
 ## Current Priorities
 
 - [x] Make `delete` the canonical workspace removal command.
-- [ ] Add `project_path` to the workspace manifest.
-- [ ] Add `groot ws bind <workspace> <path>`.
-- [ ] Make `groot ws shell <workspace>` use `project_path` as the working directory when bound.
+- [x] Add `project_path` to the workspace manifest.
+- [x] Add `groot ws bind <workspace> <path>`.
+- [x] Make `groot ws shell <workspace>` use `project_path` as the working directory when bound.
 - [ ] Extract a reusable workspace environment builder for shell and exec flows.
 - [ ] Add `ExecInWorkspace(name, command, args)` in the app layer.
 - [ ] Add `groot ws exec <workspace> <cmd> [args...]`.

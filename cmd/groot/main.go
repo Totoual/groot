@@ -19,6 +19,7 @@ func main() {
 	groot_app := app.NewApp(root)
 
 	wscmd := commands.NewWorkspaceCmd(
+		&workspacecmds.BindCmd{},
 		&workspacecmds.CreateCmd{},
 		&workspacecmds.DeleteCmd{},
 		&workspacecmds.ShellCmd{},
