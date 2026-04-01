@@ -2,7 +2,7 @@
 
 Groot is a workspace-first runtime layer for local development.
 
-It gives each workspace its own home directory and manifest, while keeping shared runtime state under a single `~/.groot` root. The current version is focused on workspace lifecycle, manifest management, project binding, and shell activation.
+It gives each workspace its own home directory and manifest, while keeping shared runtime state under a single `~/.groot` root. The current version is focused on workspace lifecycle, manifest management, project binding, toolchain installation, and shell activation.
 
 ## Current Scope
 
@@ -10,8 +10,8 @@ It gives each workspace its own home directory and manifest, while keeping share
 - Create and delete workspaces
 - Bind a workspace to an existing project directory
 - Attach toolchain requirements to a workspace manifest
+- Install attached toolchains into the shared Groot toolchain root
 - Open a workspace shell with workspace-scoped `HOME` and XDG directories
-- Scaffold an `install` command that reads the manifest and is the entrypoint for toolchain installation work
 
 ## Principles
 
@@ -160,7 +160,7 @@ flowchart TD
     APP -->|create/read/update| WS[Workspace Folder]
     APP -->|read/write| MANIFEST[manifest.json]
     APP -->|spawn shell| SH[Shell Process]
-    APP -->|future install flow| STORE[Shared Toolchain Store]
+    APP -->|install flow| STORE[Shared Toolchain Store]
 
     WS --> HOME[home/]
     WS --> STATE[state/]
