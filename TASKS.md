@@ -36,11 +36,12 @@ This is the stable control plane Groot should expose for shells, IDE launchers, 
 
 ### Tests And Cleanup
 
-- [ ] Add tests for manifest load/save behavior.
+- [x] Add tests for manifest load/save behavior.
 - [ ] Add tests for bind/unbind behavior.
-- [ ] Add tests for workspace env generation.
+- [x] Add tests for workspace env generation.
 - [ ] Add tests for attach dedupe/update logic.
-- [ ] Add tests for installer path helpers and checksum verification.
+- [x] Add tests for installer path helpers.
+- [ ] Add tests for checksum verification.
 - [ ] Add shared toolchain garbage collection after the runtime flow is stable.
 
 ## Layer 2: Agent-Driven UX

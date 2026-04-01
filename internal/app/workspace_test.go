@@ -5,7 +5,31 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/totoual/groot/internal/itoolchain"
 )
+
+type stubInstaller struct {
+	name        string
+	binDir      string
+	env         map[string]string
+	ensureCalls []string
+}
+
+func (s *stubInstaller) Name() string { return s.name }
+
+func (s *stubInstaller) EnsureInstalled(_ *itoolchain.InstallContext, version string) error {
+	s.ensureCalls = append(s.ensureCalls, version)
+	return nil
+}
+
+func (s *stubInstaller) BinDir(_ *itoolchain.InstallContext, _ string) (string, error) {
+	return s.binDir, nil
+}
+
+func (s *stubInstaller) Env(_ *itoolchain.InstallContext, _ string) (map[string]string, error) {
+	return s.env, nil
+}
 
 func TestCreateNewWorkspaceOmitsProjectsDirAndInitializesManifest(t *testing.T) {
 	root := t.TempDir()
@@ -206,4 +230,192 @@ func TestDeleteWorkspaceRejectsMissingWorkspace(t *testing.T) {
 	if !strings.Contains(err.Error(), "doesn't exist") {
 		t.Fatalf("expected missing workspace error, got %v", err)
 	}
+}
+
+func TestWriteManifestRoundTrip(t *testing.T) {
+	root := t.TempDir()
+	app := NewApp(root)
+
+	if err := app.CreateNewWorkspace("crawlly"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+
+	wsPath := filepath.Join(root, "workspaces", "crawlly")
+	want := Manifest{
+		SchemaVersion: 1,
+		Name:          "crawlly",
+		ProjectPath:   filepath.Join(root, "repos", "crawlly"),
+		Packages: []Component{
+			{Name: "go", Version: "1.25.0"},
+		},
+		Services: []Component{
+			{Name: "redis", Version: "7"},
+		},
+		Env: map[string]string{
+			"APP_ENV": "dev",
+		},
+	}
+
+	if err := app.writeManifest(wsPath, want); err != nil {
+		t.Fatalf("writeManifest returned error: %v", err)
+	}
+
+	got, err := app.getManifest(wsPath)
+	if err != nil {
+		t.Fatalf("getManifest returned error: %v", err)
+	}
+
+	if got.SchemaVersion != want.SchemaVersion || got.Name != want.Name || got.ProjectPath != want.ProjectPath {
+		t.Fatalf("unexpected manifest round-trip: %#v", got)
+	}
+	if len(got.Packages) != 1 || got.Packages[0] != want.Packages[0] {
+		t.Fatalf("unexpected packages: %#v", got.Packages)
+	}
+	if len(got.Services) != 1 || got.Services[0] != want.Services[0] {
+		t.Fatalf("unexpected services: %#v", got.Services)
+	}
+	if got.Env["APP_ENV"] != "dev" {
+		t.Fatalf("unexpected env map: %#v", got.Env)
+	}
+}
+
+func TestWorkspaceRuntimeUsesWorkspaceRootWhenUnbound(t *testing.T) {
+	root := t.TempDir()
+	app := NewApp(root)
+	t.Setenv("PATH", "/usr/bin")
+	t.Setenv("SHELL", "/bin/bash")
+
+	if err := app.CreateNewWorkspace("crawlly"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+
+	env, workDir, err := app.workspaceRuntime("crawlly")
+	if err != nil {
+		t.Fatalf("workspaceRuntime returned error: %v", err)
+	}
+
+	wsPath := filepath.Join(root, "workspaces", "crawlly")
+	if workDir != wsPath {
+		t.Fatalf("workDir = %q, want %q", workDir, wsPath)
+	}
+
+	envMap := envSliceToMap(env)
+	if envMap["HOME"] != filepath.Join(wsPath, "home") {
+		t.Fatalf("HOME = %q", envMap["HOME"])
+	}
+	if envMap["XDG_CONFIG_HOME"] != filepath.Join(wsPath, "home", ".config") {
+		t.Fatalf("XDG_CONFIG_HOME = %q", envMap["XDG_CONFIG_HOME"])
+	}
+	if envMap["GROOT_WORKSPACE"] != "crawlly" {
+		t.Fatalf("GROOT_WORKSPACE = %q", envMap["GROOT_WORKSPACE"])
+	}
+	if envMap["GROOT_WORKSPACE_DIR"] != wsPath {
+		t.Fatalf("GROOT_WORKSPACE_DIR = %q", envMap["GROOT_WORKSPACE_DIR"])
+	}
+	if envMap["PS1"] != "(groot:crawlly) $PS1" {
+		t.Fatalf("PS1 = %q", envMap["PS1"])
+	}
+}
+
+func TestWorkspaceRuntimeUsesBoundProjectPathAndInjectsToolchainEnv(t *testing.T) {
+	root := t.TempDir()
+	app := NewApp(root)
+	t.Setenv("PATH", "/usr/bin:/bin")
+	t.Setenv("SHELL", "/bin/zsh")
+
+	projectPath := filepath.Join(root, "repos", "crawlly")
+	if err := os.MkdirAll(projectPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+
+	if err := app.CreateNewWorkspace("crawlly"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+	if err := app.BindWorkspace("crawlly", projectPath); err != nil {
+		t.Fatalf("BindWorkspace returned error: %v", err)
+	}
+
+	stub := &stubInstaller{
+		name:   "stub",
+		binDir: "/toolchains/stub/1.0/bin",
+		env: map[string]string{
+			"STUB_HOME": "/toolchains/stub/1.0",
+		},
+	}
+	app.toolchains = map[string]itoolchain.ToolchainInstaller{
+		"stub": stub,
+	}
+
+	if err := app.AttachToWorkspace("crawlly", []string{"stub@1.0", "stub@1.0"}); err != nil {
+		t.Fatalf("AttachToWorkspace returned error: %v", err)
+	}
+
+	env, workDir, err := app.workspaceRuntime("crawlly")
+	if err != nil {
+		t.Fatalf("workspaceRuntime returned error: %v", err)
+	}
+
+	if workDir != projectPath {
+		t.Fatalf("workDir = %q, want %q", workDir, projectPath)
+	}
+
+	if len(stub.ensureCalls) != 2 {
+		t.Fatalf("expected 2 ensure calls, got %d", len(stub.ensureCalls))
+	}
+
+	envMap := envSliceToMap(env)
+	if envMap["STUB_HOME"] != "/toolchains/stub/1.0" {
+		t.Fatalf("STUB_HOME = %q", envMap["STUB_HOME"])
+	}
+	if !strings.HasPrefix(envMap["PATH"], "/toolchains/stub/1.0/bin:") {
+		t.Fatalf("PATH = %q", envMap["PATH"])
+	}
+	if strings.Count(envMap["PATH"], "/toolchains/stub/1.0/bin") != 1 {
+		t.Fatalf("expected deduped PATH entry, got %q", envMap["PATH"])
+	}
+	expectedPrompt := "(groot:crawlly) %n@%m %1~ %# "
+	if envMap["PROMPT"] != expectedPrompt || envMap["PS1"] != expectedPrompt {
+		t.Fatalf("unexpected zsh prompt values: PROMPT=%q PS1=%q", envMap["PROMPT"], envMap["PS1"])
+	}
+}
+
+func TestInstallToWorkspaceEnsuresAttachedToolchains(t *testing.T) {
+	root := t.TempDir()
+	app := NewApp(root)
+
+	if err := app.CreateNewWorkspace("crawlly"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+
+	stub := &stubInstaller{name: "stub", binDir: "/toolchains/stub/1.0/bin"}
+	app.toolchains = map[string]itoolchain.ToolchainInstaller{
+		"stub": stub,
+	}
+
+	if err := app.AttachToWorkspace("crawlly", []string{"stub@1.0", "stub@2.0"}); err != nil {
+		t.Fatalf("AttachToWorkspace returned error: %v", err)
+	}
+
+	if err := app.InstallToWorkspace("crawlly"); err != nil {
+		t.Fatalf("InstallToWorkspace returned error: %v", err)
+	}
+
+	if len(stub.ensureCalls) != 2 {
+		t.Fatalf("expected 2 ensure calls, got %d", len(stub.ensureCalls))
+	}
+	if stub.ensureCalls[0] != "1.0" || stub.ensureCalls[1] != "2.0" {
+		t.Fatalf("unexpected ensure calls: %#v", stub.ensureCalls)
+	}
+}
+
+func envSliceToMap(env []string) map[string]string {
+	result := make(map[string]string, len(env))
+	for _, entry := range env {
+		parts := strings.SplitN(entry, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		result[parts[0]] = parts[1]
+	}
+	return result
 }
