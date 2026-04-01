@@ -90,13 +90,13 @@ The long-term goal is strict isolation for project runtime and agent state, with
 ```bash
 groot init
 
-groot ws create <name>
-groot ws bind <name> <path>
-groot ws delete <name>
-groot ws shell <name>
-groot ws exec <name> <cmd> [args...]
 groot ws attach <name> <tool@version> [tool@version...]
+groot ws bind <name> <path>
+groot ws create <name>
+groot ws delete <name>
+groot ws exec <name> <cmd> [args...]
 groot ws install <name>
+groot ws shell <name>
 ```
 
 ## Example Flow
