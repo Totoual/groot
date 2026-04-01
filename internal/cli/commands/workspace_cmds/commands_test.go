@@ -1,6 +1,7 @@
 package workspacecmds
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -165,6 +166,39 @@ func TestExecCmdRunExecutesCommandInWorkspace(t *testing.T) {
 	}
 }
 
+func TestEnvCmdRunPrintsWorkspaceExports(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+	if err := a.CreateNewWorkspace("crawlly"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+
+	projectPath := filepath.Join(root, "repos", "crawlly")
+	if err := os.MkdirAll(projectPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := a.BindWorkspace("crawlly", projectPath); err != nil {
+		t.Fatalf("BindWorkspace returned error: %v", err)
+	}
+
+	output, err := captureStdout(func() error {
+		return (&EnvCmd{}).Run(a, []string{"crawlly"})
+	})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	if !strings.Contains(output, "export GROOT_WORKSPACE='crawlly'") {
+		t.Fatalf("unexpected output: %q", output)
+	}
+	if !strings.Contains(output, "export GROOT_WORKDIR=") {
+		t.Fatalf("expected GROOT_WORKDIR export, got %q", output)
+	}
+	if strings.Contains(output, "export PS1=") || strings.Contains(output, "export PROMPT=") {
+		t.Fatalf("expected prompt vars to be omitted, got %q", output)
+	}
+}
+
 func TestWorkspaceCmdsRequireExpectedArgs(t *testing.T) {
 	a := app.NewApp(t.TempDir())
 
@@ -178,6 +212,7 @@ func TestWorkspaceCmdsRequireExpectedArgs(t *testing.T) {
 		{name: "create", cmd: &CreateCmd{}, args: nil},
 		{name: "bind", cmd: &BindCmd{}, args: []string{"crawlly"}},
 		{name: "delete", cmd: &DeleteCmd{}, args: nil},
+		{name: "env", cmd: &EnvCmd{}, args: nil},
 		{name: "exec", cmd: &ExecCmd{}, args: []string{"crawlly"}},
 		{name: "attach", cmd: &AttachCmd{}, args: []string{"crawlly"}},
 		{name: "install", cmd: &InstallCmd{}, args: nil},
@@ -203,4 +238,25 @@ func loadManifest(wsPath string) (app.Manifest, error) {
 	}
 
 	return manifest, nil
+}
+
+func captureStdout(fn func() error) (string, error) {
+	oldStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		return "", err
+	}
+	defer r.Close()
+
+	os.Stdout = w
+	runErr := fn()
+	_ = w.Close()
+	os.Stdout = oldStdout
+
+	var buf bytes.Buffer
+	if _, err := buf.ReadFrom(r); err != nil {
+		return "", err
+	}
+
+	return buf.String(), runErr
 }

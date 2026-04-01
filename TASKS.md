@@ -15,7 +15,7 @@ This is the stable control plane Groot should expose for shells, IDE launchers, 
 - [x] Extract a reusable workspace environment builder for shell and exec flows.
 - [x] Add `ExecWorkspace(name, command, args)` in the app layer.
 - [x] Add `groot ws exec <workspace> <cmd> [args...]`.
-- [ ] Add `groot ws env <workspace>` to expose the runtime environment for IDE launching.
+- [x] Add `groot ws env <workspace>` to expose the runtime environment for IDE launching.
 
 ### Manifest And CLI Hardening
 

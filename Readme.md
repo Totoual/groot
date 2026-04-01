@@ -23,6 +23,7 @@ The intended split is:
 - Install attached toolchains into the shared Groot toolchain root
 - Open a workspace shell with workspace-scoped `HOME` and XDG directories
 - Run one-off commands inside the workspace runtime
+- Print shell exports for the resolved workspace runtime
 
 ## Principles
 
@@ -94,6 +95,7 @@ groot ws attach <name> <tool@version> [tool@version...]
 groot ws bind <name> <path>
 groot ws create <name>
 groot ws delete <name>
+groot ws env <name>
 groot ws exec <name> <cmd> [args...]
 groot ws install <name>
 groot ws shell <name>
@@ -108,6 +110,7 @@ groot ws bind crawlly ~/Documents/crawlly
 groot ws attach crawlly go@1.25 node@22
 groot ws install crawlly
 groot ws shell crawlly
+groot ws env crawlly
 groot ws exec crawlly go version
 ```
 
@@ -196,7 +199,9 @@ Example:
 - `ws install` downloads and installs attached toolchains into the shared Groot toolchain root
 - `ws shell` ensures attached toolchains are installed, prepends their `bin` directories to `PATH`, and sets toolchain-specific env vars when needed
 - `ws shell` starts in the bound `project_path` when present, otherwise in the workspace root under `~/.groot/workspaces/<name>`
+- `ws env` prints shell exports for the resolved workspace runtime and includes `GROOT_WORKDIR` for the chosen working directory
 - `ws exec` runs a specific command in the same workspace environment and working directory resolution used by `ws shell`
+- `ws env` omits interactive shell prompt variables such as `PS1` and `PROMPT`
 - host `PATH` is still inherited after Groot-managed bin paths, so isolation is intentionally soft for now
 - GUI IDEs launched with full workspace `HOME` isolation may still have integration issues such as keychain/profile friction
 - `php` and `python` installation are slower than the other supported toolchains because they are built from source

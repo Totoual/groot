@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -94,6 +95,39 @@ func (a *App) ExecWorkspace(name, command string, args []string) error {
 	return cmd.Run()
 }
 
+func (a *App) WorkspaceEnv(name string) (string, error) {
+	env, workDir, err := a.workspaceRuntime(name)
+	if err != nil {
+		return "", err
+	}
+
+	envMap := make(map[string]string, len(env)+1)
+	for _, entry := range env {
+		key, value, ok := strings.Cut(entry, "=")
+		if !ok || key == "" {
+			continue
+		}
+		if key == "PS1" || key == "PROMPT" {
+			continue
+		}
+		envMap[key] = value
+	}
+	envMap["GROOT_WORKDIR"] = workDir
+
+	keys := make([]string, 0, len(envMap))
+	for key := range envMap {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	var b strings.Builder
+	for _, key := range keys {
+		fmt.Fprintf(&b, "export %s=%s\n", key, shellQuote(envMap[key]))
+	}
+
+	return b.String(), nil
+}
+
 func (a *App) workspaceRuntime(name string) ([]string, string, error) {
 	wsPath, err := a.EnsureWorkspace(name)
 	if err != nil {
@@ -169,6 +203,13 @@ func (a *App) workspaceRuntime(name string) ([]string, string, error) {
 	}
 
 	return env, workDir, nil
+}
+
+func shellQuote(value string) string {
+	if value == "" {
+		return "''"
+	}
+	return "'" + strings.ReplaceAll(value, "'", `'"'"'`) + "'"
 }
 
 func (a *App) AttachToWorkspace(name string, args []string) error {

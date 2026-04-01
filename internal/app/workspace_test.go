@@ -545,6 +545,62 @@ func TestExecWorkspaceRunsCommandInWorkspaceRuntime(t *testing.T) {
 	}
 }
 
+func TestWorkspaceEnvPrintsShellExportsWithoutPromptVars(t *testing.T) {
+	root := t.TempDir()
+	app := NewApp(root)
+	t.Setenv("SHELL", "/bin/zsh")
+	t.Setenv("PATH", "/usr/bin:/bin")
+
+	projectPath := filepath.Join(root, "repos", "crawlly")
+	if err := os.MkdirAll(projectPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+
+	if err := app.CreateNewWorkspace("crawlly"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+	if err := app.BindWorkspace("crawlly", projectPath); err != nil {
+		t.Fatalf("BindWorkspace returned error: %v", err)
+	}
+
+	stub := &stubInstaller{
+		name:   "stub",
+		binDir: "/toolchains/stub/1.0/bin",
+		env: map[string]string{
+			"STUB_HOME": "/toolchains/stub/1.0",
+		},
+	}
+	app.toolchains = map[string]itoolchain.ToolchainInstaller{
+		"stub": stub,
+	}
+
+	if err := app.AttachToWorkspace("crawlly", []string{"stub@1.0"}); err != nil {
+		t.Fatalf("AttachToWorkspace returned error: %v", err)
+	}
+
+	output, err := app.WorkspaceEnv("crawlly")
+	if err != nil {
+		t.Fatalf("WorkspaceEnv returned error: %v", err)
+	}
+
+	wantHome := filepath.Join(root, "workspaces", "crawlly", "home")
+	if !strings.Contains(output, "export GROOT_WORKSPACE='crawlly'\n") {
+		t.Fatalf("expected GROOT_WORKSPACE export, got %q", output)
+	}
+	if !strings.Contains(output, "export GROOT_WORKDIR="+shellQuote(projectPath)+"\n") {
+		t.Fatalf("expected GROOT_WORKDIR export, got %q", output)
+	}
+	if !strings.Contains(output, "export HOME="+shellQuote(wantHome)+"\n") {
+		t.Fatalf("expected HOME export, got %q", output)
+	}
+	if !strings.Contains(output, "export STUB_HOME='/toolchains/stub/1.0'\n") {
+		t.Fatalf("expected STUB_HOME export, got %q", output)
+	}
+	if strings.Contains(output, "export PS1=") || strings.Contains(output, "export PROMPT=") {
+		t.Fatalf("expected prompt vars to be omitted, got %q", output)
+	}
+}
+
 func envSliceToMap(env []string) map[string]string {
 	result := make(map[string]string, len(env))
 	for _, entry := range env {
