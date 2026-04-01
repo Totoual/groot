@@ -235,7 +235,6 @@ func (a *App) InstallToWorkspace(name string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Println(manifest)
 	if len(manifest.Packages) == 0 {
 		return nil
 	}
