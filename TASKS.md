@@ -12,7 +12,7 @@ This is the stable control plane Groot should expose for shells, IDE launchers, 
 - [x] Add `project_path` to the workspace manifest.
 - [x] Add `groot ws bind <workspace> <path>`.
 - [x] Make `groot ws shell <workspace>` use `project_path` as the working directory when bound.
-- [ ] Extract a reusable workspace environment builder for shell and exec flows.
+- [x] Extract a reusable workspace environment builder for shell and exec flows.
 - [ ] Add `ExecInWorkspace(name, command, args)` in the app layer.
 - [ ] Add `groot ws exec <workspace> <cmd> [args...]`.
 - [ ] Add `groot ws env <workspace>` to expose the runtime environment for IDE launching.
