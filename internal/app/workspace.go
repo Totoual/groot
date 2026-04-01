@@ -1,7 +1,6 @@
 package app
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -29,7 +28,6 @@ func (a *App) CreateNewWorkspace(name string) error {
 		filepath.Join(wsPath, "home"),
 		filepath.Join(wsPath, "state"),
 		filepath.Join(wsPath, "logs"),
-		filepath.Join(wsPath, "projects"),
 	} {
 		if err := os.MkdirAll(d, 0o700); err != nil {
 			return fmt.Errorf("mkdir %s: %w", d, err)
@@ -65,43 +63,10 @@ func (a *App) DeleteWorkspace(name string) error {
 }
 
 func (a *App) WorkspaceShell(name string) error {
-	wsPath, err := a.EnsureWorkspace(name)
+	env, workDir, err := a.workspaceRuntime(name)
 	if err != nil {
 		return err
 	}
-	manifest, err := a.getManifest(wsPath)
-	if err != nil {
-		return err
-	}
-
-	toolchainBinDirs := make([]string, 0, len(manifest.Packages))
-	toolchainEnv := make(map[string]string)
-	seenBinDirs := make(map[string]struct{}, len(manifest.Packages))
-	for _, pkg := range manifest.Packages {
-		if err := a.ensureToolchainInstalled(pkg); err != nil {
-			return err
-		}
-
-		binDir, err := a.toolchainBinDir(pkg)
-		if err != nil {
-			return err
-		}
-		if _, ok := seenBinDirs[binDir]; ok {
-			continue
-		}
-		seenBinDirs[binDir] = struct{}{}
-		toolchainBinDirs = append(toolchainBinDirs, binDir)
-
-		extraEnv, err := a.toolchainEnv(pkg)
-		if err != nil {
-			return err
-		}
-		for key, value := range extraEnv {
-			toolchainEnv[key] = value
-		}
-	}
-
-	wsHome := filepath.Join(wsPath, "home")
 
 	shell := os.Getenv("SHELL")
 	if shell == "" {
@@ -115,10 +80,58 @@ func (a *App) WorkspaceShell(name string) error {
 	}
 
 	cmd := exec.Command(shell, args...)
-	cmd.Dir = filepath.Join(wsPath, "projects")
+	cmd.Dir = workDir
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+
+	cmd.Env = env
+
+	return cmd.Run()
+}
+
+func (a *App) workspaceRuntime(name string) ([]string, string, error) {
+	wsPath, err := a.EnsureWorkspace(name)
+	if err != nil {
+		return nil, "", err
+	}
+	manifest, err := a.getManifest(wsPath)
+	if err != nil {
+		return nil, "", err
+	}
+
+	toolchainBinDirs := make([]string, 0, len(manifest.Packages))
+	toolchainEnv := make(map[string]string)
+	seenBinDirs := make(map[string]struct{}, len(manifest.Packages))
+	for _, pkg := range manifest.Packages {
+		if err := a.ensureToolchainInstalled(pkg); err != nil {
+			return nil, "", err
+		}
+
+		binDir, err := a.toolchainBinDir(pkg)
+		if err != nil {
+			return nil, "", err
+		}
+		if _, ok := seenBinDirs[binDir]; ok {
+			continue
+		}
+		seenBinDirs[binDir] = struct{}{}
+		toolchainBinDirs = append(toolchainBinDirs, binDir)
+
+		extraEnv, err := a.toolchainEnv(pkg)
+		if err != nil {
+			return nil, "", err
+		}
+		for key, value := range extraEnv {
+			toolchainEnv[key] = value
+		}
+	}
+
+	wsHome := filepath.Join(wsPath, "home")
+	workDir := wsPath
+	if manifest.ProjectPath != "" {
+		workDir = manifest.ProjectPath
+	}
 
 	env := os.Environ()
 	env = a.setEnv(env, "HOME", wsHome)
@@ -138,6 +151,11 @@ func (a *App) WorkspaceShell(name string) error {
 		env = a.setEnv(env, "PATH", strings.Join(pathParts, string(os.PathListSeparator)))
 	}
 
+	shell := os.Getenv("SHELL")
+	if shell == "" {
+		shell = "/bin/sh"
+	}
+	base := filepath.Base(shell)
 	if base == "zsh" {
 		p := fmt.Sprintf("(groot:%s) %%n@%%m %%1~ %%# ", name)
 		env = a.setEnv(env, "PROMPT", p)
@@ -146,9 +164,7 @@ func (a *App) WorkspaceShell(name string) error {
 		env = a.setEnv(env, "PS1", fmt.Sprintf("(groot:%s) ", name)+"$PS1")
 	}
 
-	cmd.Env = env
-
-	return cmd.Run()
+	return env, workDir, nil
 }
 
 func (a *App) AttachToWorkspace(name string, args []string) error {
@@ -163,15 +179,51 @@ func (a *App) AttachToWorkspace(name string, args []string) error {
 	components := a.createComponents(args)
 	manifest.Packages = append(manifest.Packages, components...)
 
-	data, err := json.MarshalIndent(manifest, "", "  ")
+	return a.writeManifest(wsPath, manifest)
+}
+
+func (a *App) BindWorkspace(name, projectPath string) error {
+	wsPath, err := a.EnsureWorkspace(name)
 	if err != nil {
 		return err
 	}
-	path := getManifestPath(wsPath)
-	if err := os.WriteFile(path, data, 0o600); err != nil {
+
+	if projectPath == "" {
+		return fmt.Errorf("project path required")
+	}
+
+	if strings.HasPrefix(projectPath, "~") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return fmt.Errorf("resolve home directory: %w", err)
+		}
+		projectPath = filepath.Join(home, strings.TrimPrefix(projectPath, "~"))
+	}
+
+	cleanPath := filepath.Clean(projectPath)
+	absPath, err := filepath.Abs(cleanPath)
+	if err != nil {
+		return fmt.Errorf("resolve project path %q: %w", projectPath, err)
+	}
+
+	info, err := os.Stat(absPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("project path %q does not exist", absPath)
+		}
+		return fmt.Errorf("stat project path %q: %w", absPath, err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("project path %q is not a directory", absPath)
+	}
+
+	manifest, err := a.getManifest(wsPath)
+	if err != nil {
 		return err
 	}
-	return nil
+	manifest.ProjectPath = absPath
+
+	return a.writeManifest(wsPath, manifest)
 }
 
 func (a *App) InstallToWorkspace(name string) error {
@@ -183,7 +235,6 @@ func (a *App) InstallToWorkspace(name string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Println(manifest)
 	if len(manifest.Packages) == 0 {
 		return nil
 	}

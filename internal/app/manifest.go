@@ -12,6 +12,7 @@ type Manifest struct {
 	SchemaVersion int               `json:"schema_version"`
 	CreatedAt     time.Time         `json:"created_at"`
 	Name          string            `json:"name"`
+	ProjectPath   string            `json:"project_path"`
 	Packages      []Component       `json:"packages"`
 	Services      []Component       `json:"services"`
 	Env           map[string]string `json:"env"`
@@ -27,6 +28,7 @@ func NewManifest(name string) *Manifest {
 		SchemaVersion: 1,
 		CreatedAt:     time.Now(),
 		Name:          name,
+		ProjectPath:   "",
 		Packages:      make([]Component, 0),
 		Services:      make([]Component, 0),
 		Env:           make(map[string]string),
@@ -52,6 +54,20 @@ func getManifestPath(wsPath string) string {
 	return filepath.Join(wsPath, "manifest.json")
 }
 
+func (a *App) writeManifest(wsPath string, manifest Manifest) error {
+	data, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	path := getManifestPath(wsPath)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (a *App) createComponents(args []string) []Component {
 	components := make([]Component, 0)
 	for _, arg := range args {
@@ -73,14 +89,5 @@ func (a *App) CreateManifest(name string) error {
 	}
 	manifest := NewManifest(name)
 
-	data, err := json.MarshalIndent(manifest, "", "  ")
-	if err != nil {
-		return err
-	}
-	path := filepath.Join(wsPath, "manifest.json")
-	if err := os.WriteFile(path, data, 0o600); err != nil {
-		return err
-	}
-
-	return nil
+	return a.writeManifest(wsPath, *manifest)
 }
