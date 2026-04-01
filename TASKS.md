@@ -23,7 +23,7 @@ This is the stable control plane Groot should expose for shells, IDE launchers, 
 - [x] Reject malformed or incomplete tool specs with clear errors.
 - [x] Update existing manifest entries instead of duplicating toolchains.
 - [x] Write manifests atomically via temp file + rename.
-- [ ] Keep CLI help and README command examples aligned.
+- [x] Keep CLI help and README command examples aligned.
 
 ### Installer Vertical Slice
 

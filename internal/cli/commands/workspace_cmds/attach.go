@@ -20,7 +20,7 @@ func (at *AttachCmd) Run(a *app.App, args []string) error {
 	fs.SetOutput(os.Stdout)
 
 	fs.Usage = func() {
-		fmt.Fprintln(fs.Output(), "usage: groot ws attach <name> <tool1> <tool2>")
+		fmt.Fprintln(fs.Output(), "usage: groot ws attach <name> <tool@version> [tool@version...]")
 		fmt.Fprintln(fs.Output())
 		fmt.Fprintln(fs.Output(), at.Help())
 	}
