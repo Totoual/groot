@@ -202,6 +202,77 @@ func TestAttachToWorkspacePersistsPackages(t *testing.T) {
 	}
 }
 
+func TestAttachToWorkspaceNormalizesAndUpdatesExistingPackage(t *testing.T) {
+	root := t.TempDir()
+	app := NewApp(root)
+
+	if err := app.CreateNewWorkspace("crawlly"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+
+	if err := app.AttachToWorkspace("crawlly", []string{"GO@1.24.0"}); err != nil {
+		t.Fatalf("AttachToWorkspace returned error: %v", err)
+	}
+	if err := app.AttachToWorkspace("crawlly", []string{"go@1.25.0"}); err != nil {
+		t.Fatalf("AttachToWorkspace returned error: %v", err)
+	}
+
+	manifest, err := app.getManifest(filepath.Join(root, "workspaces", "crawlly"))
+	if err != nil {
+		t.Fatalf("getManifest returned error: %v", err)
+	}
+
+	if len(manifest.Packages) != 1 {
+		t.Fatalf("expected 1 package after update, got %d", len(manifest.Packages))
+	}
+	if manifest.Packages[0] != (Component{Name: "go", Version: "1.25.0"}) {
+		t.Fatalf("unexpected package after update: %#v", manifest.Packages[0])
+	}
+}
+
+func TestAttachToWorkspaceRejectsMalformedSpecs(t *testing.T) {
+	root := t.TempDir()
+	app := NewApp(root)
+
+	if err := app.CreateNewWorkspace("crawlly"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+
+	tests := []string{
+		"go",
+		"@1.25.0",
+		"go@",
+		"  @  ",
+	}
+
+	for _, spec := range tests {
+		err := app.AttachToWorkspace("crawlly", []string{spec})
+		if err == nil {
+			t.Fatalf("expected AttachToWorkspace to fail for spec %q", spec)
+		}
+		if !strings.Contains(err.Error(), "invalid tool spec") {
+			t.Fatalf("expected invalid tool spec error for %q, got %v", spec, err)
+		}
+	}
+}
+
+func TestAttachToWorkspaceRejectsUnknownToolchain(t *testing.T) {
+	root := t.TempDir()
+	app := NewApp(root)
+
+	if err := app.CreateNewWorkspace("crawlly"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+
+	err := app.AttachToWorkspace("crawlly", []string{"ruby@3.4.0"})
+	if err == nil {
+		t.Fatal("expected AttachToWorkspace to fail for unknown toolchain")
+	}
+	if !strings.Contains(err.Error(), `unsupported toolchain "ruby"`) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestDeleteWorkspaceRemovesWorkspaceDirectory(t *testing.T) {
 	root := t.TempDir()
 	app := NewApp(root)
@@ -276,6 +347,10 @@ func TestWriteManifestRoundTrip(t *testing.T) {
 	}
 	if got.Env["APP_ENV"] != "dev" {
 		t.Fatalf("unexpected env map: %#v", got.Env)
+	}
+
+	if _, err := os.Stat(filepath.Join(wsPath, "manifest.json.tmp")); !os.IsNotExist(err) {
+		t.Fatalf("expected no manifest temp file left behind, stat err=%v", err)
 	}
 }
 
@@ -359,8 +434,8 @@ func TestWorkspaceRuntimeUsesBoundProjectPathAndInjectsToolchainEnv(t *testing.T
 		t.Fatalf("workDir = %q, want %q", workDir, projectPath)
 	}
 
-	if len(stub.ensureCalls) != 2 {
-		t.Fatalf("expected 2 ensure calls, got %d", len(stub.ensureCalls))
+	if len(stub.ensureCalls) != 1 {
+		t.Fatalf("expected 1 ensure call, got %d", len(stub.ensureCalls))
 	}
 
 	envMap := envSliceToMap(env)
@@ -400,10 +475,10 @@ func TestInstallToWorkspaceEnsuresAttachedToolchains(t *testing.T) {
 		t.Fatalf("InstallToWorkspace returned error: %v", err)
 	}
 
-	if len(stub.ensureCalls) != 2 {
-		t.Fatalf("expected 2 ensure calls, got %d", len(stub.ensureCalls))
+	if len(stub.ensureCalls) != 1 {
+		t.Fatalf("expected 1 ensure call, got %d", len(stub.ensureCalls))
 	}
-	if stub.ensureCalls[0] != "1.0" || stub.ensureCalls[1] != "2.0" {
+	if stub.ensureCalls[0] != "2.0" {
 		t.Fatalf("unexpected ensure calls: %#v", stub.ensureCalls)
 	}
 }

@@ -4,6 +4,16 @@ Groot is a workspace-first runtime layer for local development.
 
 It gives each workspace its own home directory and manifest, while keeping shared runtime state under a single `~/.groot` root. The current version is focused on workspace lifecycle, manifest management, project binding, toolchain installation, and shell activation.
 
+## Product Goal
+
+Groot is meant to provide a reproducible project environment that can be created, opened, exported, and recreated on other machines without polluting the user's normal machine profile.
+
+The intended split is:
+
+- Project runtime state should belong to Groot.
+- Project-scoped agent state should belong to Groot.
+- GUI IDE identity should remain compatible with the user's normal machine profile.
+
 ## Current Scope
 
 - Initialize a Groot root under `~/.groot`
@@ -17,11 +27,47 @@ It gives each workspace its own home directory and manifest, while keeping share
 ## Principles
 
 - All Groot state lives under one root directory: `~/.groot`
-- Each workspace has its own isolated `HOME`
+- Each workspace has its own isolated runtime state
 - Source code stays in its normal location outside the Groot runtime root
 - Toolchain requirements are declared in `manifest.json`
-- Workspaces are disposable units
+- Workspaces should be recreatable on other machines
+- Workspaces should be exportable without depending on the user's global machine setup
 - Toolchain installation is moving toward a shared global store, not per-workspace duplication
+
+## State Model
+
+Groot needs to treat different kinds of state differently.
+
+### 1. Project Runtime State
+
+This should be isolated and managed by Groot.
+
+- toolchains
+- workspace env
+- project-specific caches where needed
+- logs
+- services and runtime state
+
+### 2. Agent Workspace State
+
+This should also be isolated and managed by Groot.
+
+- project-specific memory
+- conversation history
+- indexed project knowledge
+- execution history
+- generated artifacts and plans
+
+### 3. GUI IDE Identity
+
+This should usually remain global so editors still behave normally.
+
+- editor preferences
+- extensions
+- keychain/login integration
+- GUI app settings and identity
+
+The long-term goal is strict isolation for project runtime and agent state, without breaking normal IDE behavior.
 
 ## Runtime Layout
 
@@ -144,7 +190,7 @@ Example:
 
 ## Current Behavior Notes
 
-- `ws attach` currently appends toolchain requirements into `packages`
+- `ws attach` validates `name@version` specs, rejects unsupported toolchains, and updates existing package entries by name
 - `services` exists in the schema but is not actively used yet
 - `ws bind` stores the project location in `project_path`
 - `ws install` downloads and installs attached toolchains into the shared Groot toolchain root
@@ -152,6 +198,7 @@ Example:
 - `ws shell` starts in the bound `project_path` when present, otherwise in the workspace root under `~/.groot/workspaces/<name>`
 - `ws exec` runs a specific command in the same workspace environment and working directory resolution used by `ws shell`
 - host `PATH` is still inherited after Groot-managed bin paths, so isolation is intentionally soft for now
+- GUI IDEs launched with full workspace `HOME` isolation may still have integration issues such as keychain/profile friction
 - `php` and `python` installation are slower than the other supported toolchains because they are built from source
 
 ## Architecture Overview
