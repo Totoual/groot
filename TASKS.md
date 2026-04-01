@@ -13,8 +13,8 @@ This is the stable control plane Groot should expose for shells, IDE launchers, 
 - [x] Add `groot ws bind <workspace> <path>`.
 - [x] Make `groot ws shell <workspace>` use `project_path` as the working directory when bound.
 - [x] Extract a reusable workspace environment builder for shell and exec flows.
-- [ ] Add `ExecInWorkspace(name, command, args)` in the app layer.
-- [ ] Add `groot ws exec <workspace> <cmd> [args...]`.
+- [x] Add `ExecWorkspace(name, command, args)` in the app layer.
+- [x] Add `groot ws exec <workspace> <cmd> [args...]`.
 - [ ] Add `groot ws env <workspace>` to expose the runtime environment for IDE launching.
 
 ### Manifest And CLI Hardening
@@ -32,7 +32,7 @@ This is the stable control plane Groot should expose for shells, IDE launchers, 
 - [ ] Complete the Go installer vertical slice end-to-end.
 - [ ] Verify downloaded archives before extraction.
 - [ ] Harden extraction against path traversal and partial installs.
-- [ ] Reuse installed toolchains in both `ws shell` and `ws exec`.
+- [x] Reuse installed toolchains in both `ws shell` and `ws exec`.
 
 ### Tests And Cleanup
 

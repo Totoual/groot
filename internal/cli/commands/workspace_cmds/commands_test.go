@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/totoual/groot/internal/app"
@@ -95,6 +96,45 @@ func TestInstallCmdRunAcceptsEmptyWorkspace(t *testing.T) {
 	}
 }
 
+func TestExecCmdRunExecutesCommandInWorkspace(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+	if err := a.CreateNewWorkspace("crawlly"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+
+	projectPath := filepath.Join(root, "repos", "crawlly")
+	if err := os.MkdirAll(projectPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := a.BindWorkspace("crawlly", projectPath); err != nil {
+		t.Fatalf("BindWorkspace returned error: %v", err)
+	}
+
+	scriptPath := filepath.Join(root, "capture.sh")
+	script := "#!/bin/sh\npwd > \"$1\"\n"
+	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("WriteFile returned error: %v", err)
+	}
+
+	outFile := filepath.Join(root, "pwd.txt")
+	if err := (&ExecCmd{}).Run(a, []string{"crawlly", scriptPath, outFile}); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	got, err := os.ReadFile(outFile)
+	if err != nil {
+		t.Fatalf("ReadFile returned error: %v", err)
+	}
+	wantProjectPath, err := filepath.EvalSymlinks(projectPath)
+	if err != nil {
+		t.Fatalf("EvalSymlinks returned error: %v", err)
+	}
+	if gotPath := strings.TrimSpace(string(got)); gotPath != wantProjectPath {
+		t.Fatalf("pwd = %q, want %q", gotPath, wantProjectPath)
+	}
+}
+
 func TestWorkspaceCmdsRequireExpectedArgs(t *testing.T) {
 	a := app.NewApp(t.TempDir())
 
@@ -108,6 +148,7 @@ func TestWorkspaceCmdsRequireExpectedArgs(t *testing.T) {
 		{name: "create", cmd: &CreateCmd{}, args: nil},
 		{name: "bind", cmd: &BindCmd{}, args: []string{"crawlly"}},
 		{name: "delete", cmd: &DeleteCmd{}, args: nil},
+		{name: "exec", cmd: &ExecCmd{}, args: []string{"crawlly"}},
 		{name: "attach", cmd: &AttachCmd{}, args: []string{"crawlly"}},
 		{name: "install", cmd: &InstallCmd{}, args: nil},
 		{name: "shell", cmd: &ShellCmd{}, args: nil},

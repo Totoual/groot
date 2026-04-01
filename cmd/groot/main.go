@@ -22,6 +22,7 @@ func main() {
 		&workspacecmds.BindCmd{},
 		&workspacecmds.CreateCmd{},
 		&workspacecmds.DeleteCmd{},
+		&workspacecmds.ExecCmd{},
 		&workspacecmds.ShellCmd{},
 		&workspacecmds.AttachCmd{},
 		&workspacecmds.InstallCmd{},

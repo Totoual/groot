@@ -12,6 +12,7 @@ It gives each workspace its own home directory and manifest, while keeping share
 - Attach toolchain requirements to a workspace manifest
 - Install attached toolchains into the shared Groot toolchain root
 - Open a workspace shell with workspace-scoped `HOME` and XDG directories
+- Run one-off commands inside the workspace runtime
 
 ## Principles
 
@@ -47,6 +48,7 @@ groot ws create <name>
 groot ws bind <name> <path>
 groot ws delete <name>
 groot ws shell <name>
+groot ws exec <name> <cmd> [args...]
 groot ws attach <name> <tool@version> [tool@version...]
 groot ws install <name>
 ```
@@ -60,6 +62,7 @@ groot ws bind crawlly ~/Documents/crawlly
 groot ws attach crawlly go@1.25 node@22
 groot ws install crawlly
 groot ws shell crawlly
+groot ws exec crawlly go version
 ```
 
 ## Supported Toolchains
@@ -147,6 +150,7 @@ Example:
 - `ws install` downloads and installs attached toolchains into the shared Groot toolchain root
 - `ws shell` ensures attached toolchains are installed, prepends their `bin` directories to `PATH`, and sets toolchain-specific env vars when needed
 - `ws shell` starts in the bound `project_path` when present, otherwise in the workspace root under `~/.groot/workspaces/<name>`
+- `ws exec` runs a specific command in the same workspace environment and working directory resolution used by `ws shell`
 - host `PATH` is still inherited after Groot-managed bin paths, so isolation is intentionally soft for now
 - `php` and `python` installation are slower than the other supported toolchains because they are built from source
 
@@ -154,23 +158,24 @@ Example:
 
 ```mermaid
 flowchart TD
-    U[User] --> CLI[groot CLI]
-    CLI --> APP[App Runtime Core]
+    USER["User"] --> CLI["groot CLI"]
+    CLI --> APP["App Runtime Core"]
 
-    APP -->|create/read/update| WS[Workspace Folder]
-    APP -->|read/write| MANIFEST[manifest.json]
-    APP -->|spawn shell| SH[Shell Process]
-    APP -->|install flow| STORE[Shared Toolchain Store]
+    APP --> WS["Workspace Folder"]
+    APP --> MANIFEST["manifest.json"]
+    APP --> SHELL["Shell Process"]
+    APP --> STORE["Shared Toolchain Store"]
 
-    WS --> HOME[home/]
-    WS --> STATE[state/]
-    WS --> LOGS[logs/]
-    WS --> MANIFESTLOCAL[project_path]
+    WS --> HOME["home/"]
+    WS --> STATE["state/"]
+    WS --> LOGS["logs/"]
+    WS --> PROJECT_PATH["project_path"]
 
-    APP --> ROOT[~/.groot]
-    ROOT --> TOOLCHAINS[toolchains/]
-    ROOT --> BIN[bin/]
-    ROOT --> CACHE[cache/]
+    APP --> ROOT["groot root"]
+    ROOT --> TOOLCHAINS["toolchains/"]
+    ROOT --> BIN["bin/"]
+    ROOT --> CACHE["cache/"]
     ROOT --> STORE
-    MANIFESTLOCAL --> PROJECT[project directory outside root]
+
+    PROJECT_PATH --> PROJECT["project directory outside root"]
 ```
