@@ -63,11 +63,6 @@ func (a *App) DeleteWorkspace(name string) error {
 }
 
 func (a *App) WorkspaceShell(name string) error {
-	env, workDir, err := a.workspaceRuntime(name)
-	if err != nil {
-		return err
-	}
-
 	shell := os.Getenv("SHELL")
 	if shell == "" {
 		shell = "/bin/sh"
@@ -79,7 +74,16 @@ func (a *App) WorkspaceShell(name string) error {
 		args = append(args, "-i")
 	}
 
-	cmd := exec.Command(shell, args...)
+	return a.ExecWorkspace(name, shell, args)
+}
+
+func (a *App) ExecWorkspace(name, command string, args []string) error {
+	env, workDir, err := a.workspaceRuntime(name)
+	if err != nil {
+		return err
+	}
+
+	cmd := exec.Command(command, args...)
 	cmd.Dir = workDir
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout

@@ -408,6 +408,68 @@ func TestInstallToWorkspaceEnsuresAttachedToolchains(t *testing.T) {
 	}
 }
 
+func TestExecWorkspaceRunsCommandInWorkspaceRuntime(t *testing.T) {
+	root := t.TempDir()
+	app := NewApp(root)
+	t.Setenv("SHELL", "/bin/sh")
+	t.Setenv("PATH", "/usr/bin:/bin")
+
+	projectPath := filepath.Join(root, "repos", "crawlly")
+	if err := os.MkdirAll(projectPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+
+	if err := app.CreateNewWorkspace("crawlly"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+	if err := app.BindWorkspace("crawlly", projectPath); err != nil {
+		t.Fatalf("BindWorkspace returned error: %v", err)
+	}
+
+	scriptPath := filepath.Join(root, "capture.sh")
+	script := "#!/bin/sh\npwd > \"$1\"\nprintf '%s' \"$GROOT_WORKSPACE\" > \"$2\"\nprintf '%s' \"$HOME\" > \"$3\"\n"
+	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("WriteFile returned error: %v", err)
+	}
+
+	pwdFile := filepath.Join(root, "pwd.txt")
+	wsFile := filepath.Join(root, "workspace.txt")
+	homeFile := filepath.Join(root, "home.txt")
+
+	if err := app.ExecWorkspace("crawlly", scriptPath, []string{pwdFile, wsFile, homeFile}); err != nil {
+		t.Fatalf("ExecWorkspace returned error: %v", err)
+	}
+
+	gotPwd, err := os.ReadFile(pwdFile)
+	if err != nil {
+		t.Fatalf("ReadFile pwd returned error: %v", err)
+	}
+	wantProjectPath, err := filepath.EvalSymlinks(projectPath)
+	if err != nil {
+		t.Fatalf("EvalSymlinks returned error: %v", err)
+	}
+	if strings.TrimSpace(string(gotPwd)) != wantProjectPath {
+		t.Fatalf("pwd = %q, want %q", strings.TrimSpace(string(gotPwd)), wantProjectPath)
+	}
+
+	gotWorkspace, err := os.ReadFile(wsFile)
+	if err != nil {
+		t.Fatalf("ReadFile workspace returned error: %v", err)
+	}
+	if string(gotWorkspace) != "crawlly" {
+		t.Fatalf("GROOT_WORKSPACE = %q", string(gotWorkspace))
+	}
+
+	gotHome, err := os.ReadFile(homeFile)
+	if err != nil {
+		t.Fatalf("ReadFile home returned error: %v", err)
+	}
+	wantHome := filepath.Join(root, "workspaces", "crawlly", "home")
+	if string(gotHome) != wantHome {
+		t.Fatalf("HOME = %q, want %q", string(gotHome), wantHome)
+	}
+}
+
 func envSliceToMap(env []string) map[string]string {
 	result := make(map[string]string, len(env))
 	for _, entry := range env {
