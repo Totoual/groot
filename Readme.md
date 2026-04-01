@@ -43,7 +43,7 @@ It gives each workspace its own home directory and manifest, while keeping share
 groot init
 
 groot ws create <name>
-groot ws del <name>
+groot ws delete <name>
 groot ws shell <name>
 groot ws attach <name> <tool@version> [tool@version...]
 groot ws install <name>

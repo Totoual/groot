@@ -11,7 +11,7 @@ import (
 
 type DeleteCmd struct{}
 
-func (d *DeleteCmd) Name() string { return "del" }
+func (d *DeleteCmd) Name() string { return "delete" }
 
 func (d *DeleteCmd) Help() string { return "Delete a workspace" }
 
