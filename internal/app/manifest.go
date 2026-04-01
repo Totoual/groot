@@ -2,6 +2,7 @@ package app
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -61,25 +62,45 @@ func (a *App) writeManifest(wsPath string, manifest Manifest) error {
 	}
 
 	path := getManifestPath(wsPath)
-	if err := os.WriteFile(path, data, 0o600); err != nil {
+	tmpPath := path + ".tmp"
+	if err := os.WriteFile(tmpPath, data, 0o600); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		_ = os.Remove(tmpPath)
 		return err
 	}
 
 	return nil
 }
 
-func (a *App) createComponents(args []string) []Component {
+func (a *App) parseComponents(args []string) ([]Component, error) {
 	components := make([]Component, 0)
 	for _, arg := range args {
-		argParts := strings.Split(arg, "@")
+		name, version, ok := strings.Cut(strings.TrimSpace(arg), "@")
+		if !ok {
+			return nil, fmt.Errorf("invalid tool spec %q: expected name@version", arg)
+		}
+		name = strings.ToLower(strings.TrimSpace(name))
+		version = strings.TrimSpace(version)
+		if name == "" {
+			return nil, fmt.Errorf("invalid tool spec %q: tool name required", arg)
+		}
+		if version == "" {
+			return nil, fmt.Errorf("invalid tool spec %q: tool version required", arg)
+		}
+		if _, ok := a.toolchains[name]; !ok {
+			return nil, fmt.Errorf("unsupported toolchain %q", name)
+		}
+
 		comp := Component{
-			Name:    argParts[0],
-			Version: argParts[1],
+			Name:    name,
+			Version: version,
 		}
 		components = append(components, comp)
 	}
 
-	return components
+	return components, nil
 }
 
 func (a *App) CreateManifest(name string) error {

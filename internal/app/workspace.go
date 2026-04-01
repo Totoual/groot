@@ -180,8 +180,23 @@ func (a *App) AttachToWorkspace(name string, args []string) error {
 	if err != nil {
 		return err
 	}
-	components := a.createComponents(args)
-	manifest.Packages = append(manifest.Packages, components...)
+	components, err := a.parseComponents(args)
+	if err != nil {
+		return err
+	}
+	for _, comp := range components {
+		updated := false
+		for i := range manifest.Packages {
+			if manifest.Packages[i].Name == comp.Name {
+				manifest.Packages[i].Version = comp.Version
+				updated = true
+				break
+			}
+		}
+		if !updated {
+			manifest.Packages = append(manifest.Packages, comp)
+		}
+	}
 
 	return a.writeManifest(wsPath, manifest)
 }

@@ -85,6 +85,36 @@ func TestAttachCmdRunPersistsPackages(t *testing.T) {
 	}
 }
 
+func TestAttachCmdRunRejectsMalformedSpec(t *testing.T) {
+	a := app.NewApp(t.TempDir())
+	if err := a.CreateNewWorkspace("crawlly"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+
+	err := (&AttachCmd{}).Run(a, []string{"crawlly", "go"})
+	if err == nil {
+		t.Fatal("expected Run to fail for malformed attach spec")
+	}
+	if !strings.Contains(err.Error(), "invalid tool spec") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestAttachCmdRunRejectsUnknownToolchain(t *testing.T) {
+	a := app.NewApp(t.TempDir())
+	if err := a.CreateNewWorkspace("crawlly"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+
+	err := (&AttachCmd{}).Run(a, []string{"crawlly", "ruby@3.4.0"})
+	if err == nil {
+		t.Fatal("expected Run to fail for unknown toolchain")
+	}
+	if !strings.Contains(err.Error(), `unsupported toolchain "ruby"`) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestInstallCmdRunAcceptsEmptyWorkspace(t *testing.T) {
 	a := app.NewApp(t.TempDir())
 	if err := a.CreateNewWorkspace("crawlly"); err != nil {

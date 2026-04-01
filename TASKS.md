@@ -19,10 +19,10 @@ This is the stable control plane Groot should expose for shells, IDE launchers, 
 
 ### Manifest And CLI Hardening
 
-- [ ] Validate `name@version` parsing in `ws attach`.
-- [ ] Reject malformed or incomplete tool specs with clear errors.
-- [ ] Update existing manifest entries instead of duplicating toolchains.
-- [ ] Write manifests atomically via temp file + rename.
+- [x] Validate `name@version` parsing in `ws attach`.
+- [x] Reject malformed or incomplete tool specs with clear errors.
+- [x] Update existing manifest entries instead of duplicating toolchains.
+- [x] Write manifests atomically via temp file + rename.
 - [ ] Keep CLI help and README command examples aligned.
 
 ### Installer Vertical Slice
@@ -39,7 +39,7 @@ This is the stable control plane Groot should expose for shells, IDE launchers, 
 - [x] Add tests for manifest load/save behavior.
 - [ ] Add tests for bind/unbind behavior.
 - [x] Add tests for workspace env generation.
-- [ ] Add tests for attach dedupe/update logic.
+- [x] Add tests for attach dedupe/update logic.
 - [x] Add tests for installer path helpers.
 - [ ] Add tests for checksum verification.
 - [ ] Add shared toolchain garbage collection after the runtime flow is stable.
@@ -63,6 +63,20 @@ This layer should make Groot feel simple for normal developers by letting an age
 - [ ] Ensure the agent can auto-create or auto-bind a workspace when a repo is first seen.
 - [ ] Document the normal user workflow as agent-first, with `groot ws ...` kept as advanced/runtime commands.
 
+## Layer 2.5: IDE Strategy
+
+This layer decides how Groot keeps project isolation without breaking normal IDE behavior.
+
+- [ ] Define the boundary between project runtime state, agent workspace state, and GUI IDE identity.
+- [ ] Decide the default IDE launch policy:
+  - strict workspace mode
+  - soft IDE mode
+  - editor-specific behavior
+- [ ] Define which environment variables should be preserved for GUI IDE launches and which should stay isolated.
+- [ ] Decide where project-scoped agent memory and conversation state should live inside Groot.
+- [ ] Ensure IDEs can open the bound project path without forcing a separate GUI app identity.
+- [ ] Document the tradeoff between terminal isolation and GUI IDE compatibility.
+
 ## Layer 3: Agent Foundation
 
 This layer makes Groot usable by a top-level agent without inventing a separate runtime path.
@@ -75,6 +89,7 @@ This layer makes Groot usable by a top-level agent without inventing a separate 
 - [ ] Add deterministic workspace resolution from a repo path for agent use.
 - [ ] Define agent-side recovery behavior for partially configured workspaces.
 - [ ] Define the agent entry model around Groot primitives instead of direct host access.
+- [ ] Define import/export for project runtime state and agent workspace state.
 
 ## Layer 4: Human Shortcuts
 
@@ -88,9 +103,10 @@ This layer can add direct human-facing convenience commands after the runtime an
 ## Recommended Order
 
 1. Finish the core runtime.
-2. Add the agent-facing contract and agent-driven setup/open flows.
-3. Add the machine-readable agent foundation on top of the same runtime.
-4. Add optional direct human shortcuts on top of the same runtime.
+2. Define the IDE strategy and state boundaries clearly.
+3. Add the agent-facing contract and agent-driven setup/open flows.
+4. Add the machine-readable agent foundation on top of the same runtime.
+5. Add optional direct human shortcuts on top of the same runtime.
 
 ## Definition Of Success For The Current Phase
 
@@ -125,4 +141,4 @@ or:
 groot open ~/dev/crawlly
 ```
 
-with Groot resolving or creating the right workspace, binding the repo, ensuring toolchains, and entering the right environment behind the scenes.
+with Groot resolving or creating the right workspace, binding the repo, ensuring toolchains, preserving a usable IDE experience, and keeping project runtime and agent state separate from the user's normal machine profile.
