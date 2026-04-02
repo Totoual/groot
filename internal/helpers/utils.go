@@ -121,7 +121,10 @@ func ExtractTarGz(archive, dest string) error {
 			return err
 		}
 
-		target := filepath.Join(dest, header.Name)
+		target, err := safeExtractTarget(dest, header.Name)
+		if err != nil {
+			return err
+		}
 
 		switch header.Typeflag {
 
@@ -160,7 +163,10 @@ func ExtractZip(archive, dest string) error {
 	defer zr.Close()
 
 	for _, file := range zr.File {
-		target := filepath.Join(dest, file.Name)
+		target, err := safeExtractTarget(dest, file.Name)
+		if err != nil {
+			return err
+		}
 
 		if file.FileInfo().IsDir() {
 			if err := os.MkdirAll(target, file.Mode()); err != nil {
@@ -200,6 +206,27 @@ func ExtractZip(archive, dest string) error {
 	}
 
 	return nil
+}
+
+func safeExtractTarget(dest, entryName string) (string, error) {
+	clean := filepath.Clean(entryName)
+	if clean == "." {
+		return "", fmt.Errorf("invalid archive entry %q", entryName)
+	}
+	if filepath.IsAbs(clean) {
+		return "", fmt.Errorf("archive entry %q escapes destination", entryName)
+	}
+
+	target := filepath.Join(dest, clean)
+	rel, err := filepath.Rel(dest, target)
+	if err != nil {
+		return "", fmt.Errorf("resolve archive entry %q: %w", entryName, err)
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+		return "", fmt.Errorf("archive entry %q escapes destination", entryName)
+	}
+
+	return target, nil
 }
 
 func VerifyDownloadedArchive(archivePath, archiveName, checksumURL string) error {

@@ -9,6 +9,29 @@ import (
 	"strings"
 )
 
+var runtimePassthroughEnvKeys = []string{
+	"SHELL",
+	"TERM",
+	"TERM_PROGRAM",
+	"TERM_PROGRAM_VERSION",
+	"COLORTERM",
+	"LANG",
+	"LC_ALL",
+	"LC_CTYPE",
+	"LC_COLLATE",
+	"LC_MESSAGES",
+	"LC_MONETARY",
+	"LC_NUMERIC",
+	"LC_TIME",
+	"TMPDIR",
+	"USER",
+	"LOGNAME",
+	"SSH_AUTH_SOCK",
+	"DISPLAY",
+	"WAYLAND_DISPLAY",
+	"XAUTHORITY",
+}
+
 func (a *App) CreateNewWorkspace(name string) error {
 	if name == "" || name == "." || name == ".." || strings.Contains(name, "/") {
 		return fmt.Errorf("invalid workspace name %q", name)
@@ -171,7 +194,7 @@ func (a *App) workspaceRuntime(name string) ([]string, string, error) {
 		workDir = manifest.ProjectPath
 	}
 
-	env := os.Environ()
+	env := a.runtimeBaseEnv()
 	env = a.setEnv(env, "HOME", wsHome)
 	env = a.setEnv(env, "XDG_CONFIG_HOME", filepath.Join(wsHome, ".config"))
 	env = a.setEnv(env, "XDG_CACHE_HOME", filepath.Join(wsHome, ".cache"))
@@ -181,11 +204,8 @@ func (a *App) workspaceRuntime(name string) ([]string, string, error) {
 	for key, value := range toolchainEnv {
 		env = a.setEnv(env, key, value)
 	}
-	if len(toolchainBinDirs) > 0 {
-		pathParts := append([]string{}, toolchainBinDirs...)
-		if currentPath := os.Getenv("PATH"); currentPath != "" {
-			pathParts = append(pathParts, currentPath)
-		}
+	pathParts := a.uniquePaths(toolchainBinDirs, a.runtimeHostPathEntries())
+	if len(pathParts) > 0 {
 		env = a.setEnv(env, "PATH", strings.Join(pathParts, string(os.PathListSeparator)))
 	}
 
@@ -203,6 +223,80 @@ func (a *App) workspaceRuntime(name string) ([]string, string, error) {
 	}
 
 	return env, workDir, nil
+}
+
+func (a *App) runtimeBaseEnv() []string {
+	env := make([]string, 0, len(runtimePassthroughEnvKeys))
+	for _, key := range runtimePassthroughEnvKeys {
+		value, ok := os.LookupEnv(key)
+		if !ok || value == "" {
+			continue
+		}
+		env = append(env, key+"="+value)
+	}
+	return env
+}
+
+func (a *App) runtimeHostPathEntries() []string {
+	currentPath := os.Getenv("PATH")
+	if currentPath == "" {
+		return nil
+	}
+
+	homeDir, _ := os.UserHomeDir()
+	filtered := make([]string, 0)
+	for _, entry := range strings.Split(currentPath, string(os.PathListSeparator)) {
+		if entry == "" {
+			continue
+		}
+
+		clean := filepath.Clean(entry)
+		if !filepath.IsAbs(clean) {
+			continue
+		}
+
+		if homeDir != "" && pathWithin(clean, homeDir) {
+			continue
+		}
+
+		filtered = append(filtered, clean)
+	}
+
+	return filtered
+}
+
+func (a *App) uniquePaths(groups ...[]string) []string {
+	seen := make(map[string]struct{})
+	paths := make([]string, 0)
+
+	for _, group := range groups {
+		for _, entry := range group {
+			if entry == "" {
+				continue
+			}
+
+			clean := filepath.Clean(entry)
+			if _, ok := seen[clean]; ok {
+				continue
+			}
+			seen[clean] = struct{}{}
+			paths = append(paths, clean)
+		}
+	}
+
+	return paths
+}
+
+func pathWithin(path, root string) bool {
+	if path == root {
+		return true
+	}
+
+	rel, err := filepath.Rel(root, path)
+	if err != nil {
+		return false
+	}
+	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator)))
 }
 
 func shellQuote(value string) string {
@@ -286,6 +380,21 @@ func (a *App) BindWorkspace(name, projectPath string) error {
 	return a.writeManifest(wsPath, manifest)
 }
 
+func (a *App) UnbindWorkspace(name string) error {
+	wsPath, err := a.EnsureWorkspace(name)
+	if err != nil {
+		return err
+	}
+
+	manifest, err := a.getManifest(wsPath)
+	if err != nil {
+		return err
+	}
+	manifest.ProjectPath = ""
+
+	return a.writeManifest(wsPath, manifest)
+}
+
 func (a *App) InstallToWorkspace(name string) error {
 	wsPath, err := a.EnsureWorkspace(name)
 	if err != nil {
@@ -303,6 +412,64 @@ func (a *App) InstallToWorkspace(name string) error {
 			return err
 		}
 	}
+	return nil
+}
+
+func (a *App) GarbageCollectToolchains() error {
+	if err := a.Init(); err != nil {
+		return err
+	}
+
+	referenced := make(map[string]map[string]struct{})
+	workspaceEntries, err := os.ReadDir(a.WorkspaceDir())
+	if err != nil {
+		return fmt.Errorf("read workspaces: %w", err)
+	}
+
+	for _, entry := range workspaceEntries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		manifest, err := a.getManifest(filepath.Join(a.WorkspaceDir(), entry.Name()))
+		if err != nil {
+			return err
+		}
+
+		for _, pkg := range manifest.Packages {
+			if _, ok := referenced[pkg.Name]; !ok {
+				referenced[pkg.Name] = make(map[string]struct{})
+			}
+			referenced[pkg.Name][pkg.Version] = struct{}{}
+		}
+	}
+
+	for name := range a.toolchains {
+		toolchainRoot := filepath.Join(a.ToolchainDir(), name)
+		entries, err := os.ReadDir(toolchainRoot)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return fmt.Errorf("read toolchain root %s: %w", toolchainRoot, err)
+		}
+
+		keep := referenced[name]
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				continue
+			}
+
+			if _, ok := keep[entry.Name()]; ok {
+				continue
+			}
+
+			if err := os.RemoveAll(filepath.Join(toolchainRoot, entry.Name())); err != nil {
+				return fmt.Errorf("remove toolchain %s/%s: %w", name, entry.Name(), err)
+			}
+		}
+	}
+
 	return nil
 }
 

@@ -48,6 +48,34 @@ func TestBindCmdRunStoresProjectPath(t *testing.T) {
 	}
 }
 
+func TestUnbindCmdRunClearsProjectPath(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+	if err := a.CreateNewWorkspace("crawlly"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+
+	projectPath := filepath.Join(root, "repos", "crawlly")
+	if err := os.MkdirAll(projectPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := a.BindWorkspace("crawlly", projectPath); err != nil {
+		t.Fatalf("BindWorkspace returned error: %v", err)
+	}
+
+	if err := (&UnbindCmd{}).Run(a, []string{"crawlly"}); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	manifest, err := loadManifest(filepath.Join(a.WorkspaceDir(), "crawlly"))
+	if err != nil {
+		t.Fatalf("loadManifest returned error: %v", err)
+	}
+	if manifest.ProjectPath != "" {
+		t.Fatalf("ProjectPath = %q, want empty", manifest.ProjectPath)
+	}
+}
+
 func TestDeleteCmdRunDeletesWorkspace(t *testing.T) {
 	a := app.NewApp(t.TempDir())
 	if err := a.CreateNewWorkspace("crawlly"); err != nil {
@@ -127,6 +155,36 @@ func TestInstallCmdRunAcceptsEmptyWorkspace(t *testing.T) {
 	}
 }
 
+func TestGCCmdRunRemovesUnreferencedToolchains(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+	if err := a.CreateNewWorkspace("crawlly"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+	if err := a.AttachToWorkspace("crawlly", []string{"go@1.25.0"}); err != nil {
+		t.Fatalf("AttachToWorkspace returned error: %v", err)
+	}
+
+	keepDir := filepath.Join(root, "toolchains", "go", "1.25.0")
+	removeDir := filepath.Join(root, "toolchains", "go", "1.26.0")
+	for _, dir := range []string{keepDir, removeDir} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("MkdirAll returned error: %v", err)
+		}
+	}
+
+	if err := (&GCCmd{}).Run(a, nil); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	if _, err := os.Stat(keepDir); err != nil {
+		t.Fatalf("expected referenced toolchain dir to remain: %v", err)
+	}
+	if _, err := os.Stat(removeDir); !os.IsNotExist(err) {
+		t.Fatalf("expected unreferenced toolchain dir to be removed, stat err=%v", err)
+	}
+}
+
 func TestExecCmdRunExecutesCommandInWorkspace(t *testing.T) {
 	root := t.TempDir()
 	a := app.NewApp(root)
@@ -149,8 +207,14 @@ func TestExecCmdRunExecutesCommandInWorkspace(t *testing.T) {
 	}
 
 	outFile := filepath.Join(root, "pwd.txt")
-	if err := (&ExecCmd{}).Run(a, []string{"crawlly", scriptPath, outFile}); err != nil {
+	output, err := captureStdout(func() error {
+		return (&ExecCmd{}).Run(a, []string{"crawlly", scriptPath, outFile})
+	})
+	if err != nil {
 		t.Fatalf("Run returned error: %v", err)
+	}
+	if strings.TrimSpace(output) != "" {
+		t.Fatalf("expected exec wrapper to stay quiet, got %q", output)
 	}
 
 	got, err := os.ReadFile(outFile)
@@ -214,9 +278,11 @@ func TestWorkspaceCmdsRequireExpectedArgs(t *testing.T) {
 		{name: "delete", cmd: &DeleteCmd{}, args: nil},
 		{name: "env", cmd: &EnvCmd{}, args: nil},
 		{name: "exec", cmd: &ExecCmd{}, args: []string{"crawlly"}},
+		{name: "gc", cmd: &GCCmd{}, args: []string{"extra"}},
 		{name: "attach", cmd: &AttachCmd{}, args: []string{"crawlly"}},
 		{name: "install", cmd: &InstallCmd{}, args: nil},
 		{name: "shell", cmd: &ShellCmd{}, args: nil},
+		{name: "unbind", cmd: &UnbindCmd{}, args: nil},
 	}
 
 	for _, tt := range tests {

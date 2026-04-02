@@ -174,6 +174,35 @@ func TestBindWorkspaceRejectsFilePath(t *testing.T) {
 	}
 }
 
+func TestUnbindWorkspaceClearsProjectPath(t *testing.T) {
+	root := t.TempDir()
+	app := NewApp(root)
+
+	if err := app.CreateNewWorkspace("crawlly"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+
+	projectPath := filepath.Join(root, "repos", "crawlly")
+	if err := os.MkdirAll(projectPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := app.BindWorkspace("crawlly", projectPath); err != nil {
+		t.Fatalf("BindWorkspace returned error: %v", err)
+	}
+
+	if err := app.UnbindWorkspace("crawlly"); err != nil {
+		t.Fatalf("UnbindWorkspace returned error: %v", err)
+	}
+
+	manifest, err := app.getManifest(filepath.Join(root, "workspaces", "crawlly"))
+	if err != nil {
+		t.Fatalf("getManifest returned error: %v", err)
+	}
+	if manifest.ProjectPath != "" {
+		t.Fatalf("expected ProjectPath to be cleared, got %q", manifest.ProjectPath)
+	}
+}
+
 func TestAttachToWorkspacePersistsPackages(t *testing.T) {
 	root := t.TempDir()
 	app := NewApp(root)
@@ -395,7 +424,17 @@ func TestWorkspaceRuntimeUsesWorkspaceRootWhenUnbound(t *testing.T) {
 func TestWorkspaceRuntimeUsesBoundProjectPathAndInjectsToolchainEnv(t *testing.T) {
 	root := t.TempDir()
 	app := NewApp(root)
-	t.Setenv("PATH", "/usr/bin:/bin")
+	hostHome := filepath.Join(root, "host-home")
+	t.Setenv("HOME", hostHome)
+	t.Setenv("PATH", strings.Join([]string{
+		"/toolchains/stub/1.0/bin",
+		filepath.Join(hostHome, ".pyenv", "shims"),
+		filepath.Join(hostHome, "Library", "Application Support", "Code", "bin"),
+		"/opt/homebrew/bin",
+		"/usr/bin",
+		"/usr/bin",
+		"/bin",
+	}, ":"))
 	t.Setenv("SHELL", "/bin/zsh")
 
 	projectPath := filepath.Join(root, "repos", "crawlly")
@@ -448,6 +487,12 @@ func TestWorkspaceRuntimeUsesBoundProjectPathAndInjectsToolchainEnv(t *testing.T
 	if strings.Count(envMap["PATH"], "/toolchains/stub/1.0/bin") != 1 {
 		t.Fatalf("expected deduped PATH entry, got %q", envMap["PATH"])
 	}
+	if strings.Contains(envMap["PATH"], hostHome) {
+		t.Fatalf("expected host-home PATH entries to be filtered, got %q", envMap["PATH"])
+	}
+	if strings.Count(envMap["PATH"], "/usr/bin") != 1 {
+		t.Fatalf("expected deduped system PATH entry, got %q", envMap["PATH"])
+	}
 	expectedPrompt := "(groot:crawlly) %n@%m %1~ %# "
 	if envMap["PROMPT"] != expectedPrompt || envMap["PS1"] != expectedPrompt {
 		t.Fatalf("unexpected zsh prompt values: PROMPT=%q PS1=%q", envMap["PROMPT"], envMap["PS1"])
@@ -480,6 +525,41 @@ func TestInstallToWorkspaceEnsuresAttachedToolchains(t *testing.T) {
 	}
 	if stub.ensureCalls[0] != "2.0" {
 		t.Fatalf("unexpected ensure calls: %#v", stub.ensureCalls)
+	}
+}
+
+func TestGarbageCollectToolchainsRemovesUnreferencedVersions(t *testing.T) {
+	root := t.TempDir()
+	app := NewApp(root)
+
+	if err := app.CreateNewWorkspace("crawlly"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+	if err := app.AttachToWorkspace("crawlly", []string{"go@1.25.0"}); err != nil {
+		t.Fatalf("AttachToWorkspace returned error: %v", err)
+	}
+
+	keepDir := filepath.Join(root, "toolchains", "go", "1.25.0")
+	removeDir := filepath.Join(root, "toolchains", "go", "1.26.0")
+	unknownDir := filepath.Join(root, "toolchains", "custom", "1.0.0")
+	for _, dir := range []string{keepDir, removeDir, unknownDir} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("MkdirAll returned error: %v", err)
+		}
+	}
+
+	if err := app.GarbageCollectToolchains(); err != nil {
+		t.Fatalf("GarbageCollectToolchains returned error: %v", err)
+	}
+
+	if _, err := os.Stat(keepDir); err != nil {
+		t.Fatalf("expected referenced toolchain dir to remain: %v", err)
+	}
+	if _, err := os.Stat(removeDir); !os.IsNotExist(err) {
+		t.Fatalf("expected unreferenced toolchain dir to be removed, stat err=%v", err)
+	}
+	if _, err := os.Stat(unknownDir); err != nil {
+		t.Fatalf("expected unknown toolchain dir to be left alone: %v", err)
 	}
 }
 
@@ -549,7 +629,16 @@ func TestWorkspaceEnvPrintsShellExportsWithoutPromptVars(t *testing.T) {
 	root := t.TempDir()
 	app := NewApp(root)
 	t.Setenv("SHELL", "/bin/zsh")
-	t.Setenv("PATH", "/usr/bin:/bin")
+	hostHome := filepath.Join(root, "host-home")
+	t.Setenv("HOME", hostHome)
+	t.Setenv("PWD", root)
+	t.Setenv("PATH", strings.Join([]string{
+		filepath.Join(hostHome, ".antigravity", "bin"),
+		"/opt/homebrew/bin",
+		"/usr/bin",
+		"/usr/bin",
+		"/bin",
+	}, ":"))
 
 	projectPath := filepath.Join(root, "repos", "crawlly")
 	if err := os.MkdirAll(projectPath, 0o755); err != nil {
@@ -598,6 +687,12 @@ func TestWorkspaceEnvPrintsShellExportsWithoutPromptVars(t *testing.T) {
 	}
 	if strings.Contains(output, "export PS1=") || strings.Contains(output, "export PROMPT=") {
 		t.Fatalf("expected prompt vars to be omitted, got %q", output)
+	}
+	if strings.Contains(output, "export PWD=") {
+		t.Fatalf("expected PWD to be omitted, got %q", output)
+	}
+	if strings.Contains(output, hostHome) {
+		t.Fatalf("expected host-home PATH entries to be filtered, got %q", output)
 	}
 }
 

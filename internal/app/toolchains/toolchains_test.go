@@ -1,6 +1,12 @@
 package toolchains
 
 import (
+	"archive/tar"
+	"compress/gzip"
+	"crypto/sha256"
+	"encoding/hex"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -35,6 +41,53 @@ func TestGoInstallerMetadata(t *testing.T) {
 	}
 	if want := filepath.Join("/toolchains", "go", "1.25.0", "go", "bin"); binDir != want {
 		t.Fatalf("BinDir = %q, want %q", binDir, want)
+	}
+}
+
+func TestGoInstallerEnsureInstalledFromCachedArchive(t *testing.T) {
+	g := GoInstaller{}
+	root := t.TempDir()
+	ic := &itoolchain.InstallContext{
+		ToolchainDir: filepath.Join(root, "toolchains"),
+		CacheDir:     filepath.Join(root, "cache"),
+		GOOS:         "linux",
+		GOARCH:       "amd64",
+	}
+
+	archiveName := g.archiveName("1.25.0", ic.GOOS, ic.GOARCH)
+	archivePath := filepath.Join(ic.CacheDir, archiveName)
+	if err := os.MkdirAll(ic.CacheDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := writeTarGz(archivePath, map[string][]byte{
+		"go/bin/go": []byte("#!/bin/sh\n"),
+	}); err != nil {
+		t.Fatalf("writeTarGz returned error: %v", err)
+	}
+
+	sum, err := fileSHA256(archivePath)
+	if err != nil {
+		t.Fatalf("fileSHA256 returned error: %v", err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(sum + "\n"))
+	}))
+	defer server.Close()
+
+	oldChecksumBaseURL := goChecksumBaseURL
+	goChecksumBaseURL = server.URL + "/"
+	defer func() { goChecksumBaseURL = oldChecksumBaseURL }()
+
+	if err := g.EnsureInstalled(ic, "1.25.0"); err != nil {
+		t.Fatalf("EnsureInstalled returned error: %v", err)
+	}
+	if _, err := os.Stat(g.binaryPath(ic.ToolchainDir, "1.25.0")); err != nil {
+		t.Fatalf("expected go binary to exist: %v", err)
+	}
+
+	if err := g.EnsureInstalled(ic, "1.25.0"); err != nil {
+		t.Fatalf("EnsureInstalled second run returned error: %v", err)
 	}
 }
 
@@ -310,4 +363,43 @@ func TestRustInstallerHelpersAndEnv(t *testing.T) {
 	if _, err := r.targetTriple("windows", "amd64"); err == nil || !strings.Contains(err.Error(), "unsupported platform") {
 		t.Fatalf("expected unsupported platform error, got %v", err)
 	}
+}
+
+func writeTarGz(path string, files map[string][]byte) error {
+	file, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	gzw := gzip.NewWriter(file)
+	defer gzw.Close()
+
+	tw := tar.NewWriter(gzw)
+	defer tw.Close()
+
+	for name, contents := range files {
+		header := &tar.Header{
+			Name: name,
+			Mode: 0o755,
+			Size: int64(len(contents)),
+		}
+		if err := tw.WriteHeader(header); err != nil {
+			return err
+		}
+		if _, err := tw.Write(contents); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func fileSHA256(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:]), nil
 }

@@ -40,7 +40,6 @@ func (e *ExecCmd) Run(a *app.App, args []string) error {
 	command := fs.Arg(1)
 	commandArgs := fs.Args()[2:]
 
-	fmt.Println("Exec workspace:", name)
 	err := a.ExecWorkspace(name, command, commandArgs)
 	if err != nil {
 		return fmt.Errorf("couldn't exec workspace: %w", err)

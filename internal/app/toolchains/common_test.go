@@ -73,11 +73,12 @@ func TestInstallArchiveWithExtractorIfNeededUsesCachedArchiveAndInstallsBinary(t
 			return nil
 		},
 		func(path, dest string) error {
-			extractCalled = path == archivePath && dest == installDir
-			if err := os.MkdirAll(filepath.Dir(binaryPath), 0o755); err != nil {
+			extractCalled = path == archivePath && strings.HasPrefix(dest, installDir+".tmp-")
+			stagedBinaryPath := filepath.Join(dest, "go", "bin", "go")
+			if err := os.MkdirAll(filepath.Dir(stagedBinaryPath), 0o755); err != nil {
 				return err
 			}
-			return os.WriteFile(binaryPath, []byte("go"), 0o755)
+			return os.WriteFile(stagedBinaryPath, []byte("go"), 0o755)
 		},
 	)
 	if err != nil {
@@ -121,5 +122,61 @@ func TestInstallArchiveWithExtractorIfNeededFailsWhenBinaryMissingAfterExtract(t
 	}
 	if got := err.Error(); got == "" || !strings.Contains(got, "binary missing") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestInstallArchiveWithExtractorIfNeededReplacesExistingInstallAtomically(t *testing.T) {
+	root := t.TempDir()
+	cacheDir := filepath.Join(root, "cache")
+	installDir := filepath.Join(root, "install")
+	binaryPath := filepath.Join(installDir, "go", "bin", "go")
+	archivePath := filepath.Join(cacheDir, "go.tar.gz")
+
+	if err := os.MkdirAll(filepath.Join(installDir, "stale"), 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(installDir, "stale", "old.txt"), []byte("old"), 0o600); err != nil {
+		t.Fatalf("WriteFile returned error: %v", err)
+	}
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := os.WriteFile(archivePath, []byte("archive"), 0o600); err != nil {
+		t.Fatalf("WriteFile returned error: %v", err)
+	}
+
+	err := installArchiveWithExtractorIfNeeded(
+		&itoolchain.InstallContext{CacheDir: cacheDir},
+		binaryPath,
+		"https://example.com/go.tar.gz",
+		"go.tar.gz",
+		installDir,
+		func(string) error { return nil },
+		func(_ string, dest string) error {
+			if err := os.MkdirAll(filepath.Join(dest, "go", "bin"), 0o755); err != nil {
+				return err
+			}
+			return os.WriteFile(filepath.Join(dest, "go", "bin", "go"), []byte("go"), 0o755)
+		},
+	)
+	if err != nil {
+		t.Fatalf("installArchiveWithExtractorIfNeeded returned error: %v", err)
+	}
+
+	if _, err := os.Stat(binaryPath); err != nil {
+		t.Fatalf("expected binary to exist after install: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(installDir, "stale", "old.txt")); !os.IsNotExist(err) {
+		t.Fatalf("expected stale install contents to be replaced, stat err=%v", err)
+	}
+
+	entries, err := os.ReadDir(filepath.Dir(installDir))
+	if err != nil {
+		t.Fatalf("ReadDir returned error: %v", err)
+	}
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), filepath.Base(installDir)+".tmp-") {
+			t.Fatalf("expected no leftover staging dir, found %q", entry.Name())
+		}
 	}
 }

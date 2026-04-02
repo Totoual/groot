@@ -10,6 +10,11 @@ import (
 
 type GoInstaller struct{}
 
+var (
+	goDownloadBaseURL = "https://go.dev/dl/"
+	goChecksumBaseURL = "https://dl.google.com/go/"
+)
+
 func (g GoInstaller) Name() string {
 	return "go"
 }
@@ -19,11 +24,11 @@ func (g GoInstaller) archiveName(version, goos, goarch string) string {
 }
 
 func (g GoInstaller) downloadURL(version, goos, goarch string) string {
-	return "https://go.dev/dl/" + g.archiveName(version, goos, goarch)
+	return goDownloadBaseURL + g.archiveName(version, goos, goarch)
 }
 
 func (g GoInstaller) checksumURL(version, goos, goarch string) string {
-	return "https://dl.google.com/go/" + g.archiveName(version, goos, goarch) + ".sha256"
+	return goChecksumBaseURL + g.archiveName(version, goos, goarch) + ".sha256"
 }
 
 func (g GoInstaller) installDir(root, version string) string {
