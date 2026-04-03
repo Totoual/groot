@@ -172,6 +172,14 @@ func (a *App) WorkspaceEnv(name string) (string, error) {
 	return b.String(), nil
 }
 
+func (a *App) ShellHook() (string, error) {
+	name := strings.TrimSpace(os.Getenv("GROOT_WORKSPACE"))
+	if name == "" {
+		return "", nil
+	}
+	return a.WorkspaceEnv(name)
+}
+
 func (a *App) workspaceRuntime(name string) ([]string, string, error) {
 	return a.workspaceRuntimeForMode(name, a.strictRuntimeMode())
 }

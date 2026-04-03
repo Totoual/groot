@@ -819,6 +819,42 @@ func TestOpenWorkspaceRunsProgramInSoftOpenRuntime(t *testing.T) {
 	}
 }
 
+func TestShellHookReturnsWorkspaceExportsWhenWorkspaceIsSet(t *testing.T) {
+	root := t.TempDir()
+	app := NewApp(root)
+	t.Setenv("SHELL", "/bin/zsh")
+	t.Setenv("PATH", "/usr/bin:/bin")
+	t.Setenv("GROOT_WORKSPACE", "crawlly")
+
+	if err := app.CreateNewWorkspace("crawlly"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+
+	output, err := app.ShellHook()
+	if err != nil {
+		t.Fatalf("ShellHook returned error: %v", err)
+	}
+
+	if !strings.Contains(output, "export GROOT_WORKSPACE='crawlly'\n") {
+		t.Fatalf("expected GROOT_WORKSPACE export, got %q", output)
+	}
+	if !strings.Contains(output, "export HOME="+shellQuote(filepath.Join(root, "workspaces", "crawlly", "home"))+"\n") {
+		t.Fatalf("expected HOME export, got %q", output)
+	}
+}
+
+func TestShellHookReturnsNothingWithoutWorkspaceContext(t *testing.T) {
+	app := NewApp(t.TempDir())
+
+	output, err := app.ShellHook()
+	if err != nil {
+		t.Fatalf("ShellHook returned error: %v", err)
+	}
+	if output != "" {
+		t.Fatalf("expected empty shell hook output, got %q", output)
+	}
+}
+
 func envSliceToMap(env []string) map[string]string {
 	result := make(map[string]string, len(env))
 	for _, entry := range env {

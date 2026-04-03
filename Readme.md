@@ -102,6 +102,7 @@ That likely means:
 
 ```bash
 groot init
+groot shell-hook
 
 groot ws attach <name> <tool@version> [tool@version...]
 groot ws bind <name> <path>
@@ -127,6 +128,28 @@ groot ws install crawlly
 groot ws open crawlly --ide code
 groot ws shell crawlly
 ```
+
+## Shell Hook
+
+To make integrated terminals automatically re-enter the strict Groot runtime after `ws open`, add the shell hook near the end of your shell config.
+
+For `zsh`:
+
+```bash
+eval "$(groot shell-hook)"
+```
+
+For `bash`:
+
+```bash
+eval "$(groot shell-hook)"
+```
+
+Behavior:
+
+- when `GROOT_WORKSPACE` is not set, the hook prints nothing and does nothing
+- when `GROOT_WORKSPACE` is set, the hook reapplies the strict workspace runtime for the shell
+- this keeps `ws open` editor-agnostic while letting integrated terminals use Groot-managed toolchain precedence automatically
 
 ## Supported Toolchains
 
@@ -218,6 +241,7 @@ Example:
 - `ws env` prints shell exports for the resolved workspace runtime and includes `GROOT_WORKDIR` for the chosen working directory
 - `ws exec` runs a specific command in the same workspace environment and working directory resolution used by `ws shell`
 - `ws open` launches an IDE or GUI program in a softer runtime that keeps the project cwd, toolchain `PATH`, and `GROOT_*` vars while preserving the user's normal `HOME`
+- `shell-hook` turns a shell with `GROOT_WORKSPACE` set back into the strict workspace runtime, which is how integrated terminals can become fully Groot-managed without editor-specific settings
 - `ws open` defaults to `GROOT_IDE`, then `VISUAL`, then `EDITOR`, and finally `code` when no IDE is specified
 - `ws env` omits interactive shell prompt variables such as `PS1` and `PROMPT`
 - host `PATH` is filtered before reuse, so user-home shims and editor-specific entries are dropped while system paths remain available

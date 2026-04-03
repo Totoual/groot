@@ -76,6 +76,8 @@ This layer decides how Groot keeps project isolation without breaking normal IDE
   - editor-specific behavior
 - [x] Implement a soft IDE mode that preserves project cwd, toolchain PATH, and `GROOT_*` vars without forcing full GUI `HOME` isolation.
 - [x] Add a dedicated IDE launcher command, for example `groot ws open <name> --ide code`.
+- [x] Add a generic shell hook so terminals launched from a soft-opened IDE can automatically re-enter the strict Groot runtime.
+- [x] Document shell-hook setup so terminal activation does not depend on IDE-specific settings.
 - [ ] Verify first-launch behavior for a brand-new workspace in VS Code before treating IDE support as working.
 - [ ] Define which environment variables should be preserved for GUI IDE launches and which should stay isolated.
 - [ ] Decide where project-scoped agent memory and conversation state should live inside Groot.
