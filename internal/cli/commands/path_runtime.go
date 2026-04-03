@@ -7,13 +7,21 @@ import (
 	"github.com/totoual/groot/internal/app"
 )
 
-func resolveProjectWorkspace(a *app.App, projectPath string) (string, error) {
+type resolvedProjectWorkspace struct {
+	Name    string
+	Created bool
+}
+
+func resolveProjectWorkspace(a *app.App, projectPath string) (resolvedProjectWorkspace, error) {
 	workspaceName, created, err := a.ResolveOrCreateWorkspaceByProjectPath(projectPath)
 	if err != nil {
-		return "", fmt.Errorf("couldn't resolve workspace for project path: %w", err)
+		return resolvedProjectWorkspace{}, fmt.Errorf("couldn't resolve workspace for project path: %w", err)
 	}
 	if created {
 		fmt.Fprintf(os.Stderr, "Created workspace %q for %s\n", workspaceName, projectPath)
 	}
-	return workspaceName, nil
+	return resolvedProjectWorkspace{
+		Name:    workspaceName,
+		Created: created,
+	}, nil
 }

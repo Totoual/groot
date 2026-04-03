@@ -65,8 +65,19 @@ func TestOpenCmdRunCreatesWorkspaceForFirstSeenProjectPath(t *testing.T) {
 	t.Setenv("PATH", "/usr/bin:/bin")
 
 	projectPath := filepath.Join(root, "repos", "the_grime_tcg")
-	if err := os.MkdirAll(projectPath, 0o755); err != nil {
+	backendDir := filepath.Join(projectPath, "backend")
+	frontendDir := filepath.Join(projectPath, "frontend")
+	if err := os.MkdirAll(backendDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := os.MkdirAll(frontendDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(backendDir, "go.mod"), []byte("module example.com/tcg\n\ngo 1.25.4\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile go.mod returned error: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(frontendDir, "package.json"), []byte(`{"engines":{"node":"25.8.1"}}`), 0o600); err != nil {
+		t.Fatalf("WriteFile package.json returned error: %v", err)
 	}
 
 	scriptPath := filepath.Join(root, "open-capture.sh")
@@ -86,6 +97,24 @@ func TestOpenCmdRunCreatesWorkspaceForFirstSeenProjectPath(t *testing.T) {
 	}
 	if !strings.Contains(stderr, `Created workspace "the_grime_tcg"`) {
 		t.Fatalf("expected creation message on stderr, got %q", stderr)
+	}
+	if !strings.Contains(stderr, `Detected likely runtimes for workspace "the_grime_tcg": go@1.25.4, node@25.8.1`) {
+		t.Fatalf("expected detected runtimes message on stderr, got %q", stderr)
+	}
+	if !strings.Contains(stderr, `First-open behavior is warn-only for now`) {
+		t.Fatalf("expected warn-only message on stderr, got %q", stderr)
+	}
+	if !strings.Contains(stderr, `Workspace "the_grime_tcg" does not declare detected runtimes: go@1.25.4, node@25.8.1`) {
+		t.Fatalf("expected missing-runtime warning on stderr, got %q", stderr)
+	}
+	if !strings.Contains(stderr, `Commands may fall back to host toolchains until these are attached and installed.`) {
+		t.Fatalf("expected host fallback warning on stderr, got %q", stderr)
+	}
+	if !strings.Contains(stderr, `groot ws attach the_grime_tcg go@1.25.4 node@25.8.1`) {
+		t.Fatalf("expected attach suggestion on stderr, got %q", stderr)
+	}
+	if !strings.Contains(stderr, `groot ws install the_grime_tcg`) {
+		t.Fatalf("expected install suggestion on stderr, got %q", stderr)
 	}
 
 	gotWorkspace, err := os.ReadFile(filepath.Join(projectPath, "open-workspace.txt"))
@@ -111,6 +140,61 @@ func TestOpenCmdRejectsMissingProjectPath(t *testing.T) {
 	err := (&OpenCmd{}).Run(a, nil)
 	if err == nil {
 		t.Fatal("expected argument validation error")
+	}
+}
+
+func TestOpenCmdWarnsWhenExistingWorkspaceStillReliesOnHostToolchains(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+	hostHome := filepath.Join(root, "host-home")
+	t.Setenv("HOME", hostHome)
+	t.Setenv("PATH", "/usr/bin:/bin")
+
+	if err := a.CreateNewWorkspace("tcg"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+
+	projectPath := filepath.Join(root, "repos", "the_grime_tcg")
+	backendDir := filepath.Join(projectPath, "backend")
+	frontendDir := filepath.Join(projectPath, "frontend")
+	if err := os.MkdirAll(backendDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := os.MkdirAll(frontendDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(backendDir, "go.mod"), []byte("module example.com/tcg\n\ngo 1.25.4\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile go.mod returned error: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(frontendDir, "package.json"), []byte(`{"engines":{"node":"25.8.1"}}`), 0o600); err != nil {
+		t.Fatalf("WriteFile package.json returned error: %v", err)
+	}
+	if err := a.BindWorkspace("tcg", projectPath); err != nil {
+		t.Fatalf("BindWorkspace returned error: %v", err)
+	}
+	scriptPath := filepath.Join(root, "open-capture.sh")
+	script := "#!/bin/sh\nprintf '%s' \"$GROOT_WORKSPACE\" > open-workspace.txt\n"
+	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("WriteFile returned error: %v", err)
+	}
+
+	stdout, stderr, err := captureCommandOutput(func() error {
+		return (&OpenCmd{}).Run(a, []string{projectPath, "--ide", scriptPath})
+	})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if strings.TrimSpace(stdout) != "" {
+		t.Fatalf("expected reused-open stdout to stay quiet, got %q", stdout)
+	}
+	if strings.Contains(stderr, `First-open behavior is warn-only for now`) {
+		t.Fatalf("did not expect first-open warning for existing workspace, got %q", stderr)
+	}
+	if !strings.Contains(stderr, `Workspace "tcg" does not declare detected runtimes: go@1.25.4, node@25.8.1`) {
+		t.Fatalf("expected missing-runtime warning for existing workspace, got %q", stderr)
+	}
+	if !strings.Contains(stderr, `groot ws attach tcg go@1.25.4 node@25.8.1`) {
+		t.Fatalf("expected attach suggestion for missing runtimes, got %q", stderr)
 	}
 }
 

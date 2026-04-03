@@ -42,9 +42,9 @@ func (c *ExecCmd) Run(a *app.App, args []string) error {
 	command := fs.Arg(1)
 	commandArgs := fs.Args()[2:]
 
-	workspaceName, err := resolveProjectWorkspace(a, projectPath)
+	resolved, err := resolveProjectWorkspace(a, projectPath)
 	if err != nil {
 		return err
 	}
-	return a.ExecWorkspace(workspaceName, command, commandArgs)
+	return a.ExecWorkspace(resolved.Name, command, commandArgs)
 }

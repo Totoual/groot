@@ -26,11 +26,30 @@ func (c *OpenCmd) Run(a *app.App, args []string) error {
 		return err
 	}
 
-	workspaceName, err := resolveProjectWorkspace(a, projectPath)
+	resolved, err := resolveProjectWorkspace(a, projectPath)
 	if err != nil {
 		return err
 	}
-	if err := a.OpenWorkspace(workspaceName, ide, openArgs); err != nil {
+	detected, err := a.DetectProjectToolchains(projectPath)
+	if err != nil {
+		return fmt.Errorf("couldn't detect project toolchains: %w", err)
+	}
+	missing, err := a.MissingWorkspaceToolchains(resolved.Name, detected)
+	if err != nil {
+		return fmt.Errorf("couldn't compare detected toolchains with workspace manifest: %w", err)
+	}
+	if len(detected) > 0 && resolved.Created {
+		fmt.Fprintf(os.Stderr, "Detected likely runtimes for workspace %q: %s\n", resolved.Name, formatDetectedToolchains(detected))
+		fmt.Fprintln(os.Stderr, "First-open behavior is warn-only for now: Groot did not attach toolchains automatically.")
+	}
+	if len(missing) > 0 {
+		fmt.Fprintf(os.Stderr, "Workspace %q does not declare detected runtimes: %s\n", resolved.Name, formatDetectedToolchains(missing))
+		fmt.Fprintln(os.Stderr, "Commands may fall back to host toolchains until these are attached and installed.")
+		fmt.Fprintln(os.Stderr, "Attach them with:")
+		fmt.Fprintf(os.Stderr, "  groot ws attach %s %s\n", resolved.Name, suggestedAttachArgs(missing))
+		fmt.Fprintf(os.Stderr, "  groot ws install %s\n", resolved.Name)
+	}
+	if err := a.OpenWorkspace(resolved.Name, ide, openArgs); err != nil {
 		return fmt.Errorf("couldn't open workspace: %w", err)
 	}
 	return nil
@@ -79,4 +98,28 @@ func (c *OpenCmd) printUsage() {
 	fmt.Fprintln(os.Stdout, "usage: groot open <path> [--ide code|cursor|zed|...] [-- args...]")
 	fmt.Fprintln(os.Stdout)
 	fmt.Fprintln(os.Stdout, c.Help())
+}
+
+func formatDetectedToolchains(detected []app.DetectedToolchain) string {
+	parts := make([]string, 0, len(detected))
+	for _, tc := range detected {
+		if tc.Version != "" {
+			parts = append(parts, fmt.Sprintf("%s@%s", tc.Name, tc.Version))
+			continue
+		}
+		parts = append(parts, tc.Name)
+	}
+	return strings.Join(parts, ", ")
+}
+
+func suggestedAttachArgs(detected []app.DetectedToolchain) string {
+	parts := make([]string, 0, len(detected))
+	for _, tc := range detected {
+		version := tc.Version
+		if version == "" {
+			version = "<version>"
+		}
+		parts = append(parts, fmt.Sprintf("%s@%s", tc.Name, version))
+	}
+	return strings.Join(parts, " ")
 }

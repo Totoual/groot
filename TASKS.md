@@ -37,12 +37,12 @@ Groot should move toward:
 
 ### Immediate Next Tasks
 
-- [ ] Detect likely runtimes on first open, for example Go, Node, Python, Rust, Bun, Deno, PHP, Java.
-- [ ] Define first-open behavior when no toolchains are attached yet:
+- [x] Detect likely runtimes on first open, for example Go, Node, Python, Rust, Bun, Deno, PHP, Java.
+- [x] Define first-open behavior when no toolchains are attached yet:
   - warn only
   - suggest attach/install
   - or auto-attach common runtimes
-- [ ] Surface when a workspace is still using host toolchains instead of Groot-managed ones.
+- [x] Surface when a workspace is still using host toolchains instead of Groot-managed ones.
 - [ ] Add a stricter runtime mode or warning mode for undeclared toolchains.
 - [ ] Decide whether `groot open <path>` should only open, or whether it should also offer/setup runtime ownership on first use.
 - [ ] Make the first-open experience feel product-shaped, not like a thin alias over lower-level commands.
