@@ -43,6 +43,51 @@ func (a *App) MissingWorkspaceToolchains(name string, detected []DetectedToolcha
 	return missing, nil
 }
 
+func (a *App) WorkspaceUndeclaredToolchains(name string) ([]DetectedToolchain, error) {
+	wsPath, err := a.EnsureWorkspace(name)
+	if err != nil {
+		return nil, err
+	}
+
+	manifest, err := a.getManifest(wsPath)
+	if err != nil {
+		return nil, err
+	}
+	if manifest.ProjectPath == "" {
+		return nil, nil
+	}
+
+	detected, err := a.DetectProjectToolchains(manifest.ProjectPath)
+	if err != nil {
+		return nil, err
+	}
+
+	return a.MissingWorkspaceToolchains(name, detected)
+}
+
+func (a *App) AttachDetectedToolchains(name string, detected []DetectedToolchain) ([]DetectedToolchain, []DetectedToolchain, error) {
+	attachable := make([]string, 0, len(detected))
+	attached := make([]DetectedToolchain, 0, len(detected))
+	skipped := make([]DetectedToolchain, 0, len(detected))
+
+	for _, tc := range detected {
+		if tc.Version == "" {
+			skipped = append(skipped, tc)
+			continue
+		}
+		attachable = append(attachable, fmt.Sprintf("%s@%s", tc.Name, tc.Version))
+		attached = append(attached, tc)
+	}
+
+	if len(attachable) > 0 {
+		if err := a.AttachToWorkspace(name, attachable); err != nil {
+			return nil, nil, err
+		}
+	}
+
+	return attached, skipped, nil
+}
+
 var ignoredProjectScanDirs = map[string]struct{}{
 	".git":         {},
 	".groot":       {},

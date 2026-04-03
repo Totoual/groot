@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -134,6 +135,118 @@ func TestOpenCmdRunCreatesWorkspaceForFirstSeenProjectPath(t *testing.T) {
 	}
 }
 
+func TestOpenCmdRunAttachDetectedAutoAttachesConcreteVersions(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+	hostHome := filepath.Join(root, "host-home")
+	t.Setenv("HOME", hostHome)
+	t.Setenv("PATH", "/usr/bin:/bin")
+
+	projectPath := filepath.Join(root, "repos", "the_grime_tcg")
+	backendDir := filepath.Join(projectPath, "backend")
+	frontendDir := filepath.Join(projectPath, "frontend")
+	if err := os.MkdirAll(backendDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := os.MkdirAll(frontendDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(backendDir, "go.mod"), []byte("module example.com/tcg\n\ngo 1.25.4\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile go.mod returned error: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(frontendDir, "package.json"), []byte(`{"engines":{"node":"25.8.1"}}`), 0o600); err != nil {
+		t.Fatalf("WriteFile package.json returned error: %v", err)
+	}
+
+	scriptPath := filepath.Join(root, "open-capture.sh")
+	script := "#!/bin/sh\nprintf '%s' \"$GROOT_WORKSPACE\" > open-workspace.txt\n"
+	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("WriteFile returned error: %v", err)
+	}
+	seedInstalledGoToolchain(t, a, "1.25.4")
+	seedInstalledNodeToolchain(t, a, "25.8.1")
+
+	stdout, stderr, err := captureCommandOutput(func() error {
+		return (&OpenCmd{}).Run(a, []string{projectPath, "--attach-detected", "--ide", scriptPath})
+	})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if strings.TrimSpace(stdout) != "" {
+		t.Fatalf("expected first-open stdout to stay quiet, got %q", stdout)
+	}
+	if !strings.Contains(stderr, `Auto-attached detected runtimes for workspace "the_grime_tcg": go@1.25.4, node@25.8.1`) {
+		t.Fatalf("expected auto-attach message on stderr, got %q", stderr)
+	}
+	if strings.Contains(stderr, `Workspace "the_grime_tcg" does not declare detected runtimes`) {
+		t.Fatalf("did not expect undeclared-runtime warning after auto-attach, got %q", stderr)
+	}
+	if strings.Contains(stderr, `First-open behavior is warn-only for now`) {
+		t.Fatalf("did not expect warn-only message when --attach-detected is set, got %q", stderr)
+	}
+
+	manifest, err := loadManifest(filepath.Join(a.WorkspaceDir(), "the_grime_tcg"))
+	if err != nil {
+		t.Fatalf("loadManifest returned error: %v", err)
+	}
+	if len(manifest.Packages) != 2 {
+		t.Fatalf("expected 2 attached packages, got %d", len(manifest.Packages))
+	}
+	if manifest.Packages[0] != (app.Component{Name: "go", Version: "1.25.4"}) {
+		t.Fatalf("unexpected first package: %#v", manifest.Packages[0])
+	}
+	if manifest.Packages[1] != (app.Component{Name: "node", Version: "25.8.1"}) {
+		t.Fatalf("unexpected second package: %#v", manifest.Packages[1])
+	}
+}
+
+func TestOpenCmdRunAttachDetectedSkipsVersionlessRuntimes(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+	hostHome := filepath.Join(root, "host-home")
+	t.Setenv("HOME", hostHome)
+	t.Setenv("PATH", "/usr/bin:/bin")
+
+	projectPath := filepath.Join(root, "repos", "the_grime_tcg")
+	backendDir := filepath.Join(projectPath, "backend")
+	frontendDir := filepath.Join(projectPath, "frontend")
+	if err := os.MkdirAll(backendDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := os.MkdirAll(frontendDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(backendDir, "go.mod"), []byte("module example.com/tcg\n\ngo 1.25.4\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile go.mod returned error: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(frontendDir, "package.json"), []byte(`{"name":"tcg-ui"}`), 0o600); err != nil {
+		t.Fatalf("WriteFile package.json returned error: %v", err)
+	}
+
+	scriptPath := filepath.Join(root, "open-capture.sh")
+	script := "#!/bin/sh\nprintf '%s' \"$GROOT_WORKSPACE\" > open-workspace.txt\n"
+	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("WriteFile returned error: %v", err)
+	}
+	seedInstalledGoToolchain(t, a, "1.25.4")
+
+	_, stderr, err := captureCommandOutput(func() error {
+		return (&OpenCmd{}).Run(a, []string{projectPath, "--attach-detected", "--ide", scriptPath})
+	})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if !strings.Contains(stderr, `Auto-attached detected runtimes for workspace "the_grime_tcg": go@1.25.4`) {
+		t.Fatalf("expected partial auto-attach message on stderr, got %q", stderr)
+	}
+	if !strings.Contains(stderr, `Skipped detected runtimes without a concrete version for workspace "the_grime_tcg": node`) {
+		t.Fatalf("expected skipped versionless message on stderr, got %q", stderr)
+	}
+	if !strings.Contains(stderr, `Workspace "the_grime_tcg" does not declare detected runtimes: node`) {
+		t.Fatalf("expected undeclared warning for remaining versionless runtime, got %q", stderr)
+	}
+}
+
 func TestOpenCmdRejectsMissingProjectPath(t *testing.T) {
 	a := app.NewApp(t.TempDir())
 
@@ -210,4 +323,42 @@ func loadManifest(wsPath string) (app.Manifest, error) {
 	}
 
 	return manifest, nil
+}
+
+func seedInstalledGoToolchain(t *testing.T, a *app.App, version string) {
+	t.Helper()
+
+	binaryPath := filepath.Join(a.ToolchainDir(), "go", version, "go", "bin", "go")
+	if err := os.MkdirAll(filepath.Dir(binaryPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := os.WriteFile(binaryPath, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatalf("WriteFile returned error: %v", err)
+	}
+}
+
+func seedInstalledNodeToolchain(t *testing.T, a *app.App, version string) {
+	t.Helper()
+
+	platform := runtime.GOOS
+	arch := runtime.GOARCH
+	switch arch {
+	case "amd64":
+		arch = "x64"
+	case "arm64":
+		arch = "arm64"
+	default:
+		t.Fatalf("unsupported test architecture %q", runtime.GOARCH)
+	}
+	if platform != "darwin" && platform != "linux" {
+		t.Fatalf("unsupported test platform %q", runtime.GOOS)
+	}
+
+	binaryPath := filepath.Join(a.ToolchainDir(), "node", version, "node-v"+version+"-"+platform+"-"+arch, "bin", "node")
+	if err := os.MkdirAll(filepath.Dir(binaryPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := os.WriteFile(binaryPath, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatalf("WriteFile returned error: %v", err)
+	}
 }

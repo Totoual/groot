@@ -46,5 +46,8 @@ func (c *ExecCmd) Run(a *app.App, args []string) error {
 	if err != nil {
 		return err
 	}
+	if err := enforceWorkspaceOwnership(a, resolved.Name); err != nil {
+		return err
+	}
 	return a.ExecWorkspace(resolved.Name, command, commandArgs)
 }
