@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -8,6 +9,8 @@ import (
 	"sort"
 	"strings"
 )
+
+var errWorkspaceNotBoundToProjectPath = errors.New("no workspace bound to project path")
 
 var runtimePassthroughEnvKeys = []string{
 	"SHELL",
@@ -485,6 +488,58 @@ func sameProjectPath(left, right string) (bool, error) {
 	return leftResolved == rightResolved, nil
 }
 
+func workspaceNameFromProjectPath(projectPath string) string {
+	base := strings.TrimSpace(filepath.Base(projectPath))
+	if base == "" || base == "." || base == ".." {
+		base = "workspace"
+	}
+
+	var b strings.Builder
+	lastDash := false
+	for _, r := range base {
+		switch {
+		case (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9'):
+			b.WriteRune(r)
+			lastDash = false
+		case r == '-' || r == '_' || r == '.':
+			b.WriteRune(r)
+			lastDash = false
+		default:
+			if !lastDash {
+				b.WriteRune('-')
+				lastDash = true
+			}
+		}
+	}
+
+	name := strings.Trim(b.String(), "-.")
+	if name == "" || name == "." || name == ".." {
+		return "workspace"
+	}
+	return name
+}
+
+func (a *App) nextAvailableWorkspaceName(base string) (string, error) {
+	if err := a.Init(); err != nil {
+		return "", err
+	}
+
+	for i := 0; ; i++ {
+		name := base
+		if i > 0 {
+			name = fmt.Sprintf("%s-%d", base, i+1)
+		}
+
+		_, err := os.Stat(filepath.Join(a.WorkspaceDir(), name))
+		if os.IsNotExist(err) {
+			return name, nil
+		}
+		if err != nil {
+			return "", fmt.Errorf("stat workspace %q: %w", name, err)
+		}
+	}
+}
+
 func (a *App) AttachToWorkspace(name string, args []string) error {
 	wsPath, err := a.EnsureWorkspace(name)
 	if err != nil {
@@ -602,13 +657,52 @@ func (a *App) FindWorkspaceByProjectPath(projectPath string) (string, error) {
 
 	switch len(matches) {
 	case 0:
-		return "", fmt.Errorf("no workspace bound to project path %q", normalizedPath)
+		return "", fmt.Errorf("%w %q", errWorkspaceNotBoundToProjectPath, normalizedPath)
 	case 1:
 		return matches[0], nil
 	default:
 		sort.Strings(matches)
 		return "", fmt.Errorf("multiple workspaces bound to project path %q: %s", normalizedPath, strings.Join(matches, ", "))
 	}
+}
+
+func (a *App) ResolveOrCreateWorkspaceByProjectPath(projectPath string) (string, bool, error) {
+	normalizedPath, err := normalizeProjectPath(projectPath)
+	if err != nil {
+		return "", false, err
+	}
+
+	info, err := os.Stat(normalizedPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", false, fmt.Errorf("project path %q does not exist", normalizedPath)
+		}
+		return "", false, fmt.Errorf("stat project path %q: %w", normalizedPath, err)
+	}
+	if !info.IsDir() {
+		return "", false, fmt.Errorf("project path %q is not a directory", normalizedPath)
+	}
+
+	name, err := a.FindWorkspaceByProjectPath(normalizedPath)
+	if err == nil {
+		return name, false, nil
+	}
+	if !errors.Is(err, errWorkspaceNotBoundToProjectPath) {
+		return "", false, err
+	}
+
+	name, err = a.nextAvailableWorkspaceName(workspaceNameFromProjectPath(normalizedPath))
+	if err != nil {
+		return "", false, err
+	}
+	if err := a.CreateNewWorkspace(name); err != nil {
+		return "", false, err
+	}
+	if err := a.BindWorkspace(name, normalizedPath); err != nil {
+		return "", false, err
+	}
+
+	return name, true, nil
 }
 
 func (a *App) InstallToWorkspace(name string) error {

@@ -351,6 +351,88 @@ func TestFindWorkspaceByProjectPathRejectsDuplicateBindings(t *testing.T) {
 	}
 }
 
+func TestResolveOrCreateWorkspaceByProjectPathReusesExistingBinding(t *testing.T) {
+	root := t.TempDir()
+	app := NewApp(root)
+
+	if err := app.CreateNewWorkspace("crawlly"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+
+	projectPath := filepath.Join(root, "repos", "goCrawl")
+	if err := os.MkdirAll(projectPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := app.BindWorkspace("crawlly", projectPath); err != nil {
+		t.Fatalf("BindWorkspace returned error: %v", err)
+	}
+
+	got, created, err := app.ResolveOrCreateWorkspaceByProjectPath(projectPath)
+	if err != nil {
+		t.Fatalf("ResolveOrCreateWorkspaceByProjectPath returned error: %v", err)
+	}
+	if created {
+		t.Fatal("expected existing workspace to be reused")
+	}
+	if got != "crawlly" {
+		t.Fatalf("ResolveOrCreateWorkspaceByProjectPath = %q, want %q", got, "crawlly")
+	}
+}
+
+func TestResolveOrCreateWorkspaceByProjectPathCreatesAndBindsWorkspace(t *testing.T) {
+	root := t.TempDir()
+	app := NewApp(root)
+
+	projectPath := filepath.Join(root, "repos", "the_grime_tcg")
+	if err := os.MkdirAll(projectPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+
+	got, created, err := app.ResolveOrCreateWorkspaceByProjectPath(projectPath)
+	if err != nil {
+		t.Fatalf("ResolveOrCreateWorkspaceByProjectPath returned error: %v", err)
+	}
+	if !created {
+		t.Fatal("expected workspace to be created")
+	}
+	if got != "the_grime_tcg" {
+		t.Fatalf("ResolveOrCreateWorkspaceByProjectPath = %q, want %q", got, "the_grime_tcg")
+	}
+
+	manifest, err := app.getManifest(filepath.Join(root, "workspaces", got))
+	if err != nil {
+		t.Fatalf("getManifest returned error: %v", err)
+	}
+	if manifest.ProjectPath != projectPath {
+		t.Fatalf("ProjectPath = %q, want %q", manifest.ProjectPath, projectPath)
+	}
+}
+
+func TestResolveOrCreateWorkspaceByProjectPathCreatesUniqueWorkspaceName(t *testing.T) {
+	root := t.TempDir()
+	app := NewApp(root)
+
+	if err := app.CreateNewWorkspace("goCrawl"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+
+	projectPath := filepath.Join(root, "repos", "goCrawl")
+	if err := os.MkdirAll(projectPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+
+	got, created, err := app.ResolveOrCreateWorkspaceByProjectPath(projectPath)
+	if err != nil {
+		t.Fatalf("ResolveOrCreateWorkspaceByProjectPath returned error: %v", err)
+	}
+	if !created {
+		t.Fatal("expected workspace to be created")
+	}
+	if got != "goCrawl-2" {
+		t.Fatalf("ResolveOrCreateWorkspaceByProjectPath = %q, want %q", got, "goCrawl-2")
+	}
+}
+
 func TestAttachToWorkspacePersistsPackages(t *testing.T) {
 	root := t.TempDir()
 	app := NewApp(root)

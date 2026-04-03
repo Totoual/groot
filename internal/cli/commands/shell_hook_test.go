@@ -3,6 +3,7 @@ package commands
 import (
 	"bytes"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -50,6 +51,82 @@ func TestShellHookCmdRejectsArguments(t *testing.T) {
 	err := (&ShellHookCmd{}).Run(a, []string{"extra"})
 	if err == nil {
 		t.Fatal("expected argument validation error")
+	}
+}
+
+func TestShellHookCmdInstallWritesManagedBlockToZshrc(t *testing.T) {
+	a := app.NewApp(t.TempDir())
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("SHELL", "/bin/zsh")
+
+	output, err := captureCommandStdout(func() error {
+		return (&ShellHookCmd{}).Run(a, []string{"install"})
+	})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if !strings.Contains(output, "Installed Groot shell hook") {
+		t.Fatalf("unexpected output: %q", output)
+	}
+
+	data, err := os.ReadFile(filepath.Join(homeDir, ".zshrc"))
+	if err != nil {
+		t.Fatalf("ReadFile returned error: %v", err)
+	}
+	content := string(data)
+	if !strings.Contains(content, shellHookStartMarker) {
+		t.Fatalf("expected start marker, got %q", content)
+	}
+	if !strings.Contains(content, shellHookLine) {
+		t.Fatalf("expected shell hook line, got %q", content)
+	}
+	if !strings.Contains(content, shellHookEndMarker) {
+		t.Fatalf("expected end marker, got %q", content)
+	}
+}
+
+func TestShellHookCmdInstallIsIdempotent(t *testing.T) {
+	a := app.NewApp(t.TempDir())
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("SHELL", "/bin/bash")
+
+	if _, err := captureCommandStdout(func() error {
+		return (&ShellHookCmd{}).Run(a, []string{"install"})
+	}); err != nil {
+		t.Fatalf("first install returned error: %v", err)
+	}
+
+	output, err := captureCommandStdout(func() error {
+		return (&ShellHookCmd{}).Run(a, []string{"install"})
+	})
+	if err != nil {
+		t.Fatalf("second install returned error: %v", err)
+	}
+	if !strings.Contains(output, "already installed") {
+		t.Fatalf("unexpected output: %q", output)
+	}
+
+	data, err := os.ReadFile(filepath.Join(homeDir, ".bashrc"))
+	if err != nil {
+		t.Fatalf("ReadFile returned error: %v", err)
+	}
+	if strings.Count(string(data), shellHookLine) != 1 {
+		t.Fatalf("expected one shell hook line, got %q", string(data))
+	}
+}
+
+func TestShellHookCmdInstallRejectsUnsupportedShell(t *testing.T) {
+	a := app.NewApp(t.TempDir())
+	t.Setenv("SHELL", "/bin/fish")
+
+	err := (&ShellHookCmd{}).Run(a, []string{"install"})
+	if err == nil {
+		t.Fatal("expected unsupported shell error")
+	}
+	if !strings.Contains(err.Error(), `unsupported shell "fish"`) {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 

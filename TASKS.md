@@ -60,7 +60,7 @@ This layer should make Groot feel simple for normal developers by letting an age
   - "open this repo in a clean workspace"
   - "set up this project for me"
 - [ ] Add a path-based setup flow so the agent can create or resolve a workspace from a repo path.
-- [ ] Add a path-based open/enter flow for non-agent fallback usage.
+- [x] Add a path-based open/enter flow for non-agent fallback usage.
 - [ ] Ensure the agent can auto-create or auto-bind a workspace when a repo is first seen.
 - [ ] Document the normal user workflow as agent-first, with `groot ws ...` kept as advanced/runtime commands.
 
@@ -114,7 +114,7 @@ This layer makes Groot usable by a top-level agent without inventing a separate 
 
 This layer can add direct human-facing convenience commands after the runtime and agent model are stable.
 
-- [ ] Decide whether `groot open <path>` should exist as a first-class non-agent shortcut.
+- [x] Decide whether `groot open <path>` should exist as a first-class non-agent shortcut.
 - [ ] Decide whether `groot enter <path>` should exist as a shell-first shortcut.
 - [ ] Consider `groot init <name> --bind <path>` or `groot init <path>` as an explicit setup shortcut.
 - [ ] Keep human shortcuts thin wrappers over the same runtime and agent-capable primitives.

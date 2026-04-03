@@ -19,6 +19,7 @@ The agent-facing direction is for Groot to expose the same runtime core through 
 ## Current Scope
 
 - Initialize a Groot root under `~/.groot`
+- Open a project path by resolving or auto-creating the matching workspace
 - Create and delete workspaces
 - Bind a workspace to an existing project directory
 - Clear a workspace project binding
@@ -102,7 +103,9 @@ That likely means:
 
 ```bash
 groot init
+groot open <path>
 groot shell-hook
+groot shell-hook install
 
 groot ws attach <name> <tool@version> [tool@version...]
 groot ws bind <name> <path>
@@ -117,7 +120,16 @@ groot ws shell <name>
 groot ws unbind <name>
 ```
 
-## Example Flow
+## Quick Open
+
+```bash
+groot init
+groot open ~/Documents/crawlly
+```
+
+`groot open <path>` resolves the bound workspace for that repo path and, on first open, creates and binds a workspace automatically before launching the IDE.
+
+## Manual Workspace Flow
 
 ```bash
 groot init
@@ -131,7 +143,23 @@ groot ws shell crawlly
 
 ## Shell Hook
 
-To make integrated terminals automatically re-enter the strict Groot runtime after `ws open`, add the shell hook near the end of your shell config.
+To make integrated terminals automatically re-enter the strict Groot runtime after `ws open`, install the shell hook into your shell rc file.
+
+Recommended:
+
+```bash
+groot shell-hook install
+```
+
+This currently supports `zsh` and `bash`, and installs a managed block into the detected rc file:
+
+```bash
+# >>> groot shell hook >>>
+eval "$(groot shell-hook)"
+# <<< groot shell hook <<<
+```
+
+If you prefer to manage your shell config yourself, add the hook line near the end of your shell config manually.
 
 For `zsh`:
 
@@ -150,6 +178,7 @@ Behavior:
 - when `GROOT_WORKSPACE` is not set, the hook prints nothing and does nothing
 - when `GROOT_WORKSPACE` is set, the hook reapplies the strict workspace runtime for the shell
 - this keeps `ws open` editor-agnostic while letting integrated terminals use Groot-managed toolchain precedence automatically
+- `groot shell-hook install` is idempotent and will not add the managed block twice
 
 ## Supported Toolchains
 
@@ -234,6 +263,7 @@ Example:
 - `services` exists in the schema but is not actively used yet
 - `ws bind` stores the project location in `project_path`
 - `ws unbind` clears `project_path` without deleting the workspace runtime
+- `open` resolves a workspace from a project path and auto-creates/binds one on first open when needed
 - `ws install` downloads and installs attached toolchains into the shared Groot toolchain root
 - `ws gc` removes unreferenced toolchain versions from the shared Groot toolchain root
 - `ws shell` ensures attached toolchains are installed, prepends their `bin` directories to `PATH`, and sets toolchain-specific env vars when needed
