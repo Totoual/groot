@@ -203,6 +203,154 @@ func TestUnbindWorkspaceClearsProjectPath(t *testing.T) {
 	}
 }
 
+func TestFindWorkspaceByProjectPathReturnsBoundWorkspace(t *testing.T) {
+	root := t.TempDir()
+	app := NewApp(root)
+
+	if err := app.CreateNewWorkspace("crawlly"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+
+	projectPath := filepath.Join(root, "repos", "crawlly")
+	if err := os.MkdirAll(projectPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := app.BindWorkspace("crawlly", projectPath); err != nil {
+		t.Fatalf("BindWorkspace returned error: %v", err)
+	}
+
+	got, err := app.FindWorkspaceByProjectPath(projectPath)
+	if err != nil {
+		t.Fatalf("FindWorkspaceByProjectPath returned error: %v", err)
+	}
+	if got != "crawlly" {
+		t.Fatalf("FindWorkspaceByProjectPath = %q, want %q", got, "crawlly")
+	}
+}
+
+func TestFindWorkspaceByProjectPathExpandsTildePath(t *testing.T) {
+	root := t.TempDir()
+	homeDir := filepath.Join(root, "home")
+	projectPath := filepath.Join(homeDir, "dev", "crawlly")
+
+	if err := os.MkdirAll(projectPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+
+	t.Setenv("HOME", homeDir)
+
+	app := NewApp(root)
+	if err := app.CreateNewWorkspace("crawlly"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+	if err := app.BindWorkspace("crawlly", "~/dev/crawlly"); err != nil {
+		t.Fatalf("BindWorkspace returned error: %v", err)
+	}
+
+	got, err := app.FindWorkspaceByProjectPath("~/dev/crawlly")
+	if err != nil {
+		t.Fatalf("FindWorkspaceByProjectPath returned error: %v", err)
+	}
+	if got != "crawlly" {
+		t.Fatalf("FindWorkspaceByProjectPath = %q, want %q", got, "crawlly")
+	}
+}
+
+func TestFindWorkspaceByProjectPathMatchesSymlinkEquivalentPath(t *testing.T) {
+	root := t.TempDir()
+	app := NewApp(root)
+
+	if err := app.CreateNewWorkspace("crawlly"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+
+	realPath := filepath.Join(root, "repos", "crawlly")
+	if err := os.MkdirAll(realPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := app.BindWorkspace("crawlly", realPath); err != nil {
+		t.Fatalf("BindWorkspace returned error: %v", err)
+	}
+
+	linkPath := filepath.Join(root, "links", "crawlly")
+	if err := os.MkdirAll(filepath.Dir(linkPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := os.Symlink(realPath, linkPath); err != nil {
+		t.Fatalf("Symlink returned error: %v", err)
+	}
+
+	got, err := app.FindWorkspaceByProjectPath(linkPath)
+	if err != nil {
+		t.Fatalf("FindWorkspaceByProjectPath returned error: %v", err)
+	}
+	if got != "crawlly" {
+		t.Fatalf("FindWorkspaceByProjectPath = %q, want %q", got, "crawlly")
+	}
+}
+
+func TestFindWorkspaceByProjectPathRejectsUnknownPath(t *testing.T) {
+	root := t.TempDir()
+	app := NewApp(root)
+
+	if err := app.CreateNewWorkspace("crawlly"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+
+	projectPath := filepath.Join(root, "repos", "crawlly")
+	if err := os.MkdirAll(projectPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := app.BindWorkspace("crawlly", projectPath); err != nil {
+		t.Fatalf("BindWorkspace returned error: %v", err)
+	}
+
+	otherPath := filepath.Join(root, "repos", "other")
+	if err := os.MkdirAll(otherPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+
+	_, err := app.FindWorkspaceByProjectPath(otherPath)
+	if err == nil {
+		t.Fatal("expected FindWorkspaceByProjectPath to fail for unknown path")
+	}
+	if !strings.Contains(err.Error(), "no workspace bound") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestFindWorkspaceByProjectPathRejectsDuplicateBindings(t *testing.T) {
+	root := t.TempDir()
+	app := NewApp(root)
+
+	for _, name := range []string{"crawlly-a", "crawlly-b"} {
+		if err := app.CreateNewWorkspace(name); err != nil {
+			t.Fatalf("CreateNewWorkspace returned error: %v", err)
+		}
+	}
+
+	projectPath := filepath.Join(root, "repos", "crawlly")
+	if err := os.MkdirAll(projectPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	for _, name := range []string{"crawlly-a", "crawlly-b"} {
+		if err := app.BindWorkspace(name, projectPath); err != nil {
+			t.Fatalf("BindWorkspace returned error: %v", err)
+		}
+	}
+
+	_, err := app.FindWorkspaceByProjectPath(projectPath)
+	if err == nil {
+		t.Fatal("expected FindWorkspaceByProjectPath to fail for duplicate bindings")
+	}
+	if !strings.Contains(err.Error(), "multiple workspaces bound") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(err.Error(), "crawlly-a") || !strings.Contains(err.Error(), "crawlly-b") {
+		t.Fatalf("expected duplicate workspace names in error, got %v", err)
+	}
+}
+
 func TestAttachToWorkspacePersistsPackages(t *testing.T) {
 	root := t.TempDir()
 	app := NewApp(root)

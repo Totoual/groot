@@ -49,7 +49,7 @@ This is the stable control plane Groot should expose for shells, IDE launchers, 
 This layer should make Groot feel simple for normal developers by letting an agent drive the lower-level Groot primitives.
 
 - [ ] Decide whether MCP is the primary agent adapter for Groot.
-- [ ] Add workspace lookup by `project_path`.
+- [x] Add workspace lookup by `project_path`.
 - [ ] Define the agent-to-Groot contract: create, bind, attach, install, exec, inspect.
 - [ ] Decide the primary agent entrypoint:
   - `groot agent "<intent>"`
