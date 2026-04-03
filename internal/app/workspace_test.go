@@ -700,7 +700,9 @@ func TestWorkspaceOpenRuntimeKeepsHostHomeAndInjectsToolchains(t *testing.T) {
 	root := t.TempDir()
 	app := NewApp(root)
 	hostHome := filepath.Join(root, "host-home")
+	hostXDGConfig := filepath.Join(hostHome, ".config")
 	t.Setenv("HOME", hostHome)
+	t.Setenv("XDG_CONFIG_HOME", hostXDGConfig)
 	t.Setenv("PATH", strings.Join([]string{
 		filepath.Join(hostHome, ".pyenv", "shims"),
 		"/opt/homebrew/bin",
@@ -761,8 +763,8 @@ func TestWorkspaceOpenRuntimeKeepsHostHomeAndInjectsToolchains(t *testing.T) {
 	if !strings.Contains(envMap["PATH"], filepath.Join(hostHome, ".pyenv", "shims")) {
 		t.Fatalf("expected soft open PATH to keep host-home entries, got %q", envMap["PATH"])
 	}
-	if _, ok := envMap["XDG_CONFIG_HOME"]; ok {
-		t.Fatalf("expected XDG_CONFIG_HOME to stay unset in soft open mode, got %q", envMap["XDG_CONFIG_HOME"])
+	if envMap["XDG_CONFIG_HOME"] != hostXDGConfig {
+		t.Fatalf("XDG_CONFIG_HOME = %q, want %q", envMap["XDG_CONFIG_HOME"], hostXDGConfig)
 	}
 }
 
