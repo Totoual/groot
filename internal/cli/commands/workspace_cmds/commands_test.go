@@ -185,6 +185,65 @@ func TestGCCmdRunRemovesUnreferencedToolchains(t *testing.T) {
 	}
 }
 
+func TestOpenCmdRunOpensWorkspaceWithSoftRuntime(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+	hostHome := filepath.Join(root, "host-home")
+	t.Setenv("HOME", hostHome)
+	t.Setenv("PATH", "/usr/bin:/bin")
+
+	if err := a.CreateNewWorkspace("crawlly"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+
+	projectPath := filepath.Join(root, "repos", "crawlly")
+	if err := os.MkdirAll(projectPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := a.BindWorkspace("crawlly", projectPath); err != nil {
+		t.Fatalf("BindWorkspace returned error: %v", err)
+	}
+
+	scriptPath := filepath.Join(root, "open-capture.sh")
+	script := "#!/bin/sh\npwd > open-pwd.txt\nprintf '%s' \"$HOME\" > open-home.txt\nprintf '%s' \"$1\" > open-arg.txt\n"
+	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("WriteFile returned error: %v", err)
+	}
+
+	if err := (&OpenCmd{}).Run(a, []string{"crawlly", "--ide", scriptPath}); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	wantProjectPath, err := filepath.EvalSymlinks(projectPath)
+	if err != nil {
+		t.Fatalf("EvalSymlinks returned error: %v", err)
+	}
+
+	gotPwd, err := os.ReadFile(filepath.Join(projectPath, "open-pwd.txt"))
+	if err != nil {
+		t.Fatalf("ReadFile returned error: %v", err)
+	}
+	if strings.TrimSpace(string(gotPwd)) != wantProjectPath {
+		t.Fatalf("pwd = %q, want %q", strings.TrimSpace(string(gotPwd)), wantProjectPath)
+	}
+
+	gotHome, err := os.ReadFile(filepath.Join(projectPath, "open-home.txt"))
+	if err != nil {
+		t.Fatalf("ReadFile returned error: %v", err)
+	}
+	if strings.TrimSpace(string(gotHome)) != hostHome {
+		t.Fatalf("HOME = %q, want %q", strings.TrimSpace(string(gotHome)), hostHome)
+	}
+
+	gotArg, err := os.ReadFile(filepath.Join(projectPath, "open-arg.txt"))
+	if err != nil {
+		t.Fatalf("ReadFile returned error: %v", err)
+	}
+	if strings.TrimSpace(string(gotArg)) != projectPath {
+		t.Fatalf("arg = %q, want %q", strings.TrimSpace(string(gotArg)), projectPath)
+	}
+}
+
 func TestExecCmdRunExecutesCommandInWorkspace(t *testing.T) {
 	root := t.TempDir()
 	a := app.NewApp(root)
@@ -279,6 +338,7 @@ func TestWorkspaceCmdsRequireExpectedArgs(t *testing.T) {
 		{name: "env", cmd: &EnvCmd{}, args: nil},
 		{name: "exec", cmd: &ExecCmd{}, args: []string{"crawlly"}},
 		{name: "gc", cmd: &GCCmd{}, args: []string{"extra"}},
+		{name: "open", cmd: &OpenCmd{}, args: nil},
 		{name: "attach", cmd: &AttachCmd{}, args: []string{"crawlly"}},
 		{name: "install", cmd: &InstallCmd{}, args: nil},
 		{name: "shell", cmd: &ShellCmd{}, args: nil},

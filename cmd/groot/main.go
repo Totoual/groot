@@ -25,6 +25,7 @@ func main() {
 		&workspacecmds.EnvCmd{},
 		&workspacecmds.ExecCmd{},
 		&workspacecmds.GCCmd{},
+		&workspacecmds.OpenCmd{},
 		&workspacecmds.ShellCmd{},
 		&workspacecmds.AttachCmd{},
 		&workspacecmds.InstallCmd{},

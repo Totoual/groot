@@ -32,6 +32,13 @@ var runtimePassthroughEnvKeys = []string{
 	"XAUTHORITY",
 }
 
+type workspaceRuntimeMode struct {
+	baseEnv       func() []string
+	hostPath      func() []string
+	isolateHome   bool
+	includePrompt bool
+}
+
 func (a *App) CreateNewWorkspace(name string) error {
 	if name == "" || name == "." || name == ".." || strings.Contains(name, "/") {
 		return fmt.Errorf("invalid workspace name %q", name)
@@ -118,6 +125,30 @@ func (a *App) ExecWorkspace(name, command string, args []string) error {
 	return cmd.Run()
 }
 
+func (a *App) OpenWorkspace(name, program string, args []string) error {
+	if program == "" {
+		program = "code"
+	}
+
+	env, workDir, err := a.workspaceOpenRuntime(name)
+	if err != nil {
+		return err
+	}
+
+	openArgs := append([]string{}, args...)
+	if len(openArgs) == 0 {
+		openArgs = defaultOpenArgs(program, workDir)
+	}
+
+	cmd := exec.Command(program, openArgs...)
+	cmd.Dir = workDir
+	cmd.Env = env
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	return cmd.Run()
+}
+
 func (a *App) WorkspaceEnv(name string) (string, error) {
 	env, workDir, err := a.workspaceRuntime(name)
 	if err != nil {
@@ -152,6 +183,24 @@ func (a *App) WorkspaceEnv(name string) (string, error) {
 }
 
 func (a *App) workspaceRuntime(name string) ([]string, string, error) {
+	return a.workspaceRuntimeForMode(name, workspaceRuntimeMode{
+		baseEnv:       a.runtimeBaseEnv,
+		hostPath:      a.runtimeHostPathEntries,
+		isolateHome:   true,
+		includePrompt: true,
+	})
+}
+
+func (a *App) workspaceOpenRuntime(name string) ([]string, string, error) {
+	return a.workspaceRuntimeForMode(name, workspaceRuntimeMode{
+		baseEnv:       os.Environ,
+		hostPath:      a.runtimeOpenHostPathEntries,
+		isolateHome:   false,
+		includePrompt: false,
+	})
+}
+
+func (a *App) workspaceRuntimeForMode(name string, mode workspaceRuntimeMode) ([]string, string, error) {
 	wsPath, err := a.EnsureWorkspace(name)
 	if err != nil {
 		return nil, "", err
@@ -194,32 +243,37 @@ func (a *App) workspaceRuntime(name string) ([]string, string, error) {
 		workDir = manifest.ProjectPath
 	}
 
-	env := a.runtimeBaseEnv()
-	env = a.setEnv(env, "HOME", wsHome)
-	env = a.setEnv(env, "XDG_CONFIG_HOME", filepath.Join(wsHome, ".config"))
-	env = a.setEnv(env, "XDG_CACHE_HOME", filepath.Join(wsHome, ".cache"))
-	env = a.setEnv(env, "XDG_DATA_HOME", filepath.Join(wsHome, ".local", "share"))
+	env := mode.baseEnv()
 	env = a.setEnv(env, "GROOT_WORKSPACE", name)
 	env = a.setEnv(env, "GROOT_WORKSPACE_DIR", wsPath)
+	env = a.setEnv(env, "GROOT_WORKDIR", workDir)
+	if mode.isolateHome {
+		env = a.setEnv(env, "HOME", wsHome)
+		env = a.setEnv(env, "XDG_CONFIG_HOME", filepath.Join(wsHome, ".config"))
+		env = a.setEnv(env, "XDG_CACHE_HOME", filepath.Join(wsHome, ".cache"))
+		env = a.setEnv(env, "XDG_DATA_HOME", filepath.Join(wsHome, ".local", "share"))
+	}
 	for key, value := range toolchainEnv {
 		env = a.setEnv(env, key, value)
 	}
-	pathParts := a.uniquePaths(toolchainBinDirs, a.runtimeHostPathEntries())
+	pathParts := a.uniquePaths(toolchainBinDirs, mode.hostPath())
 	if len(pathParts) > 0 {
 		env = a.setEnv(env, "PATH", strings.Join(pathParts, string(os.PathListSeparator)))
 	}
 
-	shell := os.Getenv("SHELL")
-	if shell == "" {
-		shell = "/bin/sh"
-	}
-	base := filepath.Base(shell)
-	if base == "zsh" {
-		p := fmt.Sprintf("(groot:%s) %%n@%%m %%1~ %%# ", name)
-		env = a.setEnv(env, "PROMPT", p)
-		env = a.setEnv(env, "PS1", p)
-	} else {
-		env = a.setEnv(env, "PS1", fmt.Sprintf("(groot:%s) ", name)+"$PS1")
+	if mode.includePrompt {
+		shell := os.Getenv("SHELL")
+		if shell == "" {
+			shell = "/bin/sh"
+		}
+		base := filepath.Base(shell)
+		if base == "zsh" {
+			p := fmt.Sprintf("(groot:%s) %%n@%%m %%1~ %%# ", name)
+			env = a.setEnv(env, "PROMPT", p)
+			env = a.setEnv(env, "PS1", p)
+		} else {
+			env = a.setEnv(env, "PS1", fmt.Sprintf("(groot:%s) ", name)+"$PS1")
+		}
 	}
 
 	return env, workDir, nil
@@ -265,6 +319,26 @@ func (a *App) runtimeHostPathEntries() []string {
 	return filtered
 }
 
+func (a *App) runtimeOpenHostPathEntries() []string {
+	currentPath := os.Getenv("PATH")
+	if currentPath == "" {
+		return nil
+	}
+
+	entries := make([]string, 0)
+	for _, entry := range strings.Split(currentPath, string(os.PathListSeparator)) {
+		if entry == "" {
+			continue
+		}
+		clean := filepath.Clean(entry)
+		if !filepath.IsAbs(clean) {
+			continue
+		}
+		entries = append(entries, clean)
+	}
+	return entries
+}
+
 func (a *App) uniquePaths(groups ...[]string) []string {
 	seen := make(map[string]struct{})
 	paths := make([]string, 0)
@@ -304,6 +378,16 @@ func shellQuote(value string) string {
 		return "''"
 	}
 	return "'" + strings.ReplaceAll(value, "'", `'"'"'`) + "'"
+}
+
+func defaultOpenArgs(program, workDir string) []string {
+	base := filepath.Base(program)
+	switch base {
+	case "code", "cursor", "code-insiders":
+		return []string{"-n", workDir}
+	default:
+		return []string{workDir}
+	}
 }
 
 func (a *App) AttachToWorkspace(name string, args []string) error {

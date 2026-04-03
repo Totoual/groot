@@ -696,6 +696,127 @@ func TestWorkspaceEnvPrintsShellExportsWithoutPromptVars(t *testing.T) {
 	}
 }
 
+func TestWorkspaceOpenRuntimeKeepsHostHomeAndInjectsToolchains(t *testing.T) {
+	root := t.TempDir()
+	app := NewApp(root)
+	hostHome := filepath.Join(root, "host-home")
+	t.Setenv("HOME", hostHome)
+	t.Setenv("PATH", strings.Join([]string{
+		filepath.Join(hostHome, ".pyenv", "shims"),
+		"/opt/homebrew/bin",
+		"/usr/bin",
+	}, ":"))
+
+	projectPath := filepath.Join(root, "repos", "crawlly")
+	if err := os.MkdirAll(projectPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+
+	if err := app.CreateNewWorkspace("crawlly"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+	if err := app.BindWorkspace("crawlly", projectPath); err != nil {
+		t.Fatalf("BindWorkspace returned error: %v", err)
+	}
+
+	stub := &stubInstaller{
+		name:   "stub",
+		binDir: "/toolchains/stub/1.0/bin",
+		env: map[string]string{
+			"STUB_HOME": "/toolchains/stub/1.0",
+		},
+	}
+	app.toolchains = map[string]itoolchain.ToolchainInstaller{
+		"stub": stub,
+	}
+
+	if err := app.AttachToWorkspace("crawlly", []string{"stub@1.0"}); err != nil {
+		t.Fatalf("AttachToWorkspace returned error: %v", err)
+	}
+
+	env, workDir, err := app.workspaceOpenRuntime("crawlly")
+	if err != nil {
+		t.Fatalf("workspaceOpenRuntime returned error: %v", err)
+	}
+
+	envMap := envSliceToMap(env)
+	if workDir != projectPath {
+		t.Fatalf("workDir = %q, want %q", workDir, projectPath)
+	}
+	if envMap["HOME"] != hostHome {
+		t.Fatalf("HOME = %q, want %q", envMap["HOME"], hostHome)
+	}
+	if envMap["GROOT_WORKSPACE"] != "crawlly" {
+		t.Fatalf("GROOT_WORKSPACE = %q", envMap["GROOT_WORKSPACE"])
+	}
+	if envMap["GROOT_WORKDIR"] != projectPath {
+		t.Fatalf("GROOT_WORKDIR = %q, want %q", envMap["GROOT_WORKDIR"], projectPath)
+	}
+	if envMap["STUB_HOME"] != "/toolchains/stub/1.0" {
+		t.Fatalf("STUB_HOME = %q", envMap["STUB_HOME"])
+	}
+	if !strings.HasPrefix(envMap["PATH"], "/toolchains/stub/1.0/bin:") {
+		t.Fatalf("PATH = %q", envMap["PATH"])
+	}
+	if !strings.Contains(envMap["PATH"], filepath.Join(hostHome, ".pyenv", "shims")) {
+		t.Fatalf("expected soft open PATH to keep host-home entries, got %q", envMap["PATH"])
+	}
+	if _, ok := envMap["XDG_CONFIG_HOME"]; ok {
+		t.Fatalf("expected XDG_CONFIG_HOME to stay unset in soft open mode, got %q", envMap["XDG_CONFIG_HOME"])
+	}
+}
+
+func TestOpenWorkspaceRunsProgramInSoftOpenRuntime(t *testing.T) {
+	root := t.TempDir()
+	app := NewApp(root)
+	hostHome := filepath.Join(root, "host-home")
+	t.Setenv("HOME", hostHome)
+	t.Setenv("PATH", "/usr/bin:/bin")
+
+	projectPath := filepath.Join(root, "repos", "crawlly")
+	if err := os.MkdirAll(projectPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+
+	if err := app.CreateNewWorkspace("crawlly"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+	if err := app.BindWorkspace("crawlly", projectPath); err != nil {
+		t.Fatalf("BindWorkspace returned error: %v", err)
+	}
+
+	scriptPath := filepath.Join(root, "open-capture.sh")
+	script := "#!/bin/sh\npwd > open-pwd.txt\nprintf '%s' \"$GROOT_WORKSPACE\" > open-workspace.txt\nprintf '%s' \"$GROOT_WORKDIR\" > open-workdir.txt\nprintf '%s' \"$HOME\" > open-home.txt\nprintf '%s' \"$1\" > open-arg.txt\n"
+	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("WriteFile returned error: %v", err)
+	}
+
+	if err := app.OpenWorkspace("crawlly", scriptPath, nil); err != nil {
+		t.Fatalf("OpenWorkspace returned error: %v", err)
+	}
+
+	wantProjectPath, err := filepath.EvalSymlinks(projectPath)
+	if err != nil {
+		t.Fatalf("EvalSymlinks returned error: %v", err)
+	}
+
+	for file, want := range map[string]string{
+		"open-pwd.txt":       wantProjectPath,
+		"open-workspace.txt": "crawlly",
+		"open-workdir.txt":   projectPath,
+		"open-home.txt":      hostHome,
+		"open-arg.txt":       projectPath,
+	} {
+		got, err := os.ReadFile(filepath.Join(projectPath, file))
+		if err != nil {
+			t.Fatalf("ReadFile %s returned error: %v", file, err)
+		}
+		if strings.TrimSpace(string(got)) != want {
+			t.Fatalf("%s = %q, want %q", file, strings.TrimSpace(string(got)), want)
+		}
+	}
+}
+
 func envSliceToMap(env []string) map[string]string {
 	result := make(map[string]string, len(env))
 	for _, entry := range env {

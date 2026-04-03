@@ -69,10 +69,14 @@ This layer should make Groot feel simple for normal developers by letting an age
 This layer decides how Groot keeps project isolation without breaking normal IDE behavior.
 
 - [ ] Define the boundary between project runtime state, agent workspace state, and GUI IDE identity.
+- [x] Prioritize a reliable IDE launch story as the next product milestone after Layer 1.
 - [ ] Decide the default IDE launch policy:
   - strict workspace mode
   - soft IDE mode
   - editor-specific behavior
+- [x] Implement a soft IDE mode that preserves project cwd, toolchain PATH, and `GROOT_*` vars without forcing full GUI `HOME` isolation.
+- [x] Add a dedicated IDE launcher command, for example `groot ws open <name> --ide code`.
+- [ ] Verify first-launch behavior for a brand-new workspace in VS Code before treating IDE support as working.
 - [ ] Define which environment variables should be preserved for GUI IDE launches and which should stay isolated.
 - [ ] Decide where project-scoped agent memory and conversation state should live inside Groot.
 - [ ] Ensure IDEs can open the bound project path without forcing a separate GUI app identity.
@@ -115,8 +119,8 @@ This layer can add direct human-facing convenience commands after the runtime an
 ## Recommended Order
 
 1. Finish the core runtime.
-2. Define the IDE strategy and state boundaries clearly.
-3. Add the agent-facing contract and agent-driven setup/open flows.
+2. Prioritize the IDE strategy and make IDE launch reliable for fresh workspaces.
+3. Define the agent-facing contract and agent-driven setup/open flows.
 4. Add the machine-readable agent foundation on top of the same runtime.
 5. Add optional direct human shortcuts on top of the same runtime.
 
