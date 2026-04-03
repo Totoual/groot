@@ -131,21 +131,43 @@ func TestShellHookCmdInstallRejectsUnsupportedShell(t *testing.T) {
 }
 
 func captureCommandStdout(fn func() error) (string, error) {
+	stdout, _, err := captureCommandOutput(fn)
+	return stdout, err
+}
+
+func captureCommandOutput(fn func() error) (string, string, error) {
 	oldStdout := os.Stdout
-	r, w, err := os.Pipe()
+	oldStderr := os.Stderr
+
+	stdoutR, stdoutW, err := os.Pipe()
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
-	defer r.Close()
+	defer stdoutR.Close()
 
-	os.Stdout = w
+	stderrR, stderrW, err := os.Pipe()
+	if err != nil {
+		_ = stdoutW.Close()
+		return "", "", err
+	}
+	defer stderrR.Close()
+
+	os.Stdout = stdoutW
+	os.Stderr = stderrW
 	runErr := fn()
-	_ = w.Close()
+	_ = stdoutW.Close()
+	_ = stderrW.Close()
 	os.Stdout = oldStdout
+	os.Stderr = oldStderr
 
-	var buf bytes.Buffer
-	if _, err := buf.ReadFrom(r); err != nil {
-		return "", err
+	var stdoutBuf bytes.Buffer
+	if _, err := stdoutBuf.ReadFrom(stdoutR); err != nil {
+		return "", "", err
 	}
-	return buf.String(), runErr
+	var stderrBuf bytes.Buffer
+	if _, err := stderrBuf.ReadFrom(stderrR); err != nil {
+		return "", "", err
+	}
+
+	return stdoutBuf.String(), stderrBuf.String(), runErr
 }

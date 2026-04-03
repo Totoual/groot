@@ -34,14 +34,17 @@ func TestExecCmdRunReusesWorkspaceBoundToProjectPath(t *testing.T) {
 	}
 
 	outFile := filepath.Join(root, "pwd.txt")
-	output, err := captureCommandStdout(func() error {
+	stdout, stderr, err := captureCommandOutput(func() error {
 		return (&ExecCmd{}).Run(a, []string{projectPath, scriptPath, outFile})
 	})
 	if err != nil {
 		t.Fatalf("Run returned error: %v", err)
 	}
-	if strings.TrimSpace(output) != "" {
-		t.Fatalf("expected reused-exec wrapper to stay quiet, got %q", output)
+	if strings.TrimSpace(stdout) != "" {
+		t.Fatalf("expected reused-exec stdout to stay quiet, got %q", stdout)
+	}
+	if strings.TrimSpace(stderr) != "" {
+		t.Fatalf("expected reused-exec stderr to stay quiet, got %q", stderr)
 	}
 
 	got, err := os.ReadFile(outFile)
@@ -75,14 +78,17 @@ func TestExecCmdRunCreatesWorkspaceForFirstSeenProjectPath(t *testing.T) {
 	}
 
 	outFile := filepath.Join(root, "workspace.txt")
-	output, err := captureCommandStdout(func() error {
+	stdout, stderr, err := captureCommandOutput(func() error {
 		return (&ExecCmd{}).Run(a, []string{projectPath, scriptPath, outFile})
 	})
 	if err != nil {
 		t.Fatalf("Run returned error: %v", err)
 	}
-	if !strings.Contains(output, `Created workspace "the_grime_tcg"`) {
-		t.Fatalf("expected creation message, got %q", output)
+	if strings.TrimSpace(stdout) != "" {
+		t.Fatalf("expected first-exec stdout to stay quiet, got %q", stdout)
+	}
+	if !strings.Contains(stderr, `Created workspace "the_grime_tcg"`) {
+		t.Fatalf("expected creation message on stderr, got %q", stderr)
 	}
 
 	got, err := os.ReadFile(outFile)

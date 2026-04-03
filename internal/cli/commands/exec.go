@@ -42,12 +42,9 @@ func (c *ExecCmd) Run(a *app.App, args []string) error {
 	command := fs.Arg(1)
 	commandArgs := fs.Args()[2:]
 
-	workspaceName, created, err := a.ResolveOrCreateWorkspaceByProjectPath(projectPath)
+	workspaceName, err := resolveProjectWorkspace(a, projectPath)
 	if err != nil {
-		return fmt.Errorf("couldn't resolve workspace for project path: %w", err)
-	}
-	if created {
-		fmt.Fprintf(os.Stdout, "Created workspace %q for %s\n", workspaceName, projectPath)
+		return err
 	}
 	return a.ExecWorkspace(workspaceName, command, commandArgs)
 }

@@ -643,6 +643,9 @@ func TestWorkspaceRuntimeUsesWorkspaceRootWhenUnbound(t *testing.T) {
 	if envMap["GROOT_WORKSPACE"] != "crawlly" {
 		t.Fatalf("GROOT_WORKSPACE = %q", envMap["GROOT_WORKSPACE"])
 	}
+	if envMap["GROOT_HOME"] != root {
+		t.Fatalf("GROOT_HOME = %q, want %q", envMap["GROOT_HOME"], root)
+	}
 	if envMap["GROOT_WORKSPACE_DIR"] != wsPath {
 		t.Fatalf("GROOT_WORKSPACE_DIR = %q", envMap["GROOT_WORKSPACE_DIR"])
 	}
@@ -710,6 +713,9 @@ func TestWorkspaceRuntimeUsesBoundProjectPathAndInjectsToolchainEnv(t *testing.T
 	envMap := envSliceToMap(env)
 	if envMap["STUB_HOME"] != "/toolchains/stub/1.0" {
 		t.Fatalf("STUB_HOME = %q", envMap["STUB_HOME"])
+	}
+	if envMap["GROOT_HOME"] != root {
+		t.Fatalf("GROOT_HOME = %q, want %q", envMap["GROOT_HOME"], root)
 	}
 	if !strings.HasPrefix(envMap["PATH"], "/toolchains/stub/1.0/bin:") {
 		t.Fatalf("PATH = %q", envMap["PATH"])
@@ -906,6 +912,9 @@ func TestWorkspaceEnvPrintsShellExportsWithoutPromptVars(t *testing.T) {
 	if !strings.Contains(output, "export GROOT_WORKSPACE='crawlly'\n") {
 		t.Fatalf("expected GROOT_WORKSPACE export, got %q", output)
 	}
+	if !strings.Contains(output, "export GROOT_HOME="+shellQuote(root)+"\n") {
+		t.Fatalf("expected GROOT_HOME export, got %q", output)
+	}
 	if !strings.Contains(output, "export GROOT_WORKDIR="+shellQuote(projectPath)+"\n") {
 		t.Fatalf("expected GROOT_WORKDIR export, got %q", output)
 	}
@@ -980,6 +989,9 @@ func TestWorkspaceOpenRuntimeKeepsHostHomeAndInjectsToolchains(t *testing.T) {
 	}
 	if envMap["GROOT_WORKSPACE"] != "crawlly" {
 		t.Fatalf("GROOT_WORKSPACE = %q", envMap["GROOT_WORKSPACE"])
+	}
+	if envMap["GROOT_HOME"] != root {
+		t.Fatalf("GROOT_HOME = %q, want %q", envMap["GROOT_HOME"], root)
 	}
 	if envMap["GROOT_WORKDIR"] != projectPath {
 		t.Fatalf("GROOT_WORKDIR = %q, want %q", envMap["GROOT_WORKDIR"], projectPath)

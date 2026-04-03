@@ -280,6 +280,7 @@ func (a *App) workspaceRuntimeForMode(name string, mode workspaceRuntimeMode) ([
 	}
 
 	env := mode.baseEnv()
+	env = a.setEnv(env, "GROOT_HOME", a.Root)
 	env = a.setEnv(env, "GROOT_WORKSPACE", name)
 	env = a.setEnv(env, "GROOT_WORKSPACE_DIR", wsPath)
 	env = a.setEnv(env, "GROOT_WORKDIR", workDir)
