@@ -115,7 +115,7 @@ This layer makes Groot usable by a top-level agent without inventing a separate 
 This layer can add direct human-facing convenience commands after the runtime and agent model are stable.
 
 - [x] Decide whether `groot open <path>` should exist as a first-class non-agent shortcut.
-- [ ] Decide whether `groot enter <path>` should exist as a shell-first shortcut.
+- [x] Decide whether `groot enter <path>` should exist as a shell-first shortcut.
 - [ ] Consider `groot init <name> --bind <path>` or `groot init <path>` as an explicit setup shortcut.
 - [ ] Keep human shortcuts thin wrappers over the same runtime and agent-capable primitives.
 

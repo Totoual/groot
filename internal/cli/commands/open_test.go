@@ -42,7 +42,7 @@ func TestOpenCmdRunReusesWorkspaceBoundToProjectPath(t *testing.T) {
 		t.Fatalf("Run returned error: %v", err)
 	}
 	if strings.TrimSpace(output) != "" {
-		t.Fatalf("expected open wrapper to stay quiet, got %q", output)
+		t.Fatalf("expected reused-open wrapper to stay quiet, got %q", output)
 	}
 
 	gotWorkspace, err := os.ReadFile(filepath.Join(projectPath, "open-workspace.txt"))
@@ -78,8 +78,8 @@ func TestOpenCmdRunCreatesWorkspaceForFirstSeenProjectPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run returned error: %v", err)
 	}
-	if strings.TrimSpace(output) != "" {
-		t.Fatalf("expected open wrapper to stay quiet, got %q", output)
+	if !strings.Contains(output, `Created workspace "the_grime_tcg"`) {
+		t.Fatalf("expected creation message, got %q", output)
 	}
 
 	gotWorkspace, err := os.ReadFile(filepath.Join(projectPath, "open-workspace.txt"))

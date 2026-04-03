@@ -19,6 +19,8 @@ The agent-facing direction is for Groot to expose the same runtime core through 
 ## Current Scope
 
 - Initialize a Groot root under `~/.groot`
+- Enter a project path by resolving or auto-creating the matching workspace
+- Execute one-off commands against a project path by resolving or auto-creating the matching workspace
 - Open a project path by resolving or auto-creating the matching workspace
 - Create and delete workspaces
 - Bind a workspace to an existing project directory
@@ -102,6 +104,8 @@ That likely means:
 ## Commands
 
 ```bash
+groot enter <path>
+groot exec <path> <cmd> [args...]
 groot init
 groot open <path>
 groot shell-hook
@@ -128,6 +132,15 @@ groot open ~/Documents/crawlly
 ```
 
 `groot open <path>` resolves the bound workspace for that repo path and, on first open, creates and binds a workspace automatically before launching the IDE.
+
+## Path-Based Shell And Exec
+
+```bash
+groot enter ~/Documents/crawlly
+groot exec ~/Documents/crawlly git status
+```
+
+These commands resolve the workspace by `project_path` first and create/bind one automatically on first use when needed.
 
 ## Manual Workspace Flow
 
@@ -264,6 +277,8 @@ Example:
 - `ws bind` stores the project location in `project_path`
 - `ws unbind` clears `project_path` without deleting the workspace runtime
 - `open` resolves a workspace from a project path and auto-creates/binds one on first open when needed
+- `enter` resolves a workspace from a project path and opens the strict workspace shell
+- `exec` resolves a workspace from a project path and runs one strict-runtime command
 - `ws install` downloads and installs attached toolchains into the shared Groot toolchain root
 - `ws gc` removes unreferenced toolchain versions from the shared Groot toolchain root
 - `ws shell` ensures attached toolchains are installed, prepends their `bin` directories to `PATH`, and sets toolchain-specific env vars when needed
