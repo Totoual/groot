@@ -15,7 +15,7 @@ This is the stable control plane Groot should expose for shells, IDE launchers, 
 - [x] Extract a reusable workspace environment builder for shell and exec flows.
 - [x] Add `ExecWorkspace(name, command, args)` in the app layer.
 - [x] Add `groot ws exec <workspace> <cmd> [args...]`.
-- [ ] Add `groot ws env <workspace>` to expose the runtime environment for IDE launching.
+- [x] Add `groot ws env <workspace>` to expose the runtime environment for IDE launching.
 
 ### Manifest And CLI Hardening
 
@@ -27,27 +27,28 @@ This is the stable control plane Groot should expose for shells, IDE launchers, 
 
 ### Installer Vertical Slice
 
-- [ ] Keep `groot ws install <workspace>` as the install/apply entrypoint.
-- [ ] Finalize the installer interface owned by the app runtime.
-- [ ] Complete the Go installer vertical slice end-to-end.
-- [ ] Verify downloaded archives before extraction.
-- [ ] Harden extraction against path traversal and partial installs.
+- [x] Keep `groot ws install <workspace>` as the install/apply entrypoint.
+- [x] Finalize the installer interface owned by the app runtime.
+- [x] Complete the Go installer vertical slice end-to-end.
+- [x] Verify downloaded archives before extraction.
+- [x] Harden extraction against path traversal and partial installs.
 - [x] Reuse installed toolchains in both `ws shell` and `ws exec`.
 
 ### Tests And Cleanup
 
 - [x] Add tests for manifest load/save behavior.
-- [ ] Add tests for bind/unbind behavior.
+- [x] Add tests for bind/unbind behavior.
 - [x] Add tests for workspace env generation.
 - [x] Add tests for attach dedupe/update logic.
 - [x] Add tests for installer path helpers.
-- [ ] Add tests for checksum verification.
-- [ ] Add shared toolchain garbage collection after the runtime flow is stable.
+- [x] Add tests for checksum verification.
+- [x] Add shared toolchain garbage collection after the runtime flow is stable.
 
 ## Layer 2: Agent-Driven UX
 
 This layer should make Groot feel simple for normal developers by letting an agent drive the lower-level Groot primitives.
 
+- [ ] Decide whether MCP is the primary agent adapter for Groot.
 - [ ] Add workspace lookup by `project_path`.
 - [ ] Define the agent-to-Groot contract: create, bind, attach, install, exec, inspect.
 - [ ] Decide the primary agent entrypoint:
@@ -68,10 +69,14 @@ This layer should make Groot feel simple for normal developers by letting an age
 This layer decides how Groot keeps project isolation without breaking normal IDE behavior.
 
 - [ ] Define the boundary between project runtime state, agent workspace state, and GUI IDE identity.
+- [x] Prioritize a reliable IDE launch story as the next product milestone after Layer 1.
 - [ ] Decide the default IDE launch policy:
   - strict workspace mode
   - soft IDE mode
   - editor-specific behavior
+- [x] Implement a soft IDE mode that preserves project cwd, toolchain PATH, and `GROOT_*` vars without forcing full GUI `HOME` isolation.
+- [x] Add a dedicated IDE launcher command, for example `groot ws open <name> --ide code`.
+- [ ] Verify first-launch behavior for a brand-new workspace in VS Code before treating IDE support as working.
 - [ ] Define which environment variables should be preserved for GUI IDE launches and which should stay isolated.
 - [ ] Decide where project-scoped agent memory and conversation state should live inside Groot.
 - [ ] Ensure IDEs can open the bound project path without forcing a separate GUI app identity.
@@ -81,14 +86,25 @@ This layer decides how Groot keeps project isolation without breaking normal IDE
 
 This layer makes Groot usable by a top-level agent without inventing a separate runtime path.
 
+- [ ] Expose the core runtime through MCP tools backed by the same app layer.
+- [ ] Define the first MCP tool surface:
+  - `workspace_create`
+  - `workspace_bind`
+  - `workspace_attach`
+  - `workspace_install`
+  - `workspace_exec`
+  - `workspace_env`
+  - `workspace_inspect`
 - [ ] Add machine-readable command results for agent-driven flows.
 - [ ] Add machine-readable workspace inspection, for example `groot ws inspect <name> --json`.
 - [ ] Add machine-readable environment output in addition to shell exports.
+- [ ] Expose manifest, logs, and workspace metadata as agent-readable resources, likely through MCP resources.
 - [ ] Ensure `ws exec` works cleanly for non-interactive commands and long-running processes.
 - [ ] Expose logs, state, and workspace metadata in a predictable way.
 - [ ] Add deterministic workspace resolution from a repo path for agent use.
 - [ ] Define agent-side recovery behavior for partially configured workspaces.
 - [ ] Define the agent entry model around Groot primitives instead of direct host access.
+- [ ] Keep CLI and MCP surfaces backed by the same runtime core and data model.
 - [ ] Define import/export for project runtime state and agent workspace state.
 
 ## Layer 4: Human Shortcuts
@@ -103,8 +119,8 @@ This layer can add direct human-facing convenience commands after the runtime an
 ## Recommended Order
 
 1. Finish the core runtime.
-2. Define the IDE strategy and state boundaries clearly.
-3. Add the agent-facing contract and agent-driven setup/open flows.
+2. Prioritize the IDE strategy and make IDE launch reliable for fresh workspaces.
+3. Define the agent-facing contract and agent-driven setup/open flows.
 4. Add the machine-readable agent foundation on top of the same runtime.
 5. Add optional direct human shortcuts on top of the same runtime.
 

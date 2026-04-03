@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/totoual/groot/internal/helpers"
 	"github.com/totoual/groot/internal/itoolchain"
@@ -61,18 +62,46 @@ func installArchiveWithExtractorIfNeeded(
 		return err
 	}
 
-	if err := os.MkdirAll(installDir, 0o755); err != nil {
+	installParent := filepath.Dir(installDir)
+	if err := os.MkdirAll(installParent, 0o755); err != nil {
 		return err
 	}
+
+	relBinaryPath, err := filepath.Rel(installDir, binaryPath)
+	if err != nil {
+		return fmt.Errorf("resolve staged binary path: %w", err)
+	}
+	if relBinaryPath == ".." || strings.HasPrefix(relBinaryPath, ".."+string(os.PathSeparator)) {
+		return fmt.Errorf("binary path %q escapes install dir %q", binaryPath, installDir)
+	}
+
+	stagingDir, err := os.MkdirTemp(installParent, filepath.Base(installDir)+".tmp-*")
+	if err != nil {
+		return fmt.Errorf("create staging dir: %w", err)
+	}
+	defer func() {
+		if stagingDir != "" {
+			_ = os.RemoveAll(stagingDir)
+		}
+	}()
 
 	fmt.Println("Extracting", archivePath)
-	if err := extract(archivePath, installDir); err != nil {
+	if err := extract(archivePath, stagingDir); err != nil {
 		return err
 	}
 
-	if _, err := os.Stat(binaryPath); err != nil {
+	stagedBinaryPath := filepath.Join(stagingDir, relBinaryPath)
+	if _, err := os.Stat(stagedBinaryPath); err != nil {
 		return fmt.Errorf("toolchain installed but binary missing: %s", binaryPath)
 	}
+
+	if err := os.RemoveAll(installDir); err != nil {
+		return fmt.Errorf("remove existing install dir: %w", err)
+	}
+	if err := os.Rename(stagingDir, installDir); err != nil {
+		return fmt.Errorf("activate staged install: %w", err)
+	}
+	stagingDir = ""
 
 	return nil
 }

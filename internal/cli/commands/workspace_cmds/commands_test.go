@@ -1,6 +1,7 @@
 package workspacecmds
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -44,6 +45,34 @@ func TestBindCmdRunStoresProjectPath(t *testing.T) {
 	}
 	if manifest.ProjectPath != projectPath {
 		t.Fatalf("ProjectPath = %q, want %q", manifest.ProjectPath, projectPath)
+	}
+}
+
+func TestUnbindCmdRunClearsProjectPath(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+	if err := a.CreateNewWorkspace("crawlly"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+
+	projectPath := filepath.Join(root, "repos", "crawlly")
+	if err := os.MkdirAll(projectPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := a.BindWorkspace("crawlly", projectPath); err != nil {
+		t.Fatalf("BindWorkspace returned error: %v", err)
+	}
+
+	if err := (&UnbindCmd{}).Run(a, []string{"crawlly"}); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	manifest, err := loadManifest(filepath.Join(a.WorkspaceDir(), "crawlly"))
+	if err != nil {
+		t.Fatalf("loadManifest returned error: %v", err)
+	}
+	if manifest.ProjectPath != "" {
+		t.Fatalf("ProjectPath = %q, want empty", manifest.ProjectPath)
 	}
 }
 
@@ -126,6 +155,95 @@ func TestInstallCmdRunAcceptsEmptyWorkspace(t *testing.T) {
 	}
 }
 
+func TestGCCmdRunRemovesUnreferencedToolchains(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+	if err := a.CreateNewWorkspace("crawlly"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+	if err := a.AttachToWorkspace("crawlly", []string{"go@1.25.0"}); err != nil {
+		t.Fatalf("AttachToWorkspace returned error: %v", err)
+	}
+
+	keepDir := filepath.Join(root, "toolchains", "go", "1.25.0")
+	removeDir := filepath.Join(root, "toolchains", "go", "1.26.0")
+	for _, dir := range []string{keepDir, removeDir} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("MkdirAll returned error: %v", err)
+		}
+	}
+
+	if err := (&GCCmd{}).Run(a, nil); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	if _, err := os.Stat(keepDir); err != nil {
+		t.Fatalf("expected referenced toolchain dir to remain: %v", err)
+	}
+	if _, err := os.Stat(removeDir); !os.IsNotExist(err) {
+		t.Fatalf("expected unreferenced toolchain dir to be removed, stat err=%v", err)
+	}
+}
+
+func TestOpenCmdRunOpensWorkspaceWithSoftRuntime(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+	hostHome := filepath.Join(root, "host-home")
+	t.Setenv("HOME", hostHome)
+	t.Setenv("PATH", "/usr/bin:/bin")
+
+	if err := a.CreateNewWorkspace("crawlly"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+
+	projectPath := filepath.Join(root, "repos", "crawlly")
+	if err := os.MkdirAll(projectPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := a.BindWorkspace("crawlly", projectPath); err != nil {
+		t.Fatalf("BindWorkspace returned error: %v", err)
+	}
+
+	scriptPath := filepath.Join(root, "open-capture.sh")
+	script := "#!/bin/sh\npwd > open-pwd.txt\nprintf '%s' \"$HOME\" > open-home.txt\nprintf '%s' \"$1\" > open-arg.txt\n"
+	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("WriteFile returned error: %v", err)
+	}
+
+	if err := (&OpenCmd{}).Run(a, []string{"crawlly", "--ide", scriptPath}); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	wantProjectPath, err := filepath.EvalSymlinks(projectPath)
+	if err != nil {
+		t.Fatalf("EvalSymlinks returned error: %v", err)
+	}
+
+	gotPwd, err := os.ReadFile(filepath.Join(projectPath, "open-pwd.txt"))
+	if err != nil {
+		t.Fatalf("ReadFile returned error: %v", err)
+	}
+	if strings.TrimSpace(string(gotPwd)) != wantProjectPath {
+		t.Fatalf("pwd = %q, want %q", strings.TrimSpace(string(gotPwd)), wantProjectPath)
+	}
+
+	gotHome, err := os.ReadFile(filepath.Join(projectPath, "open-home.txt"))
+	if err != nil {
+		t.Fatalf("ReadFile returned error: %v", err)
+	}
+	if strings.TrimSpace(string(gotHome)) != hostHome {
+		t.Fatalf("HOME = %q, want %q", strings.TrimSpace(string(gotHome)), hostHome)
+	}
+
+	gotArg, err := os.ReadFile(filepath.Join(projectPath, "open-arg.txt"))
+	if err != nil {
+		t.Fatalf("ReadFile returned error: %v", err)
+	}
+	if strings.TrimSpace(string(gotArg)) != projectPath {
+		t.Fatalf("arg = %q, want %q", strings.TrimSpace(string(gotArg)), projectPath)
+	}
+}
+
 func TestExecCmdRunExecutesCommandInWorkspace(t *testing.T) {
 	root := t.TempDir()
 	a := app.NewApp(root)
@@ -148,8 +266,14 @@ func TestExecCmdRunExecutesCommandInWorkspace(t *testing.T) {
 	}
 
 	outFile := filepath.Join(root, "pwd.txt")
-	if err := (&ExecCmd{}).Run(a, []string{"crawlly", scriptPath, outFile}); err != nil {
+	output, err := captureStdout(func() error {
+		return (&ExecCmd{}).Run(a, []string{"crawlly", scriptPath, outFile})
+	})
+	if err != nil {
 		t.Fatalf("Run returned error: %v", err)
+	}
+	if strings.TrimSpace(output) != "" {
+		t.Fatalf("expected exec wrapper to stay quiet, got %q", output)
 	}
 
 	got, err := os.ReadFile(outFile)
@@ -162,6 +286,39 @@ func TestExecCmdRunExecutesCommandInWorkspace(t *testing.T) {
 	}
 	if gotPath := strings.TrimSpace(string(got)); gotPath != wantProjectPath {
 		t.Fatalf("pwd = %q, want %q", gotPath, wantProjectPath)
+	}
+}
+
+func TestEnvCmdRunPrintsWorkspaceExports(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+	if err := a.CreateNewWorkspace("crawlly"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+
+	projectPath := filepath.Join(root, "repos", "crawlly")
+	if err := os.MkdirAll(projectPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := a.BindWorkspace("crawlly", projectPath); err != nil {
+		t.Fatalf("BindWorkspace returned error: %v", err)
+	}
+
+	output, err := captureStdout(func() error {
+		return (&EnvCmd{}).Run(a, []string{"crawlly"})
+	})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	if !strings.Contains(output, "export GROOT_WORKSPACE='crawlly'") {
+		t.Fatalf("unexpected output: %q", output)
+	}
+	if !strings.Contains(output, "export GROOT_WORKDIR=") {
+		t.Fatalf("expected GROOT_WORKDIR export, got %q", output)
+	}
+	if strings.Contains(output, "export PS1=") || strings.Contains(output, "export PROMPT=") {
+		t.Fatalf("expected prompt vars to be omitted, got %q", output)
 	}
 }
 
@@ -178,10 +335,14 @@ func TestWorkspaceCmdsRequireExpectedArgs(t *testing.T) {
 		{name: "create", cmd: &CreateCmd{}, args: nil},
 		{name: "bind", cmd: &BindCmd{}, args: []string{"crawlly"}},
 		{name: "delete", cmd: &DeleteCmd{}, args: nil},
+		{name: "env", cmd: &EnvCmd{}, args: nil},
 		{name: "exec", cmd: &ExecCmd{}, args: []string{"crawlly"}},
+		{name: "gc", cmd: &GCCmd{}, args: []string{"extra"}},
+		{name: "open", cmd: &OpenCmd{}, args: nil},
 		{name: "attach", cmd: &AttachCmd{}, args: []string{"crawlly"}},
 		{name: "install", cmd: &InstallCmd{}, args: nil},
 		{name: "shell", cmd: &ShellCmd{}, args: nil},
+		{name: "unbind", cmd: &UnbindCmd{}, args: nil},
 	}
 
 	for _, tt := range tests {
@@ -203,4 +364,25 @@ func loadManifest(wsPath string) (app.Manifest, error) {
 	}
 
 	return manifest, nil
+}
+
+func captureStdout(fn func() error) (string, error) {
+	oldStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		return "", err
+	}
+	defer r.Close()
+
+	os.Stdout = w
+	runErr := fn()
+	_ = w.Close()
+	os.Stdout = oldStdout
+
+	var buf bytes.Buffer
+	if _, err := buf.ReadFrom(r); err != nil {
+		return "", err
+	}
+
+	return buf.String(), runErr
 }
