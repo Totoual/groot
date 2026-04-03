@@ -9,16 +9,15 @@ import (
 )
 
 func enforceWorkspaceOwnership(a *app.App, workspaceName string) error {
-	missing, err := a.WorkspaceUndeclaredToolchains(workspaceName)
+	report, err := a.InspectWorkspaceRuntimeOwnership(workspaceName)
 	if err != nil {
 		return fmt.Errorf("couldn't inspect workspace runtime ownership: %w", err)
 	}
-	if len(missing) == 0 {
+	if len(report.Missing) == 0 {
 		return nil
 	}
 
-	warning := workspaceOwnershipWarning(workspaceName, missing)
-	fmt.Fprint(os.Stderr, warning)
+	writeWorkspaceOwnershipWarning(report)
 
 	if runtimeStrictModeEnabled() {
 		return fmt.Errorf("strict runtime mode rejected undeclared detected runtimes for workspace %q", workspaceName)
@@ -34,19 +33,6 @@ func runtimeStrictModeEnabled() bool {
 	default:
 		return false
 	}
-}
-
-func workspaceOwnershipWarning(workspaceName string, missing []app.DetectedToolchain) string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "Workspace %q does not declare detected runtimes: %s\n", workspaceName, formatDetectedToolchains(missing))
-	fmt.Fprintln(&b, "Commands may fall back to host toolchains until these are attached and installed.")
-	fmt.Fprintln(&b, "Attach them with:")
-	fmt.Fprintf(&b, "  groot ws attach %s %s\n", workspaceName, suggestedAttachArgs(missing))
-	fmt.Fprintf(&b, "  groot ws install %s\n", workspaceName)
-	if runtimeStrictModeEnabled() {
-		fmt.Fprintln(&b, "Strict runtime mode is enabled via GROOT_STRICT_RUNTIME, so this command will stop here.")
-	}
-	return b.String()
 }
 
 func formatDetectedToolchains(detected []app.DetectedToolchain) string {

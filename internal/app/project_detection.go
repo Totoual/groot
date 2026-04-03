@@ -43,28 +43,6 @@ func (a *App) MissingWorkspaceToolchains(name string, detected []DetectedToolcha
 	return missing, nil
 }
 
-func (a *App) WorkspaceUndeclaredToolchains(name string) ([]DetectedToolchain, error) {
-	wsPath, err := a.EnsureWorkspace(name)
-	if err != nil {
-		return nil, err
-	}
-
-	manifest, err := a.getManifest(wsPath)
-	if err != nil {
-		return nil, err
-	}
-	if manifest.ProjectPath == "" {
-		return nil, nil
-	}
-
-	detected, err := a.DetectProjectToolchains(manifest.ProjectPath)
-	if err != nil {
-		return nil, err
-	}
-
-	return a.MissingWorkspaceToolchains(name, detected)
-}
-
 func (a *App) AttachDetectedToolchains(name string, detected []DetectedToolchain) ([]DetectedToolchain, []DetectedToolchain, error) {
 	attachable := make([]string, 0, len(detected))
 	attached := make([]DetectedToolchain, 0, len(detected))

@@ -30,28 +30,12 @@ func (c *OpenCmd) Run(a *app.App, args []string) error {
 	if err != nil {
 		return err
 	}
-	detected, err := a.DetectProjectToolchains(projectPath)
-	if err != nil {
-		return fmt.Errorf("couldn't detect project toolchains: %w", err)
-	}
-	if len(detected) > 0 && resolved.Created {
-		fmt.Fprintf(os.Stderr, "Detected likely runtimes for workspace %q: %s\n", resolved.Name, formatDetectedToolchains(detected))
-		if attachDetected {
-			attached, skipped, err := a.AttachDetectedToolchains(resolved.Name, detected)
-			if err != nil {
-				return fmt.Errorf("couldn't attach detected toolchains: %w", err)
-			}
-			if len(attached) > 0 {
-				fmt.Fprintf(os.Stderr, "Auto-attached detected runtimes for workspace %q: %s\n", resolved.Name, formatDetectedToolchains(attached))
-				fmt.Fprintf(os.Stderr, "Install them with:\n  groot ws install %s\n", resolved.Name)
-			}
-			if len(skipped) > 0 {
-				fmt.Fprintf(os.Stderr, "Skipped detected runtimes without a concrete version for workspace %q: %s\n", resolved.Name, formatDetectedToolchains(skipped))
-				fmt.Fprintln(os.Stderr, "Attach those manually once you choose the desired versions.")
-			}
-		} else {
-			fmt.Fprintln(os.Stderr, "First-open behavior is warn-only for now: Groot did not attach toolchains automatically.")
+	if resolved.Created {
+		plan, err := a.BuildFirstOpenRuntimePlan(resolved.Name, projectPath, attachDetected)
+		if err != nil {
+			return fmt.Errorf("couldn't prepare first-open runtime plan: %w", err)
 		}
+		writeFirstOpenRuntimePlan(plan)
 	}
 	if err := enforceWorkspaceOwnership(a, resolved.Name); err != nil {
 		return err

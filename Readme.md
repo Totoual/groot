@@ -124,6 +124,29 @@ groot ws shell <name>
 groot ws unbind <name>
 ```
 
+## Install
+
+Install the `groot` binary with Go:
+
+```bash
+go install ./cmd/groot
+```
+
+Make sure your Go binary install directory is on `PATH` so the `groot` command is available in your shell.
+
+Then initialize Groot and install the shell hook:
+
+```bash
+groot init
+groot shell-hook install
+```
+
+That gives you:
+
+- the shared Groot root under `~/.groot`
+- the `groot` CLI available in your shell
+- automatic terminal activation for shells opened from `groot ws open` or `groot open`
+
 ## Quick Open
 
 ```bash
@@ -143,6 +166,10 @@ groot exec ~/Documents/crawlly git status
 ```
 
 These commands resolve the workspace by `project_path` first and create/bind one automatically on first use when needed.
+
+- `open` is the human GUI shortcut
+- `enter` and `exec` use the strict workspace runtime
+- `ws ...` remains the lower-level runtime surface for explicit control and future agent/MCP use
 
 ## Manual Workspace Flow
 
