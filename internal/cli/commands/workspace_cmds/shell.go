@@ -39,7 +39,6 @@ func (s *ShellCmd) Run(a *app.App, args []string) error {
 
 	name := fs.Arg(0)
 
-	fmt.Println("Activating workspace:", name)
 	err := a.WorkspaceShell(name)
 	if err != nil {
 		return fmt.Errorf("couldn't activate workspace: %w", err)

@@ -39,7 +39,6 @@ func (c *CreateCmd) Run(a *app.App, args []string) error {
 
 	name := fs.Arg(0)
 
-	fmt.Println("Creating workspace:", name)
 	err := a.CreateNewWorkspace(name)
 	if err != nil {
 		return fmt.Errorf("Couldn't create workspace: %w", err)

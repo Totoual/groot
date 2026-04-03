@@ -39,7 +39,6 @@ func (i *InstallCmd) Run(a *app.App, args []string) error {
 
 	name := fs.Arg(0)
 
-	fmt.Println("Installing tools  to workspace:", name)
 	err := a.InstallToWorkspace(name)
 	if err != nil {
 		return fmt.Errorf("Couldn't install tools for workspace: %w", err)
