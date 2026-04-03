@@ -239,8 +239,9 @@ Example:
 - `ws shell` ensures attached toolchains are installed, prepends their `bin` directories to `PATH`, and sets toolchain-specific env vars when needed
 - `ws shell` starts in the bound `project_path` when present, otherwise in the workspace root under `~/.groot/workspaces/<name>`
 - `ws env` prints shell exports for the resolved workspace runtime and includes `GROOT_WORKDIR` for the chosen working directory
-- `ws exec` runs a specific command in the same workspace environment and working directory resolution used by `ws shell`
+- `ws exec` runs a specific command in the same workspace environment and working directory resolution used by `ws shell`; this is the right primitive for automation and future agents
 - `ws open` launches an IDE or GUI program in a softer runtime that keeps the project cwd, toolchain `PATH`, and `GROOT_*` vars while preserving the user's normal `HOME`
+- `ws open` is for human GUI workflows; it is not the primary execution primitive for future agents
 - `shell-hook` turns a shell with `GROOT_WORKSPACE` set back into the strict workspace runtime, which is how integrated terminals can become fully Groot-managed without editor-specific settings
 - `ws open` defaults to `GROOT_IDE`, then `VISUAL`, then `EDITOR`, and finally `code` when no IDE is specified
 - `ws env` omits interactive shell prompt variables such as `PS1` and `PROMPT`

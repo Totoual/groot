@@ -88,6 +88,7 @@ This layer decides how Groot keeps project isolation without breaking normal IDE
 
 This layer makes Groot usable by a top-level agent without inventing a separate runtime path.
 
+- [ ] Keep `ws exec` as the primary agent execution primitive; treat `ws open` as a human GUI action, not an agent-core runtime primitive.
 - [ ] Expose the core runtime through MCP tools backed by the same app layer.
 - [ ] Define the first MCP tool surface:
   - `workspace_create`
@@ -142,7 +143,7 @@ git status
 And this should also work:
 
 ```bash
-groot ws exec crawlly code .
+groot ws open crawlly --ide code
 ```
 
 ## Definition Of Success For The Product Direction
