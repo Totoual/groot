@@ -50,6 +50,10 @@ func TestRouterRunRejectsUnknownCommand(t *testing.T) {
 
 func TestRouterPrintHelpIncludesSortedCommands(t *testing.T) {
 	r := NewRouter(
+		&stubCmd{name: "shell-hook", help: "Install shell hook"},
+		&stubCmd{name: "open", help: "Open path"},
+		&stubCmd{name: "exec", help: "Exec path"},
+		&stubCmd{name: "enter", help: "Enter path"},
 		&stubCmd{name: "ws", help: "Manage workspaces"},
 		&stubCmd{name: "init", help: "Initialize root"},
 	)
@@ -61,9 +65,13 @@ func TestRouterPrintHelpIncludesSortedCommands(t *testing.T) {
 	if !strings.Contains(output, "usage: groot <command> [args]") {
 		t.Fatalf("unexpected help output: %q", output)
 	}
+	enterIdx := strings.Index(output, "enter")
+	execIdx := strings.Index(output, "exec")
 	initIdx := strings.Index(output, "init")
+	openIdx := strings.Index(output, "open")
+	shellHookIdx := strings.Index(output, "shell-hook")
 	wsIdx := strings.Index(output, "ws")
-	if !(initIdx < wsIdx) {
+	if !(enterIdx < execIdx && execIdx < initIdx && initIdx < openIdx && openIdx < shellHookIdx && shellHookIdx < wsIdx) {
 		t.Fatalf("expected sorted commands, got output %q", output)
 	}
 }

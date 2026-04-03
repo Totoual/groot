@@ -2,6 +2,51 @@
 
 This file tracks the next implementation milestones while Groot is still in active design and iteration.
 
+## Product Direction
+
+Groot is not meant to stop at shell wrappers, workspace naming, or multi-language tool installs.
+
+The product target is:
+
+- open a repo
+- get the right runtime
+- get the right toolchains
+- keep project runtime and agent state out of the user's normal machine profile
+- keep IDEs usable while doing it
+
+If Groot does not make that experience materially better than normal local development, it is not yet doing its job.
+
+## Next Product Milestone: First Open Owns The Runtime
+
+This is the next milestone that should define whether Groot is becoming a real product.
+
+When a user runs:
+
+```bash
+groot open ~/dev/some-project
+```
+
+Groot should move toward:
+
+- resolving or creating the workspace automatically
+- creating the manifest automatically
+- detecting likely runtimes from the repo
+- attaching or at least suggesting the right toolchains
+- making it obvious when the workspace is still using host toolchains
+- making IDE and terminal behavior feel clearly Groot-managed
+
+### Immediate Next Tasks
+
+- [ ] Detect likely runtimes on first open, for example Go, Node, Python, Rust, Bun, Deno, PHP, Java.
+- [ ] Define first-open behavior when no toolchains are attached yet:
+  - warn only
+  - suggest attach/install
+  - or auto-attach common runtimes
+- [ ] Surface when a workspace is still using host toolchains instead of Groot-managed ones.
+- [ ] Add a stricter runtime mode or warning mode for undeclared toolchains.
+- [ ] Decide whether `groot open <path>` should only open, or whether it should also offer/setup runtime ownership on first use.
+- [ ] Make the first-open experience feel product-shaped, not like a thin alias over lower-level commands.
+
 ## Layer 1: Core Runtime
 
 This is the stable control plane Groot should expose for shells, IDE launchers, and future agents.
@@ -49,7 +94,7 @@ This is the stable control plane Groot should expose for shells, IDE launchers, 
 This layer should make Groot feel simple for normal developers by letting an agent drive the lower-level Groot primitives.
 
 - [ ] Decide whether MCP is the primary agent adapter for Groot.
-- [ ] Add workspace lookup by `project_path`.
+- [x] Add workspace lookup by `project_path`.
 - [ ] Define the agent-to-Groot contract: create, bind, attach, install, exec, inspect.
 - [ ] Decide the primary agent entrypoint:
   - `groot agent "<intent>"`
@@ -59,8 +104,8 @@ This layer should make Groot feel simple for normal developers by letting an age
   - "start crawlly with go@1.25 and node@25"
   - "open this repo in a clean workspace"
   - "set up this project for me"
-- [ ] Add a path-based setup flow so the agent can create or resolve a workspace from a repo path.
-- [ ] Add a path-based open/enter flow for non-agent fallback usage.
+- [ ] Add a path-based setup flow so the agent can create or resolve a workspace from a repo path and move toward runtime ownership on first open.
+- [x] Add a path-based open/enter flow for non-agent fallback usage.
 - [ ] Ensure the agent can auto-create or auto-bind a workspace when a repo is first seen.
 - [ ] Document the normal user workflow as agent-first, with `groot ws ...` kept as advanced/runtime commands.
 
@@ -80,6 +125,7 @@ This layer decides how Groot keeps project isolation without breaking normal IDE
 - [x] Document shell-hook setup so terminal activation does not depend on IDE-specific settings.
 - [ ] Verify first-launch behavior for a brand-new workspace in VS Code before treating IDE support as working.
 - [ ] Define which environment variables should be preserved for GUI IDE launches and which should stay isolated.
+- [ ] Ensure first-open IDE terminals clearly reflect Groot-managed toolchains when those toolchains are attached and installed.
 - [ ] Decide where project-scoped agent memory and conversation state should live inside Groot.
 - [ ] Ensure IDEs can open the bound project path without forcing a separate GUI app identity.
 - [ ] Document the tradeoff between terminal isolation and GUI IDE compatibility.
@@ -114,18 +160,19 @@ This layer makes Groot usable by a top-level agent without inventing a separate 
 
 This layer can add direct human-facing convenience commands after the runtime and agent model are stable.
 
-- [ ] Decide whether `groot open <path>` should exist as a first-class non-agent shortcut.
-- [ ] Decide whether `groot enter <path>` should exist as a shell-first shortcut.
+- [x] Decide whether `groot open <path>` should exist as a first-class non-agent shortcut.
+- [x] Decide whether `groot enter <path>` should exist as a shell-first shortcut.
 - [ ] Consider `groot init <name> --bind <path>` or `groot init <path>` as an explicit setup shortcut.
 - [ ] Keep human shortcuts thin wrappers over the same runtime and agent-capable primitives.
 
 ## Recommended Order
 
 1. Finish the core runtime.
-2. Prioritize the IDE strategy and make IDE launch reliable for fresh workspaces.
-3. Define the agent-facing contract and agent-driven setup/open flows.
-4. Add the machine-readable agent foundation on top of the same runtime.
-5. Add optional direct human shortcuts on top of the same runtime.
+2. Make first open own the runtime instead of silently relying on host toolchains.
+3. Keep IDE launch reliable for fresh workspaces while preserving runtime ownership.
+4. Define the agent-facing contract and agent-driven setup/open flows.
+5. Add the machine-readable agent foundation on top of the same runtime.
+6. Add optional direct human shortcuts on top of the same runtime.
 
 ## Definition Of Success For The Current Phase
 

@@ -203,6 +203,236 @@ func TestUnbindWorkspaceClearsProjectPath(t *testing.T) {
 	}
 }
 
+func TestFindWorkspaceByProjectPathReturnsBoundWorkspace(t *testing.T) {
+	root := t.TempDir()
+	app := NewApp(root)
+
+	if err := app.CreateNewWorkspace("crawlly"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+
+	projectPath := filepath.Join(root, "repos", "crawlly")
+	if err := os.MkdirAll(projectPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := app.BindWorkspace("crawlly", projectPath); err != nil {
+		t.Fatalf("BindWorkspace returned error: %v", err)
+	}
+
+	got, err := app.FindWorkspaceByProjectPath(projectPath)
+	if err != nil {
+		t.Fatalf("FindWorkspaceByProjectPath returned error: %v", err)
+	}
+	if got != "crawlly" {
+		t.Fatalf("FindWorkspaceByProjectPath = %q, want %q", got, "crawlly")
+	}
+}
+
+func TestFindWorkspaceByProjectPathExpandsTildePath(t *testing.T) {
+	root := t.TempDir()
+	homeDir := filepath.Join(root, "home")
+	projectPath := filepath.Join(homeDir, "dev", "crawlly")
+
+	if err := os.MkdirAll(projectPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+
+	t.Setenv("HOME", homeDir)
+
+	app := NewApp(root)
+	if err := app.CreateNewWorkspace("crawlly"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+	if err := app.BindWorkspace("crawlly", "~/dev/crawlly"); err != nil {
+		t.Fatalf("BindWorkspace returned error: %v", err)
+	}
+
+	got, err := app.FindWorkspaceByProjectPath("~/dev/crawlly")
+	if err != nil {
+		t.Fatalf("FindWorkspaceByProjectPath returned error: %v", err)
+	}
+	if got != "crawlly" {
+		t.Fatalf("FindWorkspaceByProjectPath = %q, want %q", got, "crawlly")
+	}
+}
+
+func TestFindWorkspaceByProjectPathMatchesSymlinkEquivalentPath(t *testing.T) {
+	root := t.TempDir()
+	app := NewApp(root)
+
+	if err := app.CreateNewWorkspace("crawlly"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+
+	realPath := filepath.Join(root, "repos", "crawlly")
+	if err := os.MkdirAll(realPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := app.BindWorkspace("crawlly", realPath); err != nil {
+		t.Fatalf("BindWorkspace returned error: %v", err)
+	}
+
+	linkPath := filepath.Join(root, "links", "crawlly")
+	if err := os.MkdirAll(filepath.Dir(linkPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := os.Symlink(realPath, linkPath); err != nil {
+		t.Fatalf("Symlink returned error: %v", err)
+	}
+
+	got, err := app.FindWorkspaceByProjectPath(linkPath)
+	if err != nil {
+		t.Fatalf("FindWorkspaceByProjectPath returned error: %v", err)
+	}
+	if got != "crawlly" {
+		t.Fatalf("FindWorkspaceByProjectPath = %q, want %q", got, "crawlly")
+	}
+}
+
+func TestFindWorkspaceByProjectPathRejectsUnknownPath(t *testing.T) {
+	root := t.TempDir()
+	app := NewApp(root)
+
+	if err := app.CreateNewWorkspace("crawlly"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+
+	projectPath := filepath.Join(root, "repos", "crawlly")
+	if err := os.MkdirAll(projectPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := app.BindWorkspace("crawlly", projectPath); err != nil {
+		t.Fatalf("BindWorkspace returned error: %v", err)
+	}
+
+	otherPath := filepath.Join(root, "repos", "other")
+	if err := os.MkdirAll(otherPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+
+	_, err := app.FindWorkspaceByProjectPath(otherPath)
+	if err == nil {
+		t.Fatal("expected FindWorkspaceByProjectPath to fail for unknown path")
+	}
+	if !strings.Contains(err.Error(), "no workspace bound") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestFindWorkspaceByProjectPathRejectsDuplicateBindings(t *testing.T) {
+	root := t.TempDir()
+	app := NewApp(root)
+
+	for _, name := range []string{"crawlly-a", "crawlly-b"} {
+		if err := app.CreateNewWorkspace(name); err != nil {
+			t.Fatalf("CreateNewWorkspace returned error: %v", err)
+		}
+	}
+
+	projectPath := filepath.Join(root, "repos", "crawlly")
+	if err := os.MkdirAll(projectPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	for _, name := range []string{"crawlly-a", "crawlly-b"} {
+		if err := app.BindWorkspace(name, projectPath); err != nil {
+			t.Fatalf("BindWorkspace returned error: %v", err)
+		}
+	}
+
+	_, err := app.FindWorkspaceByProjectPath(projectPath)
+	if err == nil {
+		t.Fatal("expected FindWorkspaceByProjectPath to fail for duplicate bindings")
+	}
+	if !strings.Contains(err.Error(), "multiple workspaces bound") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(err.Error(), "crawlly-a") || !strings.Contains(err.Error(), "crawlly-b") {
+		t.Fatalf("expected duplicate workspace names in error, got %v", err)
+	}
+}
+
+func TestResolveOrCreateWorkspaceByProjectPathReusesExistingBinding(t *testing.T) {
+	root := t.TempDir()
+	app := NewApp(root)
+
+	if err := app.CreateNewWorkspace("crawlly"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+
+	projectPath := filepath.Join(root, "repos", "goCrawl")
+	if err := os.MkdirAll(projectPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := app.BindWorkspace("crawlly", projectPath); err != nil {
+		t.Fatalf("BindWorkspace returned error: %v", err)
+	}
+
+	got, created, err := app.ResolveOrCreateWorkspaceByProjectPath(projectPath)
+	if err != nil {
+		t.Fatalf("ResolveOrCreateWorkspaceByProjectPath returned error: %v", err)
+	}
+	if created {
+		t.Fatal("expected existing workspace to be reused")
+	}
+	if got != "crawlly" {
+		t.Fatalf("ResolveOrCreateWorkspaceByProjectPath = %q, want %q", got, "crawlly")
+	}
+}
+
+func TestResolveOrCreateWorkspaceByProjectPathCreatesAndBindsWorkspace(t *testing.T) {
+	root := t.TempDir()
+	app := NewApp(root)
+
+	projectPath := filepath.Join(root, "repos", "the_grime_tcg")
+	if err := os.MkdirAll(projectPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+
+	got, created, err := app.ResolveOrCreateWorkspaceByProjectPath(projectPath)
+	if err != nil {
+		t.Fatalf("ResolveOrCreateWorkspaceByProjectPath returned error: %v", err)
+	}
+	if !created {
+		t.Fatal("expected workspace to be created")
+	}
+	if got != "the_grime_tcg" {
+		t.Fatalf("ResolveOrCreateWorkspaceByProjectPath = %q, want %q", got, "the_grime_tcg")
+	}
+
+	manifest, err := app.getManifest(filepath.Join(root, "workspaces", got))
+	if err != nil {
+		t.Fatalf("getManifest returned error: %v", err)
+	}
+	if manifest.ProjectPath != projectPath {
+		t.Fatalf("ProjectPath = %q, want %q", manifest.ProjectPath, projectPath)
+	}
+}
+
+func TestResolveOrCreateWorkspaceByProjectPathCreatesUniqueWorkspaceName(t *testing.T) {
+	root := t.TempDir()
+	app := NewApp(root)
+
+	if err := app.CreateNewWorkspace("goCrawl"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+
+	projectPath := filepath.Join(root, "repos", "goCrawl")
+	if err := os.MkdirAll(projectPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+
+	got, created, err := app.ResolveOrCreateWorkspaceByProjectPath(projectPath)
+	if err != nil {
+		t.Fatalf("ResolveOrCreateWorkspaceByProjectPath returned error: %v", err)
+	}
+	if !created {
+		t.Fatal("expected workspace to be created")
+	}
+	if got != "goCrawl-2" {
+		t.Fatalf("ResolveOrCreateWorkspaceByProjectPath = %q, want %q", got, "goCrawl-2")
+	}
+}
+
 func TestAttachToWorkspacePersistsPackages(t *testing.T) {
 	root := t.TempDir()
 	app := NewApp(root)
@@ -413,6 +643,9 @@ func TestWorkspaceRuntimeUsesWorkspaceRootWhenUnbound(t *testing.T) {
 	if envMap["GROOT_WORKSPACE"] != "crawlly" {
 		t.Fatalf("GROOT_WORKSPACE = %q", envMap["GROOT_WORKSPACE"])
 	}
+	if envMap["GROOT_HOME"] != root {
+		t.Fatalf("GROOT_HOME = %q, want %q", envMap["GROOT_HOME"], root)
+	}
 	if envMap["GROOT_WORKSPACE_DIR"] != wsPath {
 		t.Fatalf("GROOT_WORKSPACE_DIR = %q", envMap["GROOT_WORKSPACE_DIR"])
 	}
@@ -480,6 +713,9 @@ func TestWorkspaceRuntimeUsesBoundProjectPathAndInjectsToolchainEnv(t *testing.T
 	envMap := envSliceToMap(env)
 	if envMap["STUB_HOME"] != "/toolchains/stub/1.0" {
 		t.Fatalf("STUB_HOME = %q", envMap["STUB_HOME"])
+	}
+	if envMap["GROOT_HOME"] != root {
+		t.Fatalf("GROOT_HOME = %q, want %q", envMap["GROOT_HOME"], root)
 	}
 	if !strings.HasPrefix(envMap["PATH"], "/toolchains/stub/1.0/bin:") {
 		t.Fatalf("PATH = %q", envMap["PATH"])
@@ -676,6 +912,9 @@ func TestWorkspaceEnvPrintsShellExportsWithoutPromptVars(t *testing.T) {
 	if !strings.Contains(output, "export GROOT_WORKSPACE='crawlly'\n") {
 		t.Fatalf("expected GROOT_WORKSPACE export, got %q", output)
 	}
+	if !strings.Contains(output, "export GROOT_HOME="+shellQuote(root)+"\n") {
+		t.Fatalf("expected GROOT_HOME export, got %q", output)
+	}
 	if !strings.Contains(output, "export GROOT_WORKDIR="+shellQuote(projectPath)+"\n") {
 		t.Fatalf("expected GROOT_WORKDIR export, got %q", output)
 	}
@@ -750,6 +989,9 @@ func TestWorkspaceOpenRuntimeKeepsHostHomeAndInjectsToolchains(t *testing.T) {
 	}
 	if envMap["GROOT_WORKSPACE"] != "crawlly" {
 		t.Fatalf("GROOT_WORKSPACE = %q", envMap["GROOT_WORKSPACE"])
+	}
+	if envMap["GROOT_HOME"] != root {
+		t.Fatalf("GROOT_HOME = %q, want %q", envMap["GROOT_HOME"], root)
 	}
 	if envMap["GROOT_WORKDIR"] != projectPath {
 		t.Fatalf("GROOT_WORKDIR = %q, want %q", envMap["GROOT_WORKDIR"], projectPath)

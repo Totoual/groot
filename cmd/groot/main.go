@@ -32,7 +32,14 @@ func main() {
 		&workspacecmds.UnbindCmd{},
 	)
 
-	groot_router := router.NewRouter(&commands.InitCmd{}, &commands.ShellHookCmd{}, wscmd)
+	groot_router := router.NewRouter(
+		&commands.EnterCmd{},
+		&commands.ExecCmd{},
+		&commands.InitCmd{},
+		&commands.OpenCmd{},
+		&commands.ShellHookCmd{},
+		wscmd,
+	)
 
 	err = groot_router.Run(groot_app, os.Args[1:])
 	if err != nil {
