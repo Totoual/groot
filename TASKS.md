@@ -45,7 +45,9 @@ Groot should move toward:
 - [x] Surface when a workspace is still using host toolchains instead of Groot-managed ones.
 - [x] Add a stricter runtime mode or warning mode for undeclared toolchains.
 - [x] Decide whether `groot open <path>` should only open, or whether it should also offer/setup runtime ownership on first use.
-- [ ] Make the first-open experience feel product-shaped, not like a thin alias over lower-level commands.
+- [x] Add an opt-in first-open setup path that can auto-attach and install detected runtimes with flags.
+- [x] Add a path-based status/inspect view so users can see detected, attached, installed, and host-fallback runtime state.
+- [x] Make the first-open experience feel product-shaped, not like a thin alias over lower-level commands.
 
 ## Layer 1: Core Runtime
 

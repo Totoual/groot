@@ -38,6 +38,7 @@ func main() {
 		&commands.InitCmd{},
 		&commands.OpenCmd{},
 		&commands.ShellHookCmd{},
+		&commands.StatusCmd{},
 		wscmd,
 	)
 

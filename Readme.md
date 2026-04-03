@@ -22,6 +22,7 @@ The agent-facing direction is for Groot to expose the same runtime core through 
 - Enter a project path by resolving or auto-creating the matching workspace
 - Execute one-off commands against a project path by resolving or auto-creating the matching workspace
 - Open a project path by resolving or auto-creating the matching workspace
+- Print runtime ownership status for a project path by resolving or auto-creating the matching workspace
 - Create and delete workspaces
 - Bind a workspace to an existing project directory
 - Clear a workspace project binding
@@ -110,6 +111,7 @@ groot init
 groot open <path>
 groot shell-hook
 groot shell-hook install
+groot status <path>
 
 groot ws attach <name> <tool@version> [tool@version...]
 groot ws bind <name> <path>
@@ -156,19 +158,34 @@ groot open ~/Documents/crawlly
 
 `groot open <path>` resolves the bound workspace for that repo path and, on first open, creates and binds a workspace automatically before launching the IDE.
 
-On first open, Groot also scans the repo for likely runtimes such as Go, Node, Python, Rust, Bun, Deno, PHP, and Java. The default first-open policy is still warn-only: Groot does not mutate the manifest automatically, but it prints attach/install suggestions so the workspace can move toward Groot-managed toolchains instead of silently relying on host tools. If you want opt-in convenience, use `groot open <path> --attach-detected` and Groot will auto-attach only the detected runtimes with concrete versions. If you want Groot to fail instead of warning when detected runtimes are still undeclared, set `GROOT_STRICT_RUNTIME=1` before running `groot open`, `groot enter`, or `groot exec`.
+On first open, Groot also scans the repo for likely runtimes such as Go, Node, Python, Rust, Bun, Deno, PHP, and Java.
+
+- default: warn only and suggest attach/install
+- `--attach-detected`: auto-attach only the detected runtimes with concrete versions
+- `--install-detected` or `--setup-detected`: auto-attach and install the detected runtimes with concrete versions
+- `GROOT_STRICT_RUNTIME=1`: fail instead of warning when detected runtimes are still undeclared
+
+So the current first-open flows are:
+
+```bash
+groot open ~/Documents/crawlly
+groot open ~/Documents/crawlly --attach-detected
+groot open ~/Documents/crawlly --setup-detected
+```
 
 ## Path-Based Shell And Exec
 
 ```bash
 groot enter ~/Documents/crawlly
 groot exec ~/Documents/crawlly git status
+groot status ~/Documents/crawlly
 ```
 
 These commands resolve the workspace by `project_path` first and create/bind one automatically on first use when needed.
 
 - `open` is the human GUI shortcut
 - `enter` and `exec` use the strict workspace runtime
+- `status` shows detected, attached, installed, and host-fallback runtime state for the project path
 - `ws ...` remains the lower-level runtime surface for explicit control and future agent/MCP use
 
 ## Manual Workspace Flow
@@ -306,11 +323,12 @@ Example:
 - `ws bind` stores the project location in `project_path`
 - `ws unbind` clears `project_path` without deleting the workspace runtime
 - `open` resolves a workspace from a project path and auto-creates/binds one on first open when needed
-- `open` scans a newly seen project for likely runtimes and uses a warn-only first-open policy by default: it prints attach/install suggestions, and `--attach-detected` can auto-attach only the detected runtimes with concrete versions
+- `open` scans a newly seen project for likely runtimes and uses a warn-only first-open policy by default: it prints attach/install suggestions, `--attach-detected` can auto-attach only the detected runtimes with concrete versions, and `--install-detected` / `--setup-detected` can both attach and install them
 - `open` warns when detected runtimes are still undeclared in the workspace manifest, because commands may fall back to host toolchains until those runtimes are attached and installed
 - `GROOT_STRICT_RUNTIME=1` turns those warnings into hard failures for the top-level path-based commands `open`, `enter`, and `exec`
 - `enter` resolves a workspace from a project path and opens the strict workspace shell
 - `exec` resolves a workspace from a project path and runs one strict-runtime command
+- `status` resolves a workspace from a project path, creates and binds one automatically on first use, and shows whether runtimes are currently Groot-managed or still falling back to the host
 - `ws install` downloads and installs attached toolchains into the shared Groot toolchain root
 - `ws gc` removes unreferenced toolchain versions from the shared Groot toolchain root
 - `ws shell` ensures attached toolchains are installed, prepends their `bin` directories to `PATH`, and sets toolchain-specific env vars when needed

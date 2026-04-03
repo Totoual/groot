@@ -247,6 +247,57 @@ func TestOpenCmdRunAttachDetectedSkipsVersionlessRuntimes(t *testing.T) {
 	}
 }
 
+func TestOpenCmdRunSetupDetectedInstallsConcreteVersions(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+	hostHome := filepath.Join(root, "host-home")
+	t.Setenv("HOME", hostHome)
+	t.Setenv("PATH", "/usr/bin:/bin")
+
+	projectPath := filepath.Join(root, "repos", "the_grime_tcg")
+	backendDir := filepath.Join(projectPath, "backend")
+	frontendDir := filepath.Join(projectPath, "frontend")
+	if err := os.MkdirAll(backendDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := os.MkdirAll(frontendDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(backendDir, "go.mod"), []byte("module example.com/tcg\n\ngo 1.25.4\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile go.mod returned error: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(frontendDir, "package.json"), []byte(`{"engines":{"node":"25.8.1"}}`), 0o600); err != nil {
+		t.Fatalf("WriteFile package.json returned error: %v", err)
+	}
+
+	scriptPath := filepath.Join(root, "open-capture.sh")
+	script := "#!/bin/sh\nprintf '%s' \"$GROOT_WORKSPACE\" > open-workspace.txt\n"
+	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("WriteFile returned error: %v", err)
+	}
+	seedInstalledGoToolchain(t, a, "1.25.4")
+	seedInstalledNodeToolchain(t, a, "25.8.1")
+
+	_, stderr, err := captureCommandOutput(func() error {
+		return (&OpenCmd{}).Run(a, []string{projectPath, "--setup-detected", "--ide", scriptPath})
+	})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if !strings.Contains(stderr, `Auto-attached detected runtimes for workspace "the_grime_tcg": go@1.25.4, node@25.8.1`) {
+		t.Fatalf("expected auto-attach message on stderr, got %q", stderr)
+	}
+	if !strings.Contains(stderr, `Installed detected runtimes for workspace "the_grime_tcg": go@1.25.4, node@25.8.1`) {
+		t.Fatalf("expected installed message on stderr, got %q", stderr)
+	}
+	if !strings.Contains(stderr, `First-open summary: Groot attached and installed the detected runtimes`) {
+		t.Fatalf("expected setup summary on stderr, got %q", stderr)
+	}
+	if strings.Contains(stderr, `Workspace "the_grime_tcg" does not declare detected runtimes`) {
+		t.Fatalf("did not expect undeclared warning after setup, got %q", stderr)
+	}
+}
+
 func TestOpenCmdRejectsMissingProjectPath(t *testing.T) {
 	a := app.NewApp(t.TempDir())
 
@@ -308,6 +359,65 @@ func TestOpenCmdWarnsWhenExistingWorkspaceStillReliesOnHostToolchains(t *testing
 	}
 	if !strings.Contains(stderr, `groot ws attach tcg go@1.25.4 node@25.8.1`) {
 		t.Fatalf("expected attach suggestion for missing runtimes, got %q", stderr)
+	}
+}
+
+func TestStatusCmdPrintsRuntimeOwnershipSummary(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+	t.Setenv("HOME", filepath.Join(root, "host-home"))
+	t.Setenv("PATH", "/usr/bin:/bin")
+
+	projectPath := filepath.Join(root, "repos", "the_grime_tcg")
+	backendDir := filepath.Join(projectPath, "backend")
+	frontendDir := filepath.Join(projectPath, "frontend")
+	if err := os.MkdirAll(backendDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := os.MkdirAll(frontendDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(backendDir, "go.mod"), []byte("module example.com/tcg\n\ngo 1.25.4\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile go.mod returned error: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(frontendDir, "package.json"), []byte(`{"engines":{"node":"25.8.1"}}`), 0o600); err != nil {
+		t.Fatalf("WriteFile package.json returned error: %v", err)
+	}
+
+	if err := a.CreateNewWorkspace("the_grime_tcg"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+	if err := a.BindWorkspace("the_grime_tcg", projectPath); err != nil {
+		t.Fatalf("BindWorkspace returned error: %v", err)
+	}
+	if err := a.AttachToWorkspace("the_grime_tcg", []string{"go@1.25.4"}); err != nil {
+		t.Fatalf("AttachToWorkspace returned error: %v", err)
+	}
+	seedInstalledGoToolchain(t, a, "1.25.4")
+
+	stdout, stderr, err := captureCommandOutput(func() error {
+		return (&StatusCmd{}).Run(a, []string{projectPath})
+	})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if strings.TrimSpace(stderr) != "" {
+		t.Fatalf("expected stderr to stay quiet, got %q", stderr)
+	}
+	if !strings.Contains(stdout, "Workspace: the_grime_tcg") {
+		t.Fatalf("expected workspace name in stdout, got %q", stdout)
+	}
+	if !strings.Contains(stdout, "Detected: go@1.25.4, node@25.8.1") {
+		t.Fatalf("expected detected runtimes in stdout, got %q", stdout)
+	}
+	if !strings.Contains(stdout, "Groot-Managed: go@1.25.4") {
+		t.Fatalf("expected installed Groot-managed runtime in stdout, got %q", stdout)
+	}
+	if !strings.Contains(stdout, "Host Fallback Risk: node@25.8.1") {
+		t.Fatalf("expected host fallback risk in stdout, got %q", stdout)
+	}
+	if !strings.Contains(stdout, "Status: partial runtime ownership") {
+		t.Fatalf("expected partial ownership status in stdout, got %q", stdout)
 	}
 }
 
