@@ -40,7 +40,6 @@ func (b *BindCmd) Run(a *app.App, args []string) error {
 	name := fs.Arg(0)
 	projectPath := fs.Arg(1)
 
-	fmt.Println("Binding workspace:", name)
 	if err := a.BindWorkspace(name, projectPath); err != nil {
 		return fmt.Errorf("couldn't bind workspace: %w", err)
 	}

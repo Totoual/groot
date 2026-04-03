@@ -39,7 +39,6 @@ func (d *DeleteCmd) Run(a *app.App, args []string) error {
 
 	name := fs.Arg(0)
 
-	fmt.Println("Deleting workspace:", name)
 	err := a.DeleteWorkspace(name)
 	if err != nil {
 		return fmt.Errorf("Couldn't delete workspace: %w", err)

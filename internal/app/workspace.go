@@ -39,6 +39,17 @@ type workspaceRuntimeMode struct {
 	includePrompt bool
 }
 
+var (
+	strictWorkspaceRuntimeMode = workspaceRuntimeMode{
+		isolateHome:   true,
+		includePrompt: true,
+	}
+	softOpenRuntimeMode = workspaceRuntimeMode{
+		isolateHome:   false,
+		includePrompt: false,
+	}
+)
+
 func (a *App) CreateNewWorkspace(name string) error {
 	if name == "" || name == "." || name == ".." || strings.Contains(name, "/") {
 		return fmt.Errorf("invalid workspace name %q", name)
@@ -109,44 +120,23 @@ func (a *App) WorkspaceShell(name string) error {
 }
 
 func (a *App) ExecWorkspace(name, command string, args []string) error {
-	env, workDir, err := a.workspaceRuntime(name)
-	if err != nil {
-		return err
-	}
-
-	cmd := exec.Command(command, args...)
-	cmd.Dir = workDir
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	cmd.Env = env
-
-	return cmd.Run()
+	return a.runWorkspaceProcess(a.strictRuntimeMode(), name, command, args)
 }
 
 func (a *App) OpenWorkspace(name, program string, args []string) error {
 	if program == "" {
-		program = "code"
+		program = defaultIDEProgram()
 	}
-
-	env, workDir, err := a.workspaceOpenRuntime(name)
+	workDir, err := a.workspaceWorkDir(name)
 	if err != nil {
 		return err
 	}
-
 	openArgs := append([]string{}, args...)
 	if len(openArgs) == 0 {
 		openArgs = defaultOpenArgs(program, workDir)
 	}
 
-	cmd := exec.Command(program, openArgs...)
-	cmd.Dir = workDir
-	cmd.Env = env
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	return cmd.Run()
+	return a.runWorkspaceProcess(a.softOpenMode(), name, program, openArgs)
 }
 
 func (a *App) WorkspaceEnv(name string) (string, error) {
@@ -183,21 +173,56 @@ func (a *App) WorkspaceEnv(name string) (string, error) {
 }
 
 func (a *App) workspaceRuntime(name string) ([]string, string, error) {
-	return a.workspaceRuntimeForMode(name, workspaceRuntimeMode{
-		baseEnv:       a.runtimeBaseEnv,
-		hostPath:      a.runtimeHostPathEntries,
-		isolateHome:   true,
-		includePrompt: true,
-	})
+	return a.workspaceRuntimeForMode(name, a.strictRuntimeMode())
 }
 
 func (a *App) workspaceOpenRuntime(name string) ([]string, string, error) {
-	return a.workspaceRuntimeForMode(name, workspaceRuntimeMode{
-		baseEnv:       os.Environ,
-		hostPath:      a.runtimeOpenHostPathEntries,
-		isolateHome:   false,
-		includePrompt: false,
-	})
+	return a.workspaceRuntimeForMode(name, a.softOpenMode())
+}
+
+func (a *App) strictRuntimeMode() workspaceRuntimeMode {
+	mode := strictWorkspaceRuntimeMode
+	mode.baseEnv = a.runtimeBaseEnv
+	mode.hostPath = a.runtimeHostPathEntries
+	return mode
+}
+
+func (a *App) softOpenMode() workspaceRuntimeMode {
+	mode := softOpenRuntimeMode
+	mode.baseEnv = os.Environ
+	mode.hostPath = a.runtimeOpenHostPathEntries
+	return mode
+}
+
+func (a *App) runWorkspaceProcess(mode workspaceRuntimeMode, name, command string, args []string) error {
+	env, workDir, err := a.workspaceRuntimeForMode(name, mode)
+	if err != nil {
+		return err
+	}
+
+	cmd := exec.Command(command, args...)
+	cmd.Dir = workDir
+	cmd.Env = env
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	return cmd.Run()
+}
+
+func (a *App) workspaceWorkDir(name string) (string, error) {
+	wsPath, err := a.EnsureWorkspace(name)
+	if err != nil {
+		return "", err
+	}
+	manifest, err := a.getManifest(wsPath)
+	if err != nil {
+		return "", err
+	}
+	if manifest.ProjectPath != "" {
+		return manifest.ProjectPath, nil
+	}
+	return wsPath, nil
 }
 
 func (a *App) workspaceRuntimeForMode(name string, mode workspaceRuntimeMode) ([]string, string, error) {
@@ -388,6 +413,15 @@ func defaultOpenArgs(program, workDir string) []string {
 	default:
 		return []string{workDir}
 	}
+}
+
+func defaultIDEProgram() string {
+	for _, key := range []string{"GROOT_IDE", "VISUAL", "EDITOR"} {
+		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+			return value
+		}
+	}
+	return "code"
 }
 
 func (a *App) AttachToWorkspace(name string, args []string) error {

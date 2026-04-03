@@ -218,6 +218,7 @@ Example:
 - `ws env` prints shell exports for the resolved workspace runtime and includes `GROOT_WORKDIR` for the chosen working directory
 - `ws exec` runs a specific command in the same workspace environment and working directory resolution used by `ws shell`
 - `ws open` launches an IDE or GUI program in a softer runtime that keeps the project cwd, toolchain `PATH`, and `GROOT_*` vars while preserving the user's normal `HOME`
+- `ws open` defaults to `GROOT_IDE`, then `VISUAL`, then `EDITOR`, and finally `code` when no IDE is specified
 - `ws env` omits interactive shell prompt variables such as `PS1` and `PROMPT`
 - host `PATH` is filtered before reuse, so user-home shims and editor-specific entries are dropped while system paths remain available
 - `ws open` keeps the host `PATH` and `HOME` so GUI IDEs can behave more like normal desktop apps

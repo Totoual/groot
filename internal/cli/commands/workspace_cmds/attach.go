@@ -39,7 +39,6 @@ func (at *AttachCmd) Run(a *app.App, args []string) error {
 
 	name := fs.Arg(0)
 
-	fmt.Println("Attaching to workspace:", name)
 	err := a.AttachToWorkspace(name, args[1:])
 	if err != nil {
 		return fmt.Errorf("Couldn't attach tools workspace: %w", err)
