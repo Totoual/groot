@@ -247,7 +247,7 @@ func TestOpenCmdRunAttachDetectedSkipsVersionlessRuntimes(t *testing.T) {
 	}
 }
 
-func TestOpenCmdRunSetupDetectedInstallsConcreteVersions(t *testing.T) {
+func TestOpenCmdRunSetupAliasInstallsConcreteVersions(t *testing.T) {
 	root := t.TempDir()
 	a := app.NewApp(root)
 	hostHome := filepath.Join(root, "host-home")
@@ -279,7 +279,7 @@ func TestOpenCmdRunSetupDetectedInstallsConcreteVersions(t *testing.T) {
 	seedInstalledNodeToolchain(t, a, "25.8.1")
 
 	_, stderr, err := captureCommandOutput(func() error {
-		return (&OpenCmd{}).Run(a, []string{projectPath, "--setup-detected", "--ide", scriptPath})
+		return (&OpenCmd{}).Run(a, []string{projectPath, "--setup", "--ide", scriptPath})
 	})
 	if err != nil {
 		t.Fatalf("Run returned error: %v", err)
@@ -418,6 +418,88 @@ func TestStatusCmdPrintsRuntimeOwnershipSummary(t *testing.T) {
 	}
 	if !strings.Contains(stdout, "Status: partial runtime ownership") {
 		t.Fatalf("expected partial ownership status in stdout, got %q", stdout)
+	}
+}
+
+func TestStatusCmdPrintsRuntimeOwnershipJSON(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+	t.Setenv("HOME", filepath.Join(root, "host-home"))
+	t.Setenv("PATH", "/usr/bin:/bin")
+
+	projectPath := filepath.Join(root, "repos", "the_grime_tcg")
+	backendDir := filepath.Join(projectPath, "backend")
+	frontendDir := filepath.Join(projectPath, "frontend")
+	if err := os.MkdirAll(backendDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := os.MkdirAll(frontendDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(backendDir, "go.mod"), []byte("module example.com/tcg\n\ngo 1.25.4\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile go.mod returned error: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(frontendDir, "package.json"), []byte(`{"engines":{"node":"25.8.1"}}`), 0o600); err != nil {
+		t.Fatalf("WriteFile package.json returned error: %v", err)
+	}
+
+	if err := a.CreateNewWorkspace("the_grime_tcg"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+	if err := a.BindWorkspace("the_grime_tcg", projectPath); err != nil {
+		t.Fatalf("BindWorkspace returned error: %v", err)
+	}
+	if err := a.AttachToWorkspace("the_grime_tcg", []string{"go@1.25.4"}); err != nil {
+		t.Fatalf("AttachToWorkspace returned error: %v", err)
+	}
+	seedInstalledGoToolchain(t, a, "1.25.4")
+
+	stdout, stderr, err := captureCommandOutput(func() error {
+		return (&StatusCmd{}).Run(a, []string{"--json", projectPath})
+	})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if strings.TrimSpace(stderr) != "" {
+		t.Fatalf("expected stderr to stay quiet, got %q", stderr)
+	}
+
+	var output struct {
+		WorkspaceName       string                  `json:"workspace_name"`
+		ProjectPath         string                  `json:"project_path"`
+		Status              string                  `json:"status"`
+		Detected            []app.DetectedToolchain `json:"detected"`
+		Attached            []app.Component         `json:"attached"`
+		Installed           []app.Component         `json:"installed"`
+		AttachedUninstalled []app.Component         `json:"attached_uninstalled"`
+		Missing             []app.DetectedToolchain `json:"missing"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &output); err != nil {
+		t.Fatalf("Unmarshal returned error: %v\nstdout=%s", err, stdout)
+	}
+	if output.WorkspaceName != "the_grime_tcg" {
+		t.Fatalf("WorkspaceName = %q, want %q", output.WorkspaceName, "the_grime_tcg")
+	}
+	if output.ProjectPath != projectPath {
+		t.Fatalf("ProjectPath = %q, want %q", output.ProjectPath, projectPath)
+	}
+	if output.Status != "partial runtime ownership" {
+		t.Fatalf("Status = %q, want %q", output.Status, "partial runtime ownership")
+	}
+	if len(output.Detected) != 2 {
+		t.Fatalf("expected 2 detected runtimes, got %#v", output.Detected)
+	}
+	if len(output.Attached) != 1 || output.Attached[0] != (app.Component{Name: "go", Version: "1.25.4"}) {
+		t.Fatalf("unexpected attached runtimes: %#v", output.Attached)
+	}
+	if len(output.Installed) != 1 || output.Installed[0] != (app.Component{Name: "go", Version: "1.25.4"}) {
+		t.Fatalf("unexpected installed runtimes: %#v", output.Installed)
+	}
+	if len(output.AttachedUninstalled) != 0 {
+		t.Fatalf("expected no attached-but-uninstalled runtimes, got %#v", output.AttachedUninstalled)
+	}
+	if len(output.Missing) != 1 || output.Missing[0].Name != "node" || output.Missing[0].Version != "25.8.1" {
+		t.Fatalf("unexpected missing runtimes: %#v", output.Missing)
 	}
 }
 

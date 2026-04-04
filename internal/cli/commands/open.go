@@ -73,6 +73,9 @@ func parsePathOpenArgs(args []string) (pathOpenOptions, error) {
 		case arg == "--install-detected":
 			opts.attachDetected = true
 			opts.installDetected = true
+		case arg == "--setup":
+			opts.attachDetected = true
+			opts.installDetected = true
 		case arg == "--setup-detected":
 			opts.attachDetected = true
 			opts.installDetected = true
@@ -102,7 +105,7 @@ func parsePathOpenArgs(args []string) (pathOpenOptions, error) {
 }
 
 func (c *OpenCmd) printUsage() {
-	fmt.Fprintln(os.Stdout, "usage: groot open <path> [--ide code|cursor|zed|...] [--attach-detected|--install-detected|--setup-detected] [-- args...]")
+	fmt.Fprintln(os.Stdout, "usage: groot open <path> [--ide code|cursor|zed|...] [--attach-detected|--install-detected|--setup|--setup-detected] [-- args...]")
 	fmt.Fprintln(os.Stdout)
 	fmt.Fprintln(os.Stdout, c.Help())
 }

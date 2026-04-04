@@ -79,19 +79,11 @@ func writeWorkspaceRuntimeStatus(report app.WorkspaceRuntimeOwnership) {
 	}
 	if len(report.Missing) > 0 {
 		fmt.Fprintf(os.Stdout, "Host Fallback Risk: %s\n", formatDetectedToolchains(report.Missing))
-		fmt.Fprintln(os.Stdout, "Status: partial runtime ownership")
+		fmt.Fprintf(os.Stdout, "Status: %s\n", workspaceRuntimeStatusLabel(report))
 		return
 	}
 	fmt.Fprintln(os.Stdout, "Host Fallback Risk: none")
-	if len(report.Uninstalled) > 0 {
-		fmt.Fprintln(os.Stdout, "Status: Groot owns the runtime declaration, but install is still pending")
-		return
-	}
-	if len(report.Detected) == 0 {
-		fmt.Fprintln(os.Stdout, "Status: no runtimes detected")
-		return
-	}
-	fmt.Fprintln(os.Stdout, "Status: runtime owned by Groot")
+	fmt.Fprintf(os.Stdout, "Status: %s\n", workspaceRuntimeStatusLabel(report))
 }
 
 func writeFirstOpenSummary(plan app.FirstOpenRuntimePlan) {
@@ -114,4 +106,17 @@ func formatComponents(components []app.Component) string {
 		parts = append(parts, fmt.Sprintf("%s@%s", comp.Name, comp.Version))
 	}
 	return strings.Join(parts, ", ")
+}
+
+func workspaceRuntimeStatusLabel(report app.WorkspaceRuntimeOwnership) string {
+	if len(report.Missing) > 0 {
+		return "partial runtime ownership"
+	}
+	if len(report.Uninstalled) > 0 {
+		return "runtime declared but install pending"
+	}
+	if len(report.Detected) == 0 {
+		return "no runtimes detected"
+	}
+	return "runtime owned by Groot"
 }

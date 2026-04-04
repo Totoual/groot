@@ -137,6 +137,7 @@ This layer decides how Groot keeps project isolation without breaking normal IDE
 This layer makes Groot usable by a top-level agent without inventing a separate runtime path.
 
 - [ ] Keep `ws exec` as the primary agent execution primitive; treat `ws open` as a human GUI action, not an agent-core runtime primitive.
+- [x] Add machine-readable runtime ownership output for the path-first flow via `groot status <path> --json`.
 - [ ] Expose the core runtime through MCP tools backed by the same app layer.
 - [ ] Define the first MCP tool surface:
   - `workspace_create`
