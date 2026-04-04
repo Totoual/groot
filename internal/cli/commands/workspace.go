@@ -25,7 +25,7 @@ func NewWorkspaceCmd(cmds ...interfaces.Cmd) *WorkspaceCmd {
 }
 
 func (ws *WorkspaceCmd) Name() string { return "ws" }
-func (ws *WorkspaceCmd) Help() string { return "Manage workspaces" }
+func (ws *WorkspaceCmd) Help() string { return "Advanced workspace controls" }
 
 func (ws *WorkspaceCmd) Run(a *app.App, args []string) error {
 	if len(args) == 0 || args[0] == "help" || args[0] == "-h" || args[0] == "--help" || args[0] == "-help" {

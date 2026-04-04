@@ -39,9 +39,12 @@ func (c *EnterCmd) Run(a *app.App, args []string) error {
 	}
 
 	projectPath := fs.Arg(0)
-	workspaceName, err := resolveProjectWorkspace(a, projectPath)
+	resolved, err := resolveProjectWorkspace(a, projectPath)
 	if err != nil {
 		return err
 	}
-	return a.WorkspaceShell(workspaceName)
+	if err := enforceWorkspaceOwnership(a, resolved.Name); err != nil {
+		return err
+	}
+	return a.WorkspaceShell(resolved.Name)
 }

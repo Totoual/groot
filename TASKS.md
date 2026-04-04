@@ -37,15 +37,17 @@ Groot should move toward:
 
 ### Immediate Next Tasks
 
-- [ ] Detect likely runtimes on first open, for example Go, Node, Python, Rust, Bun, Deno, PHP, Java.
-- [ ] Define first-open behavior when no toolchains are attached yet:
+- [x] Detect likely runtimes on first open, for example Go, Node, Python, Rust, Bun, Deno, PHP, Java.
+- [x] Define first-open behavior when no toolchains are attached yet:
   - warn only
   - suggest attach/install
   - or auto-attach common runtimes
-- [ ] Surface when a workspace is still using host toolchains instead of Groot-managed ones.
-- [ ] Add a stricter runtime mode or warning mode for undeclared toolchains.
-- [ ] Decide whether `groot open <path>` should only open, or whether it should also offer/setup runtime ownership on first use.
-- [ ] Make the first-open experience feel product-shaped, not like a thin alias over lower-level commands.
+- [x] Surface when a workspace is still using host toolchains instead of Groot-managed ones.
+- [x] Add a stricter runtime mode or warning mode for undeclared toolchains.
+- [x] Decide whether `groot open <path>` should only open, or whether it should also offer/setup runtime ownership on first use.
+- [x] Add an opt-in first-open setup path that can auto-attach and install detected runtimes with flags.
+- [x] Add a path-based status/inspect view so users can see detected, attached, installed, and host-fallback runtime state.
+- [x] Make the first-open experience feel product-shaped, not like a thin alias over lower-level commands.
 
 ## Layer 1: Core Runtime
 
@@ -135,6 +137,7 @@ This layer decides how Groot keeps project isolation without breaking normal IDE
 This layer makes Groot usable by a top-level agent without inventing a separate runtime path.
 
 - [ ] Keep `ws exec` as the primary agent execution primitive; treat `ws open` as a human GUI action, not an agent-core runtime primitive.
+- [x] Add machine-readable runtime ownership output for the path-first flow via `groot status <path> --json`.
 - [ ] Expose the core runtime through MCP tools backed by the same app layer.
 - [ ] Define the first MCP tool surface:
   - `workspace_create`

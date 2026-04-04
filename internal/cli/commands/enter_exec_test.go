@@ -117,3 +117,49 @@ func TestExecCmdRejectsMissingPathOrCommand(t *testing.T) {
 		t.Fatal("expected argument validation error")
 	}
 }
+
+func TestExecCmdStrictRuntimeRejectsUndeclaredToolchains(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+	t.Setenv("SHELL", "/bin/sh")
+	t.Setenv("PATH", "/usr/bin:/bin")
+	t.Setenv("GROOT_STRICT_RUNTIME", "1")
+
+	projectPath := filepath.Join(root, "repos", "the_grime_tcg")
+	backendDir := filepath.Join(projectPath, "backend")
+	if err := os.MkdirAll(backendDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(backendDir, "go.mod"), []byte("module example.com/tcg\n\ngo 1.25.4\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile go.mod returned error: %v", err)
+	}
+
+	scriptPath := filepath.Join(root, "capture.sh")
+	script := "#!/bin/sh\nprintf 'should-not-run' > \"$1\"\n"
+	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("WriteFile returned error: %v", err)
+	}
+
+	outFile := filepath.Join(root, "out.txt")
+	stdout, stderr, err := captureCommandOutput(func() error {
+		return (&ExecCmd{}).Run(a, []string{projectPath, scriptPath, outFile})
+	})
+	if err == nil {
+		t.Fatal("expected strict runtime mode to reject undeclared toolchains")
+	}
+	if strings.TrimSpace(stdout) != "" {
+		t.Fatalf("expected stdout to stay quiet, got %q", stdout)
+	}
+	if !strings.Contains(err.Error(), `strict runtime mode rejected undeclared detected runtimes`) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(stderr, `Workspace "the_grime_tcg" does not declare detected runtimes: go@1.25.4`) {
+		t.Fatalf("expected strict warning on stderr, got %q", stderr)
+	}
+	if !strings.Contains(stderr, `Strict runtime mode is enabled via GROOT_STRICT_RUNTIME`) {
+		t.Fatalf("expected strict mode note on stderr, got %q", stderr)
+	}
+	if _, statErr := os.Stat(outFile); !os.IsNotExist(statErr) {
+		t.Fatalf("expected command not to run, stat err=%v", statErr)
+	}
+}
