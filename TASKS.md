@@ -95,6 +95,7 @@ This is the stable control plane Groot should expose for shells, IDE launchers, 
 
 This layer should make Groot feel simple for normal developers by letting an agent drive the lower-level Groot primitives.
 
+- [x] Provide a CLI + JSON bridge that an external agent can use today via `groot status <path> --json`.
 - [ ] Decide whether MCP is the primary agent adapter for Groot.
 - [x] Add workspace lookup by `project_path`.
 - [ ] Define the agent-to-Groot contract: create, bind, attach, install, exec, inspect.
@@ -138,6 +139,7 @@ This layer makes Groot usable by a top-level agent without inventing a separate 
 
 - [ ] Keep `ws exec` as the primary agent execution primitive; treat `ws open` as a human GUI action, not an agent-core runtime primitive.
 - [x] Add machine-readable runtime ownership output for the path-first flow via `groot status <path> --json`.
+- [ ] Decide whether the first external agent integration path is CLI+JSON first, MCP first, or both in parallel.
 - [ ] Expose the core runtime through MCP tools backed by the same app layer.
 - [ ] Define the first MCP tool surface:
   - `workspace_create`
