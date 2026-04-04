@@ -16,6 +16,8 @@ The intended split is:
 
 The agent-facing direction is for Groot to expose the same runtime core through a structured interface, likely MCP, instead of making agents depend on ad hoc shell scripting.
 
+The near-term agent plan is documented in [docs/agent.md](/Users/aristotelistriantafyllidis/Documents/groot/docs/agent.md): a thin separate `agent/` layer in the same repo should drive Groot through CLI + JSON first, then move toward MCP once the contract stabilizes.
+
 ## Current Scope
 
 - Initialize a Groot root under `~/.groot`

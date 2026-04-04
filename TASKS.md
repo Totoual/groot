@@ -96,17 +96,29 @@ This is the stable control plane Groot should expose for shells, IDE launchers, 
 This layer should make Groot feel simple for normal developers by letting an agent drive the lower-level Groot primitives.
 
 - [x] Provide a CLI + JSON bridge that an external agent can use today via `groot status <path> --json`.
+- [x] Decide that the first agent will live as a separate thin layer in the same repo, not inside Groot core.
+- [x] Decide that the first agent transport will be CLI + JSON before MCP.
 - [ ] Decide whether MCP is the primary agent adapter for Groot.
 - [x] Add workspace lookup by `project_path`.
-- [ ] Define the agent-to-Groot contract: create, bind, attach, install, exec, inspect.
+- [x] Define the v0 agent-to-Groot CLI + JSON contract for `status`, `open/setup`, `exec`, and `enter`.
+- [ ] Extend the contract with `inspect` and other machine-readable lower-level surfaces.
 - [ ] Decide the primary agent entrypoint:
   - `groot agent "<intent>"`
   - `groot "<intent>"`
   - `groot open <path> --agent`
-- [ ] Define the first supported agent intents, for example:
-  - "start crawlly with go@1.25 and node@25"
+- [x] Define the first supported agent intents, for example:
+  - "create me a project called X with golang and node"
   - "open this repo in a clean workspace"
   - "set up this project for me"
+  - "run go test in this project"
+- [x] Define the minimal `agent/` folder structure and boundaries in the monorepo.
+- [x] Implement the CLI + JSON contract client inside `internal/agent`.
+- [x] Implement the first thin agent entrypoint in `cmd/groot-agent`.
+- [ ] Implement the first supported agent intents, for example:
+  - "create me a project called X with golang and node"
+  - "open this repo in a clean workspace"
+  - "set up this project for me"
+  - "run go test in this project"
 - [ ] Add a path-based setup flow so the agent can create or resolve a workspace from a repo path and move toward runtime ownership on first open.
 - [x] Add a path-based open/enter flow for non-agent fallback usage.
 - [ ] Ensure the agent can auto-create or auto-bind a workspace when a repo is first seen.
