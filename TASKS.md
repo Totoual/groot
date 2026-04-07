@@ -104,7 +104,7 @@ This layer should make Groot easy for normal developers while keeping external a
   - `groot "<intent>"`
   - `groot open <path> --agent`
   - or no direct intent mode at all
-- [ ] Document the normal user workflow as path-first, with `groot ws ...` kept as advanced/runtime commands and MCP kept as the agent surface.
+- [x] Document the normal user workflow as path-first, with `groot ws ...` kept as advanced/runtime commands and MCP kept as the agent surface.
 
 ## Layer 2.5: IDE Strategy
 
@@ -142,6 +142,9 @@ This layer makes Groot usable by a top-level agent without inventing a separate 
 - [x] Add a machine-readable workspace inspection surface through MCP via `workspace_inspect`.
 - [x] Add machine-readable environment output through MCP via `workspace_env`.
 - [x] Add explicit MCP control-plane tools for `workspace_attach` and `workspace_install`.
+- [x] Add path-based export through the CLI and MCP as portable workspace-contract data.
+- [x] Add scoped MCP mode so agents can be limited to one project or an explicit multi-project allowlist.
+- [x] Add session-level MCP workspace activation so agents can select one project without requiring MCP server reconfiguration.
 - [ ] Add machine-readable command results for agent-driven flows.
 - [ ] Add machine-readable workspace inspection, for example `groot ws inspect <name> --json`.
 - [ ] Add machine-readable environment output in addition to shell exports.
@@ -152,7 +155,7 @@ This layer makes Groot usable by a top-level agent without inventing a separate 
 - [ ] Define agent-side recovery behavior for partially configured workspaces.
 - [ ] Define the agent entry model around Groot primitives instead of direct host access.
 - [ ] Keep CLI and MCP surfaces backed by the same runtime core and data model.
-- [ ] Define import/export for project runtime state and agent workspace state.
+- [ ] Define import semantics for project runtime state and agent workspace state.
 
 ## Layer 4: Human Shortcuts
 

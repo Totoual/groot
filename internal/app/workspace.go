@@ -545,6 +545,10 @@ func normalizeProjectPath(projectPath string) (string, error) {
 	return absPath, nil
 }
 
+func NormalizeProjectPath(projectPath string) (string, error) {
+	return normalizeProjectPath(projectPath)
+}
+
 func sameProjectPath(left, right string) (bool, error) {
 	normalizedLeft, err := normalizeProjectPath(left)
 	if err != nil {
@@ -574,6 +578,10 @@ func sameProjectPath(left, right string) (bool, error) {
 	}
 
 	return leftResolved == rightResolved, nil
+}
+
+func ProjectPathsMatch(left, right string) (bool, error) {
+	return sameProjectPath(left, right)
 }
 
 func workspaceNameFromProjectPath(projectPath string) string {
