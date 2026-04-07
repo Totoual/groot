@@ -1087,6 +1087,7 @@ func TestShellHookReturnsWorkspaceExportsWhenWorkspaceIsSet(t *testing.T) {
 
 func TestShellHookReturnsNothingWithoutWorkspaceContext(t *testing.T) {
 	app := NewApp(t.TempDir())
+	t.Setenv("GROOT_WORKSPACE", "")
 
 	output, err := app.ShellHook()
 	if err != nil {

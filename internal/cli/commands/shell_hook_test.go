@@ -33,6 +33,7 @@ func TestShellHookCmdRunPrintsExportsForCurrentWorkspace(t *testing.T) {
 
 func TestShellHookCmdRunAllowsEmptyContext(t *testing.T) {
 	a := app.NewApp(t.TempDir())
+	t.Setenv("GROOT_WORKSPACE", "")
 
 	output, err := captureCommandStdout(func() error {
 		return (&ShellHookCmd{}).Run(a, nil)

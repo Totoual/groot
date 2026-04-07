@@ -36,6 +36,7 @@ func main() {
 		&commands.EnterCmd{},
 		&commands.ExecCmd{},
 		&commands.InitCmd{},
+		&commands.MCPCmd{},
 		&commands.OpenCmd{},
 		&commands.ShellHookCmd{},
 		&commands.StatusCmd{},

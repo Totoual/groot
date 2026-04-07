@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -124,6 +125,42 @@ func (a *App) WorkspaceShell(name string) error {
 
 func (a *App) ExecWorkspace(name, command string, args []string) error {
 	return a.runWorkspaceProcess(a.strictRuntimeMode(), name, command, args)
+}
+
+func (a *App) ExecWorkspaceCapture(name, command string, args []string) (WorkspaceCommandResult, error) {
+	env, workDir, err := a.workspaceRuntimeForMode(name, a.strictRuntimeMode())
+	if err != nil {
+		return WorkspaceCommandResult{}, err
+	}
+
+	cmd := exec.Command(command, args...)
+	cmd.Dir = workDir
+	cmd.Env = env
+
+	var stdoutBuf bytes.Buffer
+	var stderrBuf bytes.Buffer
+	cmd.Stdout = &stdoutBuf
+	cmd.Stderr = &stderrBuf
+
+	result := WorkspaceCommandResult{
+		WorkDir:  workDir,
+		ExitCode: 0,
+	}
+
+	if err := cmd.Run(); err != nil {
+		result.Stdout = stdoutBuf.String()
+		result.Stderr = stderrBuf.String()
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			result.ExitCode = exitErr.ExitCode()
+			return result, nil
+		}
+		return WorkspaceCommandResult{}, err
+	}
+
+	result.Stdout = stdoutBuf.String()
+	result.Stderr = stderrBuf.String()
+	return result, nil
 }
 
 func (a *App) OpenWorkspace(name, program string, args []string) error {

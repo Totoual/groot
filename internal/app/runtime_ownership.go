@@ -1,6 +1,9 @@
 package app
 
-import "os"
+import (
+	"os"
+	"strings"
+)
 
 type WorkspaceRuntimeOwnership struct {
 	WorkspaceName string
@@ -21,6 +24,36 @@ type FirstOpenRuntimePlan struct {
 	Missing          []DetectedToolchain
 	AttachRequested  bool
 	InstallRequested bool
+}
+
+type WorkspaceCommandResult struct {
+	WorkDir  string
+	Stdout   string
+	Stderr   string
+	ExitCode int
+}
+
+func RuntimeOwnershipStatusLabel(report WorkspaceRuntimeOwnership) string {
+	if len(report.Missing) > 0 {
+		return "partial runtime ownership"
+	}
+	if len(report.Uninstalled) > 0 {
+		return "runtime declared but install pending"
+	}
+	if len(report.Detected) == 0 {
+		return "no runtimes detected"
+	}
+	return "runtime owned by Groot"
+}
+
+func RuntimeStrictModeEnabled() bool {
+	value := strings.TrimSpace(strings.ToLower(os.Getenv("GROOT_STRICT_RUNTIME")))
+	switch value {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 func (a *App) InspectWorkspaceRuntimeOwnership(name string) (WorkspaceRuntimeOwnership, error) {

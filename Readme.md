@@ -14,9 +14,9 @@ The intended split is:
 - Project-scoped agent state should belong to Groot.
 - GUI IDE identity should remain compatible with the user's normal machine profile.
 
-The agent-facing direction is for Groot to expose the same runtime core through a structured interface, likely MCP, instead of making agents depend on ad hoc shell scripting.
+The agent-facing direction is for Groot to expose the same runtime core through MCP, instead of making agents depend on ad hoc shell scripting.
 
-The near-term agent plan is documented in [docs/agent.md](/Users/aristotelistriantafyllidis/Documents/groot/docs/agent.md): a thin separate `agent/` layer in the same repo should drive Groot through CLI + JSON first, then move toward MCP once the contract stabilizes.
+The current MCP direction is documented in [docs/agent.md](/Users/aristotelistriantafyllidis/Documents/groot/docs/agent.md).
 
 ## Current Scope
 
@@ -35,7 +35,7 @@ The near-term agent plan is documented in [docs/agent.md](/Users/aristotelistria
 - Run one-off commands inside the workspace runtime
 - Open a workspace in an IDE with a softer GUI runtime
 - Print shell exports for the resolved workspace runtime
-- Provide a stable base for a future agent-facing interface on top of the same runtime core
+- Expose an initial MCP server on top of the same runtime core
 
 ## Principles
 
@@ -180,7 +180,29 @@ These commands resolve the workspace by `project_path` first and create/bind one
 - `open` is the main human GUI shortcut
 - `enter` and `exec` use the strict workspace runtime
 - `status` shows detected, attached, installed, and host-fallback runtime state for the project path, and `--json` exposes the same state as structured output for automation and future agents
-- `ws ...` remains the lower-level runtime surface for explicit control and future agent/MCP use
+- `ws ...` remains the lower-level runtime surface for explicit control
+
+## MCP
+
+Groot now exposes a testable MCP server over stdio:
+
+```bash
+groot mcp
+```
+
+Current MCP tools:
+
+- `workspace_status`
+- `workspace_setup`
+- `workspace_exec`
+
+These tools let an external MCP-capable agent:
+
+- inspect a project's runtime ownership state
+- move a project toward a Groot-owned runtime
+- execute one strict-runtime command in that workspace
+
+The current MCP tool contract is documented in [docs/agent-contract.md](/Users/aristotelistriantafyllidis/Documents/groot/docs/agent-contract.md).
 
 ## Advanced Commands
 

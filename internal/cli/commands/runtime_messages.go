@@ -48,7 +48,7 @@ func writeWorkspaceOwnershipWarning(report app.WorkspaceRuntimeOwnership) {
 	fmt.Fprintln(&b, "Attach them with:")
 	fmt.Fprintf(&b, "  groot ws attach %s %s\n", report.WorkspaceName, suggestedAttachArgs(report.Missing))
 	fmt.Fprintf(&b, "  groot ws install %s\n", report.WorkspaceName)
-	if runtimeStrictModeEnabled() {
+	if app.RuntimeStrictModeEnabled() {
 		fmt.Fprintln(&b, "Strict runtime mode is enabled via GROOT_STRICT_RUNTIME, so this command will stop here.")
 	}
 	fmt.Fprint(os.Stderr, b.String())
@@ -79,11 +79,11 @@ func writeWorkspaceRuntimeStatus(report app.WorkspaceRuntimeOwnership) {
 	}
 	if len(report.Missing) > 0 {
 		fmt.Fprintf(os.Stdout, "Host Fallback Risk: %s\n", formatDetectedToolchains(report.Missing))
-		fmt.Fprintf(os.Stdout, "Status: %s\n", workspaceRuntimeStatusLabel(report))
+		fmt.Fprintf(os.Stdout, "Status: %s\n", app.RuntimeOwnershipStatusLabel(report))
 		return
 	}
 	fmt.Fprintln(os.Stdout, "Host Fallback Risk: none")
-	fmt.Fprintf(os.Stdout, "Status: %s\n", workspaceRuntimeStatusLabel(report))
+	fmt.Fprintf(os.Stdout, "Status: %s\n", app.RuntimeOwnershipStatusLabel(report))
 }
 
 func writeFirstOpenSummary(plan app.FirstOpenRuntimePlan) {
@@ -106,17 +106,4 @@ func formatComponents(components []app.Component) string {
 		parts = append(parts, fmt.Sprintf("%s@%s", comp.Name, comp.Version))
 	}
 	return strings.Join(parts, ", ")
-}
-
-func workspaceRuntimeStatusLabel(report app.WorkspaceRuntimeOwnership) string {
-	if len(report.Missing) > 0 {
-		return "partial runtime ownership"
-	}
-	if len(report.Uninstalled) > 0 {
-		return "runtime declared but install pending"
-	}
-	if len(report.Detected) == 0 {
-		return "no runtimes detected"
-	}
-	return "runtime owned by Groot"
 }
