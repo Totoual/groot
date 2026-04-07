@@ -102,7 +102,14 @@ type workspaceInspectResult struct {
 }
 
 type workspaceExportResult struct {
-	Export app.WorkspaceExportPayload `json:"export"`
+	Export app.WorkspaceExport `json:"export"`
+}
+
+type workspaceImportResult struct {
+	Created       bool            `json:"created"`
+	WorkspaceName string          `json:"workspace_name"`
+	ProjectPath   string          `json:"project_path"`
+	Status        workspaceStatus `json:"status"`
 }
 
 type workspaceEnvResult struct {
@@ -543,6 +550,43 @@ func (s *Server) tools() []toolDefinition {
 				"required": []string{"export"},
 			},
 		},
+		{
+			Name:        "workspace_import",
+			Description: "Import a portable workspace contract for an existing project path and optionally install attached toolchains.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"path": map[string]any{
+						"type":        "string",
+						"description": "Absolute or ~/ existing project path to bind the imported workspace to.",
+					},
+					"export": map[string]any{
+						"type":        "object",
+						"description": "Portable workspace export previously returned by workspace_export.",
+					},
+					"install_attached": map[string]any{
+						"type":        "boolean",
+						"description": "Install attached toolchains after import. Defaults to false.",
+					},
+					"workspace_name": map[string]any{
+						"type":        "string",
+						"description": "Optional workspace name override when the exported workspace name would collide on this machine.",
+					},
+				},
+				"required":             []string{"path", "export"},
+				"additionalProperties": false,
+			},
+			OutputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"created":        map[string]any{"type": "boolean"},
+					"workspace_name": map[string]any{"type": "string"},
+					"project_path":   map[string]any{"type": "string"},
+					"status":         map[string]any{"type": "object"},
+				},
+				"required": []string{"created", "workspace_name", "project_path", "status"},
+			},
+		},
 	}
 }
 
@@ -566,6 +610,8 @@ func (s *Server) callTool(params toolCallParams) toolResult {
 		return s.workspaceInstallTool(params.Arguments)
 	case "workspace_export":
 		return s.workspaceExportTool(params.Arguments)
+	case "workspace_import":
+		return s.workspaceImportTool(params.Arguments)
 	default:
 		return errorToolResult(fmt.Sprintf("unknown tool %q", params.Name), nil)
 	}
@@ -991,10 +1037,51 @@ func (s *Server) workspaceExportTool(args map[string]any) toolResult {
 	}
 
 	result := workspaceExportResult{
-		Export: exported.Workspace,
+		Export: exported,
 	}
 	return successToolResult(
 		fmt.Sprintf("Workspace %q exported.", exported.Workspace.Name),
+		result,
+	)
+}
+
+func (s *Server) workspaceImportTool(args map[string]any) toolResult {
+	projectPath, ok := stringArg(args, "path")
+	if !ok {
+		return errorToolResult(`tool "workspace_import" requires string argument "path"`, nil)
+	}
+	projectPath, err := s.scopedProjectPath(projectPath)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+
+	exportValue, ok := args["export"]
+	if !ok {
+		return errorToolResult(`tool "workspace_import" requires object argument "export"`, nil)
+	}
+	exported, err := workspaceExportFromArg(exportValue)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+
+	imported, err := s.app.ImportWorkspaceAs(
+		exported,
+		projectPath,
+		stringArgOrDefault(args, "workspace_name", ""),
+		boolArgOrDefault(args, "install_attached", false),
+	)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+
+	result := workspaceImportResult{
+		Created:       imported.Created,
+		WorkspaceName: imported.WorkspaceName,
+		ProjectPath:   imported.ProjectPath,
+		Status:        makeWorkspaceStatus(imported.Status),
+	}
+	return successToolResult(
+		fmt.Sprintf("Workspace %q imported for %s.", imported.WorkspaceName, imported.ProjectPath),
 		result,
 	)
 }
@@ -1070,6 +1157,21 @@ func boolArgOrDefault(args map[string]any, key string, fallback bool) bool {
 	return value
 }
 
+func stringArgOrDefault(args map[string]any, key string, fallback string) string {
+	if args == nil {
+		return fallback
+	}
+	raw, ok := args[key]
+	if !ok {
+		return fallback
+	}
+	value, ok := raw.(string)
+	if !ok {
+		return fallback
+	}
+	return value
+}
+
 func stringSliceArg(args map[string]any, key string) ([]string, error) {
 	if args == nil {
 		return nil, nil
@@ -1091,6 +1193,32 @@ func stringSliceArg(args map[string]any, key string) ([]string, error) {
 		result = append(result, s)
 	}
 	return result, nil
+}
+
+func workspaceExportFromArg(raw any) (app.WorkspaceExport, error) {
+	data, err := json.Marshal(raw)
+	if err != nil {
+		return app.WorkspaceExport{}, fmt.Errorf("marshal workspace export input: %w", err)
+	}
+	var exported app.WorkspaceExport
+	if err := json.Unmarshal(data, &exported); err != nil {
+		return app.WorkspaceExport{}, fmt.Errorf("parse workspace export input: %w", err)
+	}
+	if exported.SchemaVersion != 0 || exported.Workspace.Name != "" {
+		return exported, nil
+	}
+
+	var payload app.WorkspaceExportPayload
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return app.WorkspaceExport{}, fmt.Errorf("parse workspace export input: %w", err)
+	}
+	if payload.Name == "" {
+		return app.WorkspaceExport{}, fmt.Errorf("workspace export name required")
+	}
+	return app.WorkspaceExport{
+		SchemaVersion: 1,
+		Workspace:     payload,
+	}, nil
 }
 
 func stringsCutSpec(spec string) (string, string, bool) {

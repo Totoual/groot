@@ -143,6 +143,8 @@ This layer makes Groot usable by a top-level agent without inventing a separate 
 - [x] Add machine-readable environment output through MCP via `workspace_env`.
 - [x] Add explicit MCP control-plane tools for `workspace_attach` and `workspace_install`.
 - [x] Add path-based export through the CLI and MCP as portable workspace-contract data.
+- [x] Add path-based import through the CLI and MCP so exported workspace contracts can be recreated around an existing local repo path.
+- [x] Support explicit workspace renaming on import so contracts can be restored on machines where the original workspace name already exists.
 - [x] Add scoped MCP mode so agents can be limited to one project or an explicit multi-project allowlist.
 - [x] Add session-level MCP workspace activation so agents can select one project without requiring MCP server reconfiguration.
 - [ ] Add machine-readable command results for agent-driven flows.
@@ -155,7 +157,8 @@ This layer makes Groot usable by a top-level agent without inventing a separate 
 - [ ] Define agent-side recovery behavior for partially configured workspaces.
 - [ ] Define the agent entry model around Groot primitives instead of direct host access.
 - [ ] Keep CLI and MCP surfaces backed by the same runtime core and data model.
-- [ ] Define import semantics for project runtime state and agent workspace state.
+- [x] Define initial import semantics for project runtime state around an existing local repo path.
+- [ ] Extend import semantics to cover richer conflict handling and agent workspace state.
 
 ## Layer 4: Human Shortcuts
 

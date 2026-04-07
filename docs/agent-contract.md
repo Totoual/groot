@@ -58,11 +58,11 @@ The current MCP surface is intentionally small:
 - attach explicit toolchains to a workspace
 - install attached toolchains into Groot's managed store
 - export the current workspace contract as portable structured data
+- import that exported contract onto an existing local repo path
 
 It does not yet cover:
 
 - workspace creation by explicit name
-- import back into Groot
 - workspace resources like logs or manifest
 
 ## Available Tools
@@ -271,10 +271,41 @@ Input:
 
 Structured result:
 
-- `export.name`
-- `export.project_path`
-- `export.manifest`
-- `export.runtime`
+- `export.schema_version`
+- `export.exported_at`
+- `export.workspace.name`
+- `export.workspace.project_path`
+- `export.workspace.manifest`
+- `export.workspace.runtime`
+
+### `workspace_import`
+
+Import a portable workspace contract for an existing project path.
+
+Input:
+
+```json
+{
+  "path": "/Users/example/Documents/the_grime_tcg",
+  "export": {
+    "schema_version": 1,
+    "workspace": {
+      "name": "the_grime_tcg"
+    }
+  },
+  "workspace_name": "the_grime_tcg-copy",
+  "install_attached": false
+}
+```
+
+Structured result:
+
+- `created`
+- `workspace_name`
+- `project_path`
+- `status`
+
+If the exported workspace name already exists on the target machine, pass `workspace_name` to import the contract under a different local workspace identity.
 
 ## Design Rules
 
@@ -296,4 +327,4 @@ The next MCP additions should likely be:
 
 1. manifest and log resources
 2. `workspace_bind` / `workspace_create` if agents need lower-level control
-3. import surfaces
+3. richer import conflict and recovery flows

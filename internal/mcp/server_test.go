@@ -52,8 +52,8 @@ func TestServerHandleInitializeAndListTools(t *testing.T) {
 	if err := json.Unmarshal(response, &listResponse); err != nil {
 		t.Fatalf("Unmarshal tools/list response returned error: %v", err)
 	}
-	if len(listResponse.Result.Tools) != 9 {
-		t.Fatalf("len(tools) = %d, want %d", len(listResponse.Result.Tools), 9)
+	if len(listResponse.Result.Tools) != 10 {
+		t.Fatalf("len(tools) = %d, want %d", len(listResponse.Result.Tools), 10)
 	}
 }
 
@@ -729,15 +729,18 @@ func TestServerWorkspaceExportToolReturnsPortableWorkspaceContract(t *testing.T)
 			IsError           bool `json:"isError"`
 			StructuredContent struct {
 				Export struct {
-					Name        string `json:"name"`
-					ProjectPath string `json:"project_path"`
-					Manifest    struct {
+					SchemaVersion int `json:"schema_version"`
+					Workspace     struct {
 						Name        string `json:"name"`
 						ProjectPath string `json:"project_path"`
-					} `json:"manifest"`
-					Runtime struct {
-						Status string `json:"status"`
-					} `json:"runtime"`
+						Manifest    struct {
+							Name        string `json:"name"`
+							ProjectPath string `json:"project_path"`
+						} `json:"manifest"`
+						Runtime struct {
+							Status string `json:"status"`
+						} `json:"runtime"`
+					} `json:"workspace"`
 				} `json:"export"`
 			} `json:"structuredContent"`
 		} `json:"result"`
@@ -748,20 +751,169 @@ func TestServerWorkspaceExportToolReturnsPortableWorkspaceContract(t *testing.T)
 	if rpc.Result.IsError {
 		t.Fatal("expected workspace_export success result")
 	}
-	if rpc.Result.StructuredContent.Export.Name != "the_grime_tcg" {
-		t.Fatalf("export.name = %q, want %q", rpc.Result.StructuredContent.Export.Name, "the_grime_tcg")
+	if rpc.Result.StructuredContent.Export.SchemaVersion != 1 {
+		t.Fatalf("export.schema_version = %d, want %d", rpc.Result.StructuredContent.Export.SchemaVersion, 1)
 	}
-	if rpc.Result.StructuredContent.Export.ProjectPath != projectPath {
-		t.Fatalf("export.project_path = %q, want %q", rpc.Result.StructuredContent.Export.ProjectPath, projectPath)
+	if rpc.Result.StructuredContent.Export.Workspace.Name != "the_grime_tcg" {
+		t.Fatalf("export.workspace.name = %q, want %q", rpc.Result.StructuredContent.Export.Workspace.Name, "the_grime_tcg")
 	}
-	if rpc.Result.StructuredContent.Export.Manifest.Name != "the_grime_tcg" {
-		t.Fatalf("export.manifest.name = %q, want %q", rpc.Result.StructuredContent.Export.Manifest.Name, "the_grime_tcg")
+	if rpc.Result.StructuredContent.Export.Workspace.ProjectPath != projectPath {
+		t.Fatalf("export.workspace.project_path = %q, want %q", rpc.Result.StructuredContent.Export.Workspace.ProjectPath, projectPath)
 	}
-	if rpc.Result.StructuredContent.Export.Manifest.ProjectPath != projectPath {
-		t.Fatalf("export.manifest.project_path = %q, want %q", rpc.Result.StructuredContent.Export.Manifest.ProjectPath, projectPath)
+	if rpc.Result.StructuredContent.Export.Workspace.Manifest.Name != "the_grime_tcg" {
+		t.Fatalf("export.workspace.manifest.name = %q, want %q", rpc.Result.StructuredContent.Export.Workspace.Manifest.Name, "the_grime_tcg")
 	}
-	if rpc.Result.StructuredContent.Export.Runtime.Status != "runtime owned by Groot" {
-		t.Fatalf("export.runtime.status = %q, want %q", rpc.Result.StructuredContent.Export.Runtime.Status, "runtime owned by Groot")
+	if rpc.Result.StructuredContent.Export.Workspace.Manifest.ProjectPath != projectPath {
+		t.Fatalf("export.workspace.manifest.project_path = %q, want %q", rpc.Result.StructuredContent.Export.Workspace.Manifest.ProjectPath, projectPath)
+	}
+	if rpc.Result.StructuredContent.Export.Workspace.Runtime.Status != "runtime owned by Groot" {
+		t.Fatalf("export.workspace.runtime.status = %q, want %q", rpc.Result.StructuredContent.Export.Workspace.Runtime.Status, "runtime owned by Groot")
+	}
+}
+
+func TestServerWorkspaceImportToolImportsPortableWorkspaceContract(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+	projectPath := filepath.Join(root, "repos", "crawlly")
+	backendDir := filepath.Join(projectPath, "backend")
+	if err := os.MkdirAll(backendDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(backendDir, "go.mod"), []byte("module example.com/crawlly\n\ngo 1.25.4\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile returned error: %v", err)
+	}
+
+	exported := app.WorkspaceExport{
+		SchemaVersion: 1,
+		Workspace: app.WorkspaceExportPayload{
+			Name: "crawlly",
+			Manifest: app.Manifest{
+				SchemaVersion: 1,
+				Name:          "crawlly",
+				Packages:      []app.Component{{Name: "go", Version: "1.25.4"}},
+			},
+		},
+	}
+	exportJSON, err := json.Marshal(exported)
+	if err != nil {
+		t.Fatalf("Marshal returned error: %v", err)
+	}
+
+	server := NewServer(a)
+	request := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"workspace_import","arguments":{"path":"` + projectPath + `","export":` + string(exportJSON) + `}}}`
+	response, err := server.HandleMessage([]byte(request))
+	if err != nil {
+		t.Fatalf("HandleMessage returned error: %v", err)
+	}
+
+	var rpc struct {
+		Result struct {
+			IsError           bool `json:"isError"`
+			StructuredContent struct {
+				Created       bool   `json:"created"`
+				WorkspaceName string `json:"workspace_name"`
+				ProjectPath   string `json:"project_path"`
+				Status        struct {
+					WorkspaceName string `json:"workspace_name"`
+				} `json:"status"`
+			} `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(response, &rpc); err != nil {
+		t.Fatalf("Unmarshal returned error: %v", err)
+	}
+	if rpc.Result.IsError {
+		t.Fatal("expected workspace_import success result")
+	}
+	if !rpc.Result.StructuredContent.Created {
+		t.Fatal("expected workspace_import to create the workspace")
+	}
+	if rpc.Result.StructuredContent.WorkspaceName != "crawlly" {
+		t.Fatalf("workspace_name = %q, want %q", rpc.Result.StructuredContent.WorkspaceName, "crawlly")
+	}
+	if rpc.Result.StructuredContent.ProjectPath != projectPath {
+		t.Fatalf("project_path = %q, want %q", rpc.Result.StructuredContent.ProjectPath, projectPath)
+	}
+}
+
+func TestServerWorkspaceImportToolSupportsWorkspaceNameOverride(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+	existingPath := filepath.Join(root, "repos", "existing")
+	importPath := filepath.Join(root, "repos", "imported")
+	for _, projectPath := range []string{existingPath, importPath} {
+		if err := os.MkdirAll(projectPath, 0o755); err != nil {
+			t.Fatalf("MkdirAll returned error: %v", err)
+		}
+	}
+	if err := a.CreateNewWorkspace("crawlly"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+	if err := a.BindWorkspace("crawlly", existingPath); err != nil {
+		t.Fatalf("BindWorkspace returned error: %v", err)
+	}
+
+	exported := app.WorkspaceExport{
+		SchemaVersion: 1,
+		Workspace: app.WorkspaceExportPayload{
+			Name: "crawlly",
+			Manifest: app.Manifest{
+				SchemaVersion: 1,
+				Name:          "crawlly",
+			},
+		},
+	}
+	exportJSON, err := json.Marshal(exported)
+	if err != nil {
+		t.Fatalf("Marshal returned error: %v", err)
+	}
+
+	server := NewServer(a)
+	request := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"workspace_import","arguments":{"path":"` + importPath + `","workspace_name":"crawlly-imported","export":` + string(exportJSON) + `}}}`
+	response, err := server.HandleMessage([]byte(request))
+	if err != nil {
+		t.Fatalf("HandleMessage returned error: %v", err)
+	}
+
+	var rpc struct {
+		Result struct {
+			IsError           bool `json:"isError"`
+			StructuredContent struct {
+				WorkspaceName string `json:"workspace_name"`
+			} `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(response, &rpc); err != nil {
+		t.Fatalf("Unmarshal returned error: %v", err)
+	}
+	if rpc.Result.IsError {
+		t.Fatal("expected workspace_import success result")
+	}
+	if rpc.Result.StructuredContent.WorkspaceName != "crawlly-imported" {
+		t.Fatalf("workspace_name = %q, want %q", rpc.Result.StructuredContent.WorkspaceName, "crawlly-imported")
+	}
+}
+
+func TestWorkspaceExportFromArgAcceptsLegacyPayloadShape(t *testing.T) {
+	exported, err := workspaceExportFromArg(map[string]any{
+		"name":         "crawlly",
+		"project_path": "/tmp/crawlly",
+		"manifest": map[string]any{
+			"name":           "crawlly",
+			"schema_version": 1,
+		},
+		"runtime": map[string]any{
+			"status": "no runtimes detected",
+		},
+	})
+	if err != nil {
+		t.Fatalf("workspaceExportFromArg returned error: %v", err)
+	}
+	if exported.SchemaVersion != 1 {
+		t.Fatalf("SchemaVersion = %d, want %d", exported.SchemaVersion, 1)
+	}
+	if exported.Workspace.Name != "crawlly" {
+		t.Fatalf("Workspace.Name = %q, want %q", exported.Workspace.Name, "crawlly")
 	}
 }
 
