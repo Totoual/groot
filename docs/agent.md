@@ -45,6 +45,10 @@ Current tools:
 - `workspace_status`
 - `workspace_setup`
 - `workspace_exec`
+- `workspace_inspect`
+- `workspace_env`
+- `workspace_attach`
+- `workspace_install`
 
 Those tools are documented in [docs/agent-contract.md](/Users/aristotelistriantafyllidis/Documents/groot/docs/agent-contract.md).
 

@@ -139,6 +139,9 @@ This layer makes Groot usable by a top-level agent without inventing a separate 
   - `workspace_status`
   - `workspace_setup`
   - `workspace_exec`
+- [x] Add a machine-readable workspace inspection surface through MCP via `workspace_inspect`.
+- [x] Add machine-readable environment output through MCP via `workspace_env`.
+- [x] Add explicit MCP control-plane tools for `workspace_attach` and `workspace_install`.
 - [ ] Add machine-readable command results for agent-driven flows.
 - [ ] Add machine-readable workspace inspection, for example `groot ws inspect <name> --json`.
 - [ ] Add machine-readable environment output in addition to shell exports.

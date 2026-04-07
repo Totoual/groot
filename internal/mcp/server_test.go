@@ -52,8 +52,8 @@ func TestServerHandleInitializeAndListTools(t *testing.T) {
 	if err := json.Unmarshal(response, &listResponse); err != nil {
 		t.Fatalf("Unmarshal tools/list response returned error: %v", err)
 	}
-	if len(listResponse.Result.Tools) != 3 {
-		t.Fatalf("len(tools) = %d, want %d", len(listResponse.Result.Tools), 3)
+	if len(listResponse.Result.Tools) != 7 {
+		t.Fatalf("len(tools) = %d, want %d", len(listResponse.Result.Tools), 7)
 	}
 }
 
@@ -180,6 +180,208 @@ func TestServerWorkspaceExecToolCapturesOutput(t *testing.T) {
 	}
 	if rpc.Result.StructuredContent.Stdout != "hello" {
 		t.Fatalf("stdout = %q, want %q", rpc.Result.StructuredContent.Stdout, "hello")
+	}
+}
+
+func TestServerWorkspaceInspectToolReturnsManifestAndPaths(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+	projectPath := filepath.Join(root, "repos", "the_grime_tcg")
+	if err := os.MkdirAll(filepath.Join(projectPath, "backend"), 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(projectPath, "backend", "go.mod"), []byte("module example.com/tcg\n\ngo 1.25.4\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile returned error: %v", err)
+	}
+
+	server := NewServer(a)
+	request := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"workspace_inspect","arguments":{"path":"` + projectPath + `"}}}`
+	response, err := server.HandleMessage([]byte(request))
+	if err != nil {
+		t.Fatalf("HandleMessage returned error: %v", err)
+	}
+
+	var rpc struct {
+		Result struct {
+			StructuredContent struct {
+				Created bool `json:"created"`
+				Inspect struct {
+					WorkspaceName string `json:"workspace_name"`
+					WorkspaceDir  string `json:"workspace_dir"`
+					ManifestPath  string `json:"manifest_path"`
+					Manifest      struct {
+						Name        string `json:"name"`
+						ProjectPath string `json:"project_path"`
+					} `json:"manifest"`
+					Runtime struct {
+						Status string `json:"status"`
+					} `json:"runtime"`
+				} `json:"inspect"`
+			} `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(response, &rpc); err != nil {
+		t.Fatalf("Unmarshal returned error: %v", err)
+	}
+	if !rpc.Result.StructuredContent.Created {
+		t.Fatal("expected workspace_inspect to report created=true on first use")
+	}
+	if rpc.Result.StructuredContent.Inspect.Manifest.Name != "the_grime_tcg" {
+		t.Fatalf("manifest.name = %q, want %q", rpc.Result.StructuredContent.Inspect.Manifest.Name, "the_grime_tcg")
+	}
+	if rpc.Result.StructuredContent.Inspect.Manifest.ProjectPath != projectPath {
+		t.Fatalf("manifest.project_path = %q, want %q", rpc.Result.StructuredContent.Inspect.Manifest.ProjectPath, projectPath)
+	}
+	if !strings.HasSuffix(rpc.Result.StructuredContent.Inspect.ManifestPath, filepath.Join("the_grime_tcg", "manifest.json")) {
+		t.Fatalf("unexpected manifest path: %q", rpc.Result.StructuredContent.Inspect.ManifestPath)
+	}
+	if rpc.Result.StructuredContent.Inspect.Runtime.Status != "partial runtime ownership" {
+		t.Fatalf("runtime.status = %q, want %q", rpc.Result.StructuredContent.Inspect.Runtime.Status, "partial runtime ownership")
+	}
+}
+
+func TestServerWorkspaceEnvToolReturnsStructuredEnv(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+	projectPath := filepath.Join(root, "repos", "the_grime_tcg")
+	if err := os.MkdirAll(projectPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	t.Setenv("PATH", "/usr/bin:/bin")
+	t.Setenv("SHELL", "/bin/zsh")
+
+	server := NewServer(a)
+	request := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"workspace_env","arguments":{"path":"` + projectPath + `"}}}`
+	response, err := server.HandleMessage([]byte(request))
+	if err != nil {
+		t.Fatalf("HandleMessage returned error: %v", err)
+	}
+
+	var rpc struct {
+		Result struct {
+			StructuredContent struct {
+				Created bool              `json:"created"`
+				WorkDir string            `json:"workdir"`
+				Env     map[string]string `json:"env"`
+			} `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(response, &rpc); err != nil {
+		t.Fatalf("Unmarshal returned error: %v", err)
+	}
+	if !rpc.Result.StructuredContent.Created {
+		t.Fatal("expected workspace_env to report created=true on first use")
+	}
+	if rpc.Result.StructuredContent.WorkDir != projectPath {
+		t.Fatalf("workdir = %q, want %q", rpc.Result.StructuredContent.WorkDir, projectPath)
+	}
+	if rpc.Result.StructuredContent.Env["GROOT_WORKSPACE"] != "the_grime_tcg" {
+		t.Fatalf("GROOT_WORKSPACE = %q, want %q", rpc.Result.StructuredContent.Env["GROOT_WORKSPACE"], "the_grime_tcg")
+	}
+}
+
+func TestServerWorkspaceAttachToolAttachesManifestComponents(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+	projectPath := filepath.Join(root, "repos", "the_grime_tcg")
+	if err := os.MkdirAll(projectPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+
+	server := NewServer(a)
+	request := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"workspace_attach","arguments":{"path":"` + projectPath + `","toolchains":["go@1.25.4","node@25.8.1"]}}}`
+	response, err := server.HandleMessage([]byte(request))
+	if err != nil {
+		t.Fatalf("HandleMessage returned error: %v", err)
+	}
+
+	var rpc struct {
+		Result struct {
+			IsError           bool `json:"isError"`
+			StructuredContent struct {
+				Attached []struct {
+					Name    string `json:"name"`
+					Version string `json:"version"`
+				} `json:"attached"`
+				Status struct {
+					Attached []struct {
+						Name    string `json:"name"`
+						Version string `json:"version"`
+					} `json:"attached"`
+				} `json:"status"`
+			} `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(response, &rpc); err != nil {
+		t.Fatalf("Unmarshal returned error: %v", err)
+	}
+	if rpc.Result.IsError {
+		t.Fatal("expected workspace_attach success result")
+	}
+	if len(rpc.Result.StructuredContent.Attached) != 2 {
+		t.Fatalf("len(attached) = %d, want %d", len(rpc.Result.StructuredContent.Attached), 2)
+	}
+	if len(rpc.Result.StructuredContent.Status.Attached) != 2 {
+		t.Fatalf("len(status.attached) = %d, want %d", len(rpc.Result.StructuredContent.Status.Attached), 2)
+	}
+}
+
+func TestServerWorkspaceInstallToolInstallsAttachedToolchains(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+	projectPath := filepath.Join(root, "repos", "the_grime_tcg")
+	if err := os.MkdirAll(projectPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := a.CreateNewWorkspace("the_grime_tcg"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+	if err := a.BindWorkspace("the_grime_tcg", projectPath); err != nil {
+		t.Fatalf("BindWorkspace returned error: %v", err)
+	}
+	if err := a.AttachToWorkspace("the_grime_tcg", []string{"go@1.25.4"}); err != nil {
+		t.Fatalf("AttachToWorkspace returned error: %v", err)
+	}
+	binPath := filepath.Join(root, "toolchains", "go", "1.25.4", "go", "bin", "go")
+	if err := os.MkdirAll(filepath.Dir(binPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := os.WriteFile(binPath, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatalf("WriteFile returned error: %v", err)
+	}
+
+	server := NewServer(a)
+	request := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"workspace_install","arguments":{"path":"` + projectPath + `"}}}`
+	response, err := server.HandleMessage([]byte(request))
+	if err != nil {
+		t.Fatalf("HandleMessage returned error: %v", err)
+	}
+
+	var rpc struct {
+		Result struct {
+			IsError           bool `json:"isError"`
+			StructuredContent struct {
+				Installed []struct {
+					Name    string `json:"name"`
+					Version string `json:"version"`
+				} `json:"installed"`
+				Status struct {
+					Status string `json:"status"`
+				} `json:"status"`
+			} `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(response, &rpc); err != nil {
+		t.Fatalf("Unmarshal returned error: %v", err)
+	}
+	if rpc.Result.IsError {
+		t.Fatal("expected workspace_install success result")
+	}
+	if len(rpc.Result.StructuredContent.Installed) != 1 {
+		t.Fatalf("len(installed) = %d, want %d", len(rpc.Result.StructuredContent.Installed), 1)
+	}
+	if rpc.Result.StructuredContent.Status.Status != "runtime owned by Groot" && rpc.Result.StructuredContent.Status.Status != "no runtimes detected" && rpc.Result.StructuredContent.Status.Status != "partial runtime ownership" {
+		t.Fatalf("unexpected status %q", rpc.Result.StructuredContent.Status.Status)
 	}
 }
 

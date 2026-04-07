@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/totoual/groot/internal/app"
 )
@@ -90,6 +91,40 @@ type workspaceExecResult struct {
 	ExitCode   int             `json:"exit_code"`
 	Warnings   []string        `json:"warnings,omitempty"`
 	StrictMode bool            `json:"strict_mode"`
+}
+
+type workspaceInspectResult struct {
+	Created bool                `json:"created"`
+	Inspect workspaceInspection `json:"inspect"`
+}
+
+type workspaceEnvResult struct {
+	Created bool              `json:"created"`
+	WorkDir string            `json:"workdir"`
+	Env     map[string]string `json:"env"`
+}
+
+type workspaceAttachResult struct {
+	Created  bool            `json:"created"`
+	Attached []app.Component `json:"attached"`
+	Status   workspaceStatus `json:"status"`
+}
+
+type workspaceInstallResult struct {
+	Created   bool            `json:"created"`
+	Installed []app.Component `json:"installed"`
+	Status    workspaceStatus `json:"status"`
+}
+
+type workspaceInspection struct {
+	WorkspaceName string          `json:"workspace_name"`
+	WorkspaceDir  string          `json:"workspace_dir"`
+	ManifestPath  string          `json:"manifest_path"`
+	HomeDir       string          `json:"home_dir"`
+	StateDir      string          `json:"state_dir"`
+	LogsDir       string          `json:"logs_dir"`
+	Manifest      app.Manifest    `json:"manifest"`
+	Runtime       workspaceStatus `json:"runtime"`
 }
 
 func NewServer(a *app.App) *Server {
@@ -331,6 +366,108 @@ func (s *Server) tools() []toolDefinition {
 				"required": []string{"created", "workspace", "command", "args", "workdir", "exit_code", "strict_mode"},
 			},
 		},
+		{
+			Name:        "workspace_inspect",
+			Description: "Resolve or create a workspace from a project path and return the manifest, workspace paths, and runtime ownership state.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"path": map[string]any{
+						"type":        "string",
+						"description": "Absolute or ~/ project path.",
+					},
+				},
+				"required":             []string{"path"},
+				"additionalProperties": false,
+			},
+			OutputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"created": map[string]any{"type": "boolean"},
+					"inspect": map[string]any{"type": "object"},
+				},
+				"required": []string{"created", "inspect"},
+			},
+		},
+		{
+			Name:        "workspace_env",
+			Description: "Resolve or create a workspace from a project path and return the strict runtime environment as structured key/value pairs.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"path": map[string]any{
+						"type":        "string",
+						"description": "Absolute or ~/ project path.",
+					},
+				},
+				"required":             []string{"path"},
+				"additionalProperties": false,
+			},
+			OutputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"created": map[string]any{"type": "boolean"},
+					"workdir": map[string]any{"type": "string"},
+					"env":     map[string]any{"type": "object"},
+				},
+				"required": []string{"created", "workdir", "env"},
+			},
+		},
+		{
+			Name:        "workspace_attach",
+			Description: "Resolve or create a workspace from a project path and attach explicit toolchain specs like go@1.25.4.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"path": map[string]any{
+						"type":        "string",
+						"description": "Absolute or ~/ project path.",
+					},
+					"toolchains": map[string]any{
+						"type":        "array",
+						"description": "Toolchain specs in name@version format.",
+						"items": map[string]any{
+							"type": "string",
+						},
+					},
+				},
+				"required":             []string{"path", "toolchains"},
+				"additionalProperties": false,
+			},
+			OutputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"created":  map[string]any{"type": "boolean"},
+					"attached": map[string]any{"type": "array"},
+					"status":   map[string]any{"type": "object"},
+				},
+				"required": []string{"created", "attached", "status"},
+			},
+		},
+		{
+			Name:        "workspace_install",
+			Description: "Resolve or create a workspace from a project path and install all attached toolchains into Groot's managed store.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"path": map[string]any{
+						"type":        "string",
+						"description": "Absolute or ~/ project path.",
+					},
+				},
+				"required":             []string{"path"},
+				"additionalProperties": false,
+			},
+			OutputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"created":   map[string]any{"type": "boolean"},
+					"installed": map[string]any{"type": "array"},
+					"status":    map[string]any{"type": "object"},
+				},
+				"required": []string{"created", "installed", "status"},
+			},
+		},
 	}
 }
 
@@ -342,6 +479,14 @@ func (s *Server) callTool(params toolCallParams) toolResult {
 		return s.workspaceSetupTool(params.Arguments)
 	case "workspace_exec":
 		return s.workspaceExecTool(params.Arguments)
+	case "workspace_inspect":
+		return s.workspaceInspectTool(params.Arguments)
+	case "workspace_env":
+		return s.workspaceEnvTool(params.Arguments)
+	case "workspace_attach":
+		return s.workspaceAttachTool(params.Arguments)
+	case "workspace_install":
+		return s.workspaceInstallTool(params.Arguments)
 	default:
 		return errorToolResult(fmt.Sprintf("unknown tool %q", params.Name), nil)
 	}
@@ -485,6 +630,148 @@ func (s *Server) workspaceExecTool(args map[string]any) toolResult {
 	return successToolResult(text, result)
 }
 
+func (s *Server) workspaceInspectTool(args map[string]any) toolResult {
+	projectPath, ok := stringArg(args, "path")
+	if !ok {
+		return errorToolResult(`tool "workspace_inspect" requires string argument "path"`, nil)
+	}
+
+	workspaceName, created, err := s.app.ResolveOrCreateWorkspaceByProjectPath(projectPath)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	inspect, err := s.app.InspectWorkspace(workspaceName)
+	if err != nil {
+		return errorToolResult(err.Error(), map[string]any{
+			"workspace_name": workspaceName,
+			"created":        created,
+		})
+	}
+
+	result := workspaceInspectResult{
+		Created: created,
+		Inspect: makeWorkspaceInspection(inspect),
+	}
+	return successToolResult(
+		fmt.Sprintf("Workspace %q inspection loaded.", inspect.WorkspaceName),
+		result,
+	)
+}
+
+func (s *Server) workspaceEnvTool(args map[string]any) toolResult {
+	projectPath, ok := stringArg(args, "path")
+	if !ok {
+		return errorToolResult(`tool "workspace_env" requires string argument "path"`, nil)
+	}
+
+	workspaceName, created, err := s.app.ResolveOrCreateWorkspaceByProjectPath(projectPath)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	envMap, workDir, err := s.app.WorkspaceEnvMap(workspaceName)
+	if err != nil {
+		return errorToolResult(err.Error(), map[string]any{
+			"workspace_name": workspaceName,
+			"created":        created,
+		})
+	}
+
+	result := workspaceEnvResult{
+		Created: created,
+		WorkDir: workDir,
+		Env:     envMap,
+	}
+	return successToolResult(
+		fmt.Sprintf("Workspace %q environment loaded.", workspaceName),
+		result,
+	)
+}
+
+func (s *Server) workspaceAttachTool(args map[string]any) toolResult {
+	projectPath, ok := stringArg(args, "path")
+	if !ok {
+		return errorToolResult(`tool "workspace_attach" requires string argument "path"`, nil)
+	}
+	toolchains, err := stringSliceArg(args, "toolchains")
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	if len(toolchains) == 0 {
+		return errorToolResult(`tool "workspace_attach" requires non-empty "toolchains"`, nil)
+	}
+
+	workspaceName, created, err := s.app.ResolveOrCreateWorkspaceByProjectPath(projectPath)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	if err := s.app.AttachToWorkspace(workspaceName, toolchains); err != nil {
+		return errorToolResult(err.Error(), map[string]any{
+			"workspace_name": workspaceName,
+			"created":        created,
+		})
+	}
+	report, err := s.app.InspectWorkspaceRuntimeOwnership(workspaceName)
+	if err != nil {
+		return errorToolResult(err.Error(), map[string]any{
+			"workspace_name": workspaceName,
+			"created":        created,
+		})
+	}
+
+	attached := make([]app.Component, 0, len(toolchains))
+	for _, spec := range toolchains {
+		name, version, ok := stringsCutSpec(spec)
+		if ok {
+			attached = append(attached, app.Component{Name: name, Version: version})
+		}
+	}
+
+	result := workspaceAttachResult{
+		Created:  created,
+		Attached: attached,
+		Status:   makeWorkspaceStatus(report),
+	}
+	return successToolResult(
+		fmt.Sprintf("Attached %d toolchains to workspace %q.", len(attached), workspaceName),
+		result,
+	)
+}
+
+func (s *Server) workspaceInstallTool(args map[string]any) toolResult {
+	projectPath, ok := stringArg(args, "path")
+	if !ok {
+		return errorToolResult(`tool "workspace_install" requires string argument "path"`, nil)
+	}
+
+	workspaceName, created, err := s.app.ResolveOrCreateWorkspaceByProjectPath(projectPath)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	if err := s.app.InstallToWorkspace(workspaceName); err != nil {
+		return errorToolResult(err.Error(), map[string]any{
+			"workspace_name": workspaceName,
+			"created":        created,
+		})
+	}
+	report, err := s.app.InspectWorkspaceRuntimeOwnership(workspaceName)
+	if err != nil {
+		return errorToolResult(err.Error(), map[string]any{
+			"workspace_name": workspaceName,
+			"created":        created,
+		})
+	}
+
+	result := workspaceInstallResult{
+		Created:   created,
+		Installed: append([]app.Component{}, report.Installed...),
+		Status:    makeWorkspaceStatus(report),
+	}
+	return successToolResult(
+		fmt.Sprintf("Installed attached toolchains for workspace %q.", workspaceName),
+		result,
+	)
+}
+
 func makeWorkspaceStatus(report app.WorkspaceRuntimeOwnership) workspaceStatus {
 	return workspaceStatus{
 		WorkspaceName:       report.WorkspaceName,
@@ -495,6 +782,19 @@ func makeWorkspaceStatus(report app.WorkspaceRuntimeOwnership) workspaceStatus {
 		Installed:           append([]app.Component{}, report.Installed...),
 		AttachedUninstalled: append([]app.Component{}, report.Uninstalled...),
 		Missing:             append([]app.DetectedToolchain{}, report.Missing...),
+	}
+}
+
+func makeWorkspaceInspection(inspect app.WorkspaceInspection) workspaceInspection {
+	return workspaceInspection{
+		WorkspaceName: inspect.WorkspaceName,
+		WorkspaceDir:  inspect.WorkspaceDir,
+		ManifestPath:  inspect.ManifestPath,
+		HomeDir:       inspect.HomeDir,
+		StateDir:      inspect.StateDir,
+		LogsDir:       inspect.LogsDir,
+		Manifest:      inspect.Manifest,
+		Runtime:       makeWorkspaceStatus(inspect.Runtime),
 	}
 }
 
@@ -553,17 +853,25 @@ func stringSliceArg(args map[string]any, key string) ([]string, error) {
 	}
 	values, ok := raw.([]any)
 	if !ok {
-		return nil, fmt.Errorf(`tool "workspace_exec" requires "args" to be an array of strings`)
+		return nil, fmt.Errorf(`tool input requires "%s" to be an array of strings`, key)
 	}
 	result := make([]string, 0, len(values))
 	for _, value := range values {
 		s, ok := value.(string)
 		if !ok {
-			return nil, fmt.Errorf(`tool "workspace_exec" requires "args" to be an array of strings`)
+			return nil, fmt.Errorf(`tool input requires "%s" to be an array of strings`, key)
 		}
 		result = append(result, s)
 	}
 	return result, nil
+}
+
+func stringsCutSpec(spec string) (string, string, bool) {
+	name, version, ok := strings.Cut(spec, "@")
+	if !ok || name == "" || version == "" {
+		return "", "", false
+	}
+	return name, version, true
 }
 
 func formatDetectedToolchains(detected []app.DetectedToolchain) string {

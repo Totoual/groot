@@ -195,12 +195,19 @@ Current MCP tools:
 - `workspace_status`
 - `workspace_setup`
 - `workspace_exec`
+- `workspace_inspect`
+- `workspace_env`
+- `workspace_attach`
+- `workspace_install`
 
 These tools let an external MCP-capable agent:
 
 - inspect a project's runtime ownership state
 - move a project toward a Groot-owned runtime
 - execute one strict-runtime command in that workspace
+- inspect the concrete workspace manifest and layout when it needs lower-level context
+- load the strict workspace env as structured data
+- attach and install explicit toolchains through Groot instead of improvising host-side installs
 
 The current MCP tool contract is documented in [docs/agent-contract.md](/Users/aristotelistriantafyllidis/Documents/groot/docs/agent-contract.md).
 

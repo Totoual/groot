@@ -203,6 +203,54 @@ func TestUnbindWorkspaceClearsProjectPath(t *testing.T) {
 	}
 }
 
+func TestExecWorkspaceCaptureResolvesCommandFromWorkspacePath(t *testing.T) {
+	root := t.TempDir()
+	app := NewApp(root)
+
+	hostBin := filepath.Join(root, "host-bin")
+	if err := os.MkdirAll(hostBin, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	hostNode := filepath.Join(hostBin, "node")
+	if err := os.WriteFile(hostNode, []byte("#!/bin/sh\nprintf host\n"), 0o755); err != nil {
+		t.Fatalf("WriteFile returned error: %v", err)
+	}
+	t.Setenv("PATH", hostBin)
+
+	workspaceBin := filepath.Join(root, "toolchains", "node", "25.8.1", "bin")
+	if err := os.MkdirAll(workspaceBin, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	workspaceNode := filepath.Join(workspaceBin, "node")
+	if err := os.WriteFile(workspaceNode, []byte("#!/bin/sh\nprintf workspace\n"), 0o755); err != nil {
+		t.Fatalf("WriteFile returned error: %v", err)
+	}
+
+	app.toolchains["node"] = &stubInstaller{name: "node", binDir: workspaceBin}
+
+	if err := app.CreateNewWorkspace("tcg"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+	projectPath := filepath.Join(root, "repos", "tcg")
+	if err := os.MkdirAll(projectPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := app.BindWorkspace("tcg", projectPath); err != nil {
+		t.Fatalf("BindWorkspace returned error: %v", err)
+	}
+	if err := app.AttachToWorkspace("tcg", []string{"node@25.8.1"}); err != nil {
+		t.Fatalf("AttachToWorkspace returned error: %v", err)
+	}
+
+	result, err := app.ExecWorkspaceCapture("tcg", "node", nil)
+	if err != nil {
+		t.Fatalf("ExecWorkspaceCapture returned error: %v", err)
+	}
+	if result.Stdout != "workspace" {
+		t.Fatalf("stdout = %q, want %q", result.Stdout, "workspace")
+	}
+}
+
 func TestFindWorkspaceByProjectPathReturnsBoundWorkspace(t *testing.T) {
 	root := t.TempDir()
 	app := NewApp(root)

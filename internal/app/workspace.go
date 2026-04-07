@@ -133,7 +133,12 @@ func (a *App) ExecWorkspaceCapture(name, command string, args []string) (Workspa
 		return WorkspaceCommandResult{}, err
 	}
 
-	cmd := exec.Command(command, args...)
+	resolvedCommand, err := resolveCommandForEnv(command, env)
+	if err != nil {
+		return WorkspaceCommandResult{}, err
+	}
+
+	cmd := exec.Command(resolvedCommand, args...)
 	cmd.Dir = workDir
 	cmd.Env = env
 
@@ -248,7 +253,12 @@ func (a *App) runWorkspaceProcess(mode workspaceRuntimeMode, name, command strin
 		return err
 	}
 
-	cmd := exec.Command(command, args...)
+	resolvedCommand, err := resolveCommandForEnv(command, env)
+	if err != nil {
+		return err
+	}
+
+	cmd := exec.Command(resolvedCommand, args...)
 	cmd.Dir = workDir
 	cmd.Env = env
 	cmd.Stdin = os.Stdin
@@ -256,6 +266,46 @@ func (a *App) runWorkspaceProcess(mode workspaceRuntimeMode, name, command strin
 	cmd.Stderr = os.Stderr
 
 	return cmd.Run()
+}
+
+func resolveCommandForEnv(command string, env []string) (string, error) {
+	if command == "" {
+		return "", fmt.Errorf("command required")
+	}
+	if strings.ContainsRune(command, os.PathSeparator) {
+		return command, nil
+	}
+
+	pathValue := ""
+	for _, entry := range env {
+		if strings.HasPrefix(entry, "PATH=") {
+			pathValue = strings.TrimPrefix(entry, "PATH=")
+			break
+		}
+	}
+	if pathValue == "" {
+		return exec.LookPath(command)
+	}
+
+	for _, dir := range filepath.SplitList(pathValue) {
+		if dir == "" {
+			continue
+		}
+		candidate := filepath.Join(dir, command)
+		info, err := os.Stat(candidate)
+		if err != nil {
+			continue
+		}
+		if info.IsDir() {
+			continue
+		}
+		if info.Mode()&0o111 == 0 {
+			continue
+		}
+		return candidate, nil
+	}
+
+	return "", exec.ErrNotFound
 }
 
 func (a *App) workspaceWorkDir(name string) (string, error) {

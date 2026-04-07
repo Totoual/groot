@@ -25,6 +25,10 @@ The current MCP surface is intentionally small:
 - inspect runtime ownership for a project path
 - set up a workspace for a project path
 - execute one command in the strict Groot runtime
+- inspect the concrete workspace, manifest, and runtime state
+- return the strict workspace environment as structured data
+- attach explicit toolchains to a workspace
+- install attached toolchains into Groot's managed store
 
 It does not yet cover:
 
@@ -121,6 +125,85 @@ Structured result:
 - `warnings`
 - `strict_mode`
 
+### `workspace_inspect`
+
+Resolve or create a workspace from a project path and return the concrete workspace state.
+
+Input:
+
+```json
+{
+  "path": "/Users/example/Documents/the_grime_tcg"
+}
+```
+
+Structured result:
+
+- `created`
+- `inspect.workspace_name`
+- `inspect.workspace_dir`
+- `inspect.manifest_path`
+- `inspect.home_dir`
+- `inspect.state_dir`
+- `inspect.logs_dir`
+- `inspect.manifest`
+- `inspect.runtime`
+
+### `workspace_env`
+
+Resolve or create a workspace from a project path and return the strict runtime environment as key/value pairs.
+
+Input:
+
+```json
+{
+  "path": "/Users/example/Documents/the_grime_tcg"
+}
+```
+
+Structured result:
+
+- `created`
+- `workdir`
+- `env`
+
+### `workspace_attach`
+
+Resolve or create a workspace from a project path and attach explicit toolchain specs.
+
+Input:
+
+```json
+{
+  "path": "/Users/example/Documents/the_grime_tcg",
+  "toolchains": ["go@1.25.4", "node@25.8.1"]
+}
+```
+
+Structured result:
+
+- `created`
+- `attached`
+- `status`
+
+### `workspace_install`
+
+Resolve or create a workspace from a project path and install all attached toolchains.
+
+Input:
+
+```json
+{
+  "path": "/Users/example/Documents/the_grime_tcg"
+}
+```
+
+Structured result:
+
+- `created`
+- `installed`
+- `status`
+
 ## Design Rules
 
 External agents should treat Groot as:
@@ -139,7 +222,6 @@ External agents should not:
 
 The next MCP additions should likely be:
 
-1. `workspace_inspect`
-2. `workspace_env`
-3. manifest and log resources
-4. explicit attach/install tools if real agents need them
+1. manifest and log resources
+2. `workspace_bind` / `workspace_create` if agents need lower-level control
+3. import/export surfaces
