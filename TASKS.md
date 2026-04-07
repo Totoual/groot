@@ -93,23 +93,18 @@ This is the stable control plane Groot should expose for shells, IDE launchers, 
 
 ## Layer 2: Agent-Driven UX
 
-This layer should make Groot feel simple for normal developers by letting an agent drive the lower-level Groot primitives.
+This layer should make Groot easy for normal developers while keeping external agents on the same runtime contract.
 
-- [ ] Decide whether MCP is the primary agent adapter for Groot.
+- [x] Provide a CLI + JSON bridge that external tools can use today via `groot status <path> --json`.
+- [x] Decide that MCP is the primary agent adapter for Groot.
 - [x] Add workspace lookup by `project_path`.
-- [ ] Define the agent-to-Groot contract: create, bind, attach, install, exec, inspect.
-- [ ] Decide the primary agent entrypoint:
-  - `groot agent "<intent>"`
+- [x] Add a path-based open/enter flow for non-agent fallback usage.
+- [x] Ensure Groot can auto-create or auto-bind a workspace when a repo is first seen.
+- [ ] Decide the primary future intent entrypoint:
   - `groot "<intent>"`
   - `groot open <path> --agent`
-- [ ] Define the first supported agent intents, for example:
-  - "start crawlly with go@1.25 and node@25"
-  - "open this repo in a clean workspace"
-  - "set up this project for me"
-- [ ] Add a path-based setup flow so the agent can create or resolve a workspace from a repo path and move toward runtime ownership on first open.
-- [x] Add a path-based open/enter flow for non-agent fallback usage.
-- [ ] Ensure the agent can auto-create or auto-bind a workspace when a repo is first seen.
-- [ ] Document the normal user workflow as agent-first, with `groot ws ...` kept as advanced/runtime commands.
+  - or no direct intent mode at all
+- [ ] Document the normal user workflow as path-first, with `groot ws ...` kept as advanced/runtime commands and MCP kept as the agent surface.
 
 ## Layer 2.5: IDE Strategy
 
@@ -138,15 +133,15 @@ This layer makes Groot usable by a top-level agent without inventing a separate 
 
 - [ ] Keep `ws exec` as the primary agent execution primitive; treat `ws open` as a human GUI action, not an agent-core runtime primitive.
 - [x] Add machine-readable runtime ownership output for the path-first flow via `groot status <path> --json`.
-- [ ] Expose the core runtime through MCP tools backed by the same app layer.
-- [ ] Define the first MCP tool surface:
-  - `workspace_create`
-  - `workspace_bind`
-  - `workspace_attach`
-  - `workspace_install`
+- [x] Decide that the first external agent integration path is MCP first, with CLI+JSON kept as a debug and compatibility surface.
+- [x] Expose the core runtime through an initial MCP server backed by the same app layer.
+- [x] Define and implement the first MCP tool surface:
+  - `workspace_status`
+  - `workspace_setup`
   - `workspace_exec`
-  - `workspace_env`
-  - `workspace_inspect`
+- [x] Add a machine-readable workspace inspection surface through MCP via `workspace_inspect`.
+- [x] Add machine-readable environment output through MCP via `workspace_env`.
+- [x] Add explicit MCP control-plane tools for `workspace_attach` and `workspace_install`.
 - [ ] Add machine-readable command results for agent-driven flows.
 - [ ] Add machine-readable workspace inspection, for example `groot ws inspect <name> --json`.
 - [ ] Add machine-readable environment output in addition to shell exports.
@@ -173,7 +168,7 @@ This layer can add direct human-facing convenience commands after the runtime an
 1. Finish the core runtime.
 2. Make first open own the runtime instead of silently relying on host toolchains.
 3. Keep IDE launch reliable for fresh workspaces while preserving runtime ownership.
-4. Define the agent-facing contract and agent-driven setup/open flows.
+4. Define the MCP-facing contract and agent-driven setup/open flows.
 5. Add the machine-readable agent foundation on top of the same runtime.
 6. Add optional direct human shortcuts on top of the same runtime.
 
@@ -198,10 +193,10 @@ groot ws open crawlly --ide code
 
 ## Definition Of Success For The Product Direction
 
-Once the agent-driven layer is in place, the workflow should feel closer to:
+Once the MCP-driven layer is in place, the workflow should feel closer to:
 
 ```bash
-groot agent "start crawlly with go@1.25 and node@25"
+external-agent -> groot mcp -> workspace_status / workspace_setup / workspace_exec
 ```
 
 or:

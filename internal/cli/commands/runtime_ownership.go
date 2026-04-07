@@ -2,7 +2,6 @@ package commands
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/totoual/groot/internal/app"
@@ -19,20 +18,10 @@ func enforceWorkspaceOwnership(a *app.App, workspaceName string) error {
 
 	writeWorkspaceOwnershipWarning(report)
 
-	if runtimeStrictModeEnabled() {
+	if app.RuntimeStrictModeEnabled() {
 		return fmt.Errorf("strict runtime mode rejected undeclared detected runtimes for workspace %q", workspaceName)
 	}
 	return nil
-}
-
-func runtimeStrictModeEnabled() bool {
-	value := strings.TrimSpace(strings.ToLower(os.Getenv("GROOT_STRICT_RUNTIME")))
-	switch value {
-	case "1", "true", "yes", "on":
-		return true
-	default:
-		return false
-	}
 }
 
 func formatDetectedToolchains(detected []app.DetectedToolchain) string {

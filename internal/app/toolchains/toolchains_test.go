@@ -5,8 +5,8 @@ import (
 	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
+	"io"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -70,14 +70,23 @@ func TestGoInstallerEnsureInstalledFromCachedArchive(t *testing.T) {
 		t.Fatalf("fileSHA256 returned error: %v", err)
 	}
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(sum + "\n"))
-	}))
-	defer server.Close()
-
 	oldChecksumBaseURL := goChecksumBaseURL
-	goChecksumBaseURL = server.URL + "/"
+	oldTransport := http.DefaultTransport
+	goChecksumBaseURL = "https://groot.test/checksums/"
+	http.DefaultTransport = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		if req.URL.String() != goChecksumBaseURL+archiveName+".sha256" {
+			return nil, os.ErrNotExist
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Status:     "200 OK",
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(sum + "\n")),
+			Request:    req,
+		}, nil
+	})
 	defer func() { goChecksumBaseURL = oldChecksumBaseURL }()
+	defer func() { http.DefaultTransport = oldTransport }()
 
 	if err := g.EnsureInstalled(ic, "1.25.0"); err != nil {
 		t.Fatalf("EnsureInstalled returned error: %v", err)
@@ -402,4 +411,10 @@ func fileSHA256(path string) (string, error) {
 	}
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:]), nil
+}
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (fn roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return fn(req)
 }

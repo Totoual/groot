@@ -70,7 +70,7 @@ func writeWorkspaceRuntimeStatusJSON(report app.WorkspaceRuntimeOwnership) error
 	output := statusJSONOutput{
 		WorkspaceName:       report.WorkspaceName,
 		ProjectPath:         report.ProjectPath,
-		Status:              workspaceRuntimeStatusLabel(report),
+		Status:              app.RuntimeOwnershipStatusLabel(report),
 		Detected:            append([]app.DetectedToolchain{}, report.Detected...),
 		Attached:            append([]app.Component{}, report.Attached...),
 		Installed:           append([]app.Component{}, report.Installed...),

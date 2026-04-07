@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -126,6 +127,47 @@ func (a *App) ExecWorkspace(name, command string, args []string) error {
 	return a.runWorkspaceProcess(a.strictRuntimeMode(), name, command, args)
 }
 
+func (a *App) ExecWorkspaceCapture(name, command string, args []string) (WorkspaceCommandResult, error) {
+	env, workDir, err := a.workspaceRuntimeForMode(name, a.strictRuntimeMode())
+	if err != nil {
+		return WorkspaceCommandResult{}, err
+	}
+
+	resolvedCommand, err := resolveCommandForEnv(command, env)
+	if err != nil {
+		return WorkspaceCommandResult{}, err
+	}
+
+	cmd := exec.Command(resolvedCommand, args...)
+	cmd.Dir = workDir
+	cmd.Env = env
+
+	var stdoutBuf bytes.Buffer
+	var stderrBuf bytes.Buffer
+	cmd.Stdout = &stdoutBuf
+	cmd.Stderr = &stderrBuf
+
+	result := WorkspaceCommandResult{
+		WorkDir:  workDir,
+		ExitCode: 0,
+	}
+
+	if err := cmd.Run(); err != nil {
+		result.Stdout = stdoutBuf.String()
+		result.Stderr = stderrBuf.String()
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			result.ExitCode = exitErr.ExitCode()
+			return result, nil
+		}
+		return WorkspaceCommandResult{}, err
+	}
+
+	result.Stdout = stdoutBuf.String()
+	result.Stderr = stderrBuf.String()
+	return result, nil
+}
+
 func (a *App) OpenWorkspace(name, program string, args []string) error {
 	if program == "" {
 		program = defaultIDEProgram()
@@ -211,7 +253,12 @@ func (a *App) runWorkspaceProcess(mode workspaceRuntimeMode, name, command strin
 		return err
 	}
 
-	cmd := exec.Command(command, args...)
+	resolvedCommand, err := resolveCommandForEnv(command, env)
+	if err != nil {
+		return err
+	}
+
+	cmd := exec.Command(resolvedCommand, args...)
 	cmd.Dir = workDir
 	cmd.Env = env
 	cmd.Stdin = os.Stdin
@@ -219,6 +266,46 @@ func (a *App) runWorkspaceProcess(mode workspaceRuntimeMode, name, command strin
 	cmd.Stderr = os.Stderr
 
 	return cmd.Run()
+}
+
+func resolveCommandForEnv(command string, env []string) (string, error) {
+	if command == "" {
+		return "", fmt.Errorf("command required")
+	}
+	if strings.ContainsRune(command, os.PathSeparator) {
+		return command, nil
+	}
+
+	pathValue := ""
+	for _, entry := range env {
+		if strings.HasPrefix(entry, "PATH=") {
+			pathValue = strings.TrimPrefix(entry, "PATH=")
+			break
+		}
+	}
+	if pathValue == "" {
+		return exec.LookPath(command)
+	}
+
+	for _, dir := range filepath.SplitList(pathValue) {
+		if dir == "" {
+			continue
+		}
+		candidate := filepath.Join(dir, command)
+		info, err := os.Stat(candidate)
+		if err != nil {
+			continue
+		}
+		if info.IsDir() {
+			continue
+		}
+		if info.Mode()&0o111 == 0 {
+			continue
+		}
+		return candidate, nil
+	}
+
+	return "", exec.ErrNotFound
 }
 
 func (a *App) workspaceWorkDir(name string) (string, error) {
