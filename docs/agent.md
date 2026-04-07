@@ -40,8 +40,24 @@ Current server:
 groot mcp
 ```
 
+Recommended normal flow:
+
+```bash
+groot mcp
+```
+
+Then let the agent select the active project for the session through `workspace_activate`.
+
+Optional hard-lock startup scope:
+
+```bash
+groot mcp --workspace crawlly
+groot mcp --project ~/Documents/crawlly --project ~/Documents/the_grime_tcg
+```
+
 Current tools:
 
+- `workspace_activate`
 - `workspace_status`
 - `workspace_setup`
 - `workspace_exec`
@@ -49,6 +65,7 @@ Current tools:
 - `workspace_env`
 - `workspace_attach`
 - `workspace_install`
+- `workspace_export`
 
 Those tools are documented in [docs/agent-contract.md](/Users/aristotelistriantafyllidis/Documents/groot/docs/agent-contract.md).
 
@@ -67,6 +84,15 @@ Keep expanding MCP only where it directly helps real external agents use Groot's
 
 - richer inspect/status
 - more workspace tools
+- import/export surfaces
 - resources for manifest and logs
+
+Security boundary:
+
+- prefer activating one project per MCP session with `workspace_activate`
+- in a normal unscoped session, `workspace_activate` can switch the live project later if the user redirects the agent
+- only allow multi-project MCP sessions explicitly
+- use `--project` / `--workspace` startup flags when you want a hard lock before any tool calls happen
+- treat unscoped `groot mcp` as trusted local power-user mode until a project is activated
 
 Do not rebuild a separate `groot-agent` path unless real MCP usage proves that one is necessary later.

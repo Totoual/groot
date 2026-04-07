@@ -12,11 +12,39 @@ Groot currently exposes MCP over stdio:
 groot mcp
 ```
 
+Recommended normal flow:
+
+```bash
+groot mcp
+```
+
+Then activate one project for the session through `workspace_activate`.
+
+Optional hard-lock startup scope:
+
+```bash
+groot mcp --workspace the_grime_tcg
+groot mcp --project /Users/example/Documents/crawlly --project /Users/example/Documents/the_grime_tcg
+```
+
 The server follows the MCP stdio transport:
 
 - JSON-RPC messages over stdin/stdout
 - newline-delimited messages
 - stderr reserved for logs if needed
+
+## Scope
+
+MCP scope is explicit:
+
+- no scope flags: the server starts unscoped
+- `workspace_activate`: sets the live MCP session scope to one project path or bound workspace
+- in a normal unscoped session, `workspace_activate` can switch the active project later
+- `--project <path>`: only that normalized project path is allowed
+- `--workspace <name>`: resolves the workspace's bound `project_path` and scopes MCP to it
+- repeated `--project` or `--workspace` flags create an explicit multi-project allowlist
+
+When a tool call targets a project path outside the active or configured MCP scope, Groot returns an error instead of running the action.
 
 ## Current Scope
 
@@ -29,15 +57,40 @@ The current MCP surface is intentionally small:
 - return the strict workspace environment as structured data
 - attach explicit toolchains to a workspace
 - install attached toolchains into Groot's managed store
+- export the current workspace contract as portable structured data
 
 It does not yet cover:
 
 - workspace creation by explicit name
-- direct bind/attach/install tools
-- machine-readable workspace env output
+- import back into Groot
 - workspace resources like logs or manifest
 
 ## Available Tools
+
+### `workspace_activate`
+
+Activate one project path or bound workspace as the live MCP session scope.
+
+Input:
+
+```json
+{
+  "path": "/Users/example/Documents/the_grime_tcg"
+}
+```
+
+or:
+
+```json
+{
+  "workspace": "the_grime_tcg"
+}
+```
+
+Structured result:
+
+- `active_project`
+- `workspace_name` when the activated target maps to a bound workspace
 
 ### `workspace_status`
 
@@ -204,6 +257,25 @@ Structured result:
 - `installed`
 - `status`
 
+### `workspace_export`
+
+Export the existing workspace contract for a project path as portable structured data.
+
+Input:
+
+```json
+{
+  "path": "/Users/example/Documents/the_grime_tcg"
+}
+```
+
+Structured result:
+
+- `export.name`
+- `export.project_path`
+- `export.manifest`
+- `export.runtime`
+
 ## Design Rules
 
 External agents should treat Groot as:
@@ -224,4 +296,4 @@ The next MCP additions should likely be:
 
 1. manifest and log resources
 2. `workspace_bind` / `workspace_create` if agents need lower-level control
-3. import/export surfaces
+3. import surfaces

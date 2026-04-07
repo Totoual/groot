@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/totoual/groot/internal/app"
@@ -13,7 +14,9 @@ import (
 const ProtocolVersion = "2025-06-18"
 
 type Server struct {
-	app *app.App
+	app             *app.App
+	allowedProjects []string
+	activeProjects  []string
 }
 
 type rpcRequest struct {
@@ -98,6 +101,10 @@ type workspaceInspectResult struct {
 	Inspect workspaceInspection `json:"inspect"`
 }
 
+type workspaceExportResult struct {
+	Export app.WorkspaceExportPayload `json:"export"`
+}
+
 type workspaceEnvResult struct {
 	Created bool              `json:"created"`
 	WorkDir string            `json:"workdir"`
@@ -116,6 +123,11 @@ type workspaceInstallResult struct {
 	Status    workspaceStatus `json:"status"`
 }
 
+type workspaceActivateResult struct {
+	ActiveProject string `json:"active_project"`
+	WorkspaceName string `json:"workspace_name,omitempty"`
+}
+
 type workspaceInspection struct {
 	WorkspaceName string          `json:"workspace_name"`
 	WorkspaceDir  string          `json:"workspace_dir"`
@@ -129,6 +141,21 @@ type workspaceInspection struct {
 
 func NewServer(a *app.App) *Server {
 	return &Server{app: a}
+}
+
+func NewScopedServer(a *app.App, allowedProjects []string) *Server {
+	scoped := make([]string, 0, len(allowedProjects))
+	for _, projectPath := range allowedProjects {
+		normalized, err := app.NormalizeProjectPath(projectPath)
+		if err != nil {
+			continue
+		}
+		scoped = append(scoped, normalized)
+	}
+	return &Server{
+		app:             a,
+		allowedProjects: scoped,
+	}
 }
 
 func (s *Server) Serve(in io.Reader, out io.Writer) error {
@@ -269,6 +296,32 @@ func (s *Server) handleSingle(message []byte) ([]byte, error) {
 
 func (s *Server) tools() []toolDefinition {
 	return []toolDefinition{
+		{
+			Name:        "workspace_activate",
+			Description: "Activate one project path or bound workspace as the MCP session scope. Later tool calls are restricted to that project until another activation or server restart.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"path": map[string]any{
+						"type":        "string",
+						"description": "Absolute or ~/ project path to activate for this MCP session.",
+					},
+					"workspace": map[string]any{
+						"type":        "string",
+						"description": "Bound workspace name to activate for this MCP session.",
+					},
+				},
+				"additionalProperties": false,
+			},
+			OutputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"active_project": map[string]any{"type": "string"},
+					"workspace_name": map[string]any{"type": "string"},
+				},
+				"required": []string{"active_project"},
+			},
+		},
 		{
 			Name:        "workspace_status",
 			Description: "Resolve or create a workspace from a project path and return runtime ownership status.",
@@ -468,11 +521,35 @@ func (s *Server) tools() []toolDefinition {
 				"required": []string{"created", "installed", "status"},
 			},
 		},
+		{
+			Name:        "workspace_export",
+			Description: "Export the existing workspace contract for a project path as portable structured data.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"path": map[string]any{
+						"type":        "string",
+						"description": "Absolute or ~/ project path bound to an existing workspace.",
+					},
+				},
+				"required":             []string{"path"},
+				"additionalProperties": false,
+			},
+			OutputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"export": map[string]any{"type": "object"},
+				},
+				"required": []string{"export"},
+			},
+		},
 	}
 }
 
 func (s *Server) callTool(params toolCallParams) toolResult {
 	switch params.Name {
+	case "workspace_activate":
+		return s.workspaceActivateTool(params.Arguments)
 	case "workspace_status":
 		return s.workspaceStatusTool(params.Arguments)
 	case "workspace_setup":
@@ -487,15 +564,117 @@ func (s *Server) callTool(params toolCallParams) toolResult {
 		return s.workspaceAttachTool(params.Arguments)
 	case "workspace_install":
 		return s.workspaceInstallTool(params.Arguments)
+	case "workspace_export":
+		return s.workspaceExportTool(params.Arguments)
 	default:
 		return errorToolResult(fmt.Sprintf("unknown tool %q", params.Name), nil)
 	}
+}
+
+func (s *Server) currentScopeProjects() []string {
+	if len(s.activeProjects) > 0 {
+		return s.activeProjects
+	}
+	return s.allowedProjects
+}
+
+func scopedProjectPathWithin(scopeProjects []string, projectPath string) (string, error) {
+	normalizedPath, err := app.NormalizeProjectPath(projectPath)
+	if err != nil {
+		return "", err
+	}
+	if len(scopeProjects) == 0 {
+		return normalizedPath, nil
+	}
+
+	for _, allowed := range scopeProjects {
+		match, err := app.ProjectPathsMatch(allowed, normalizedPath)
+		if err != nil {
+			return "", err
+		}
+		if match {
+			return normalizedPath, nil
+		}
+	}
+
+	return "", fmt.Errorf("project path %q is outside the MCP scope", normalizedPath)
+}
+
+func (s *Server) scopedProjectPath(projectPath string) (string, error) {
+	return scopedProjectPathWithin(s.currentScopeProjects(), projectPath)
+}
+
+func (s *Server) setActiveProjects(projects []string) error {
+	normalized := make([]string, 0, len(projects))
+	for _, projectPath := range projects {
+		scopedPath, err := scopedProjectPathWithin(s.allowedProjects, projectPath)
+		if err != nil {
+			return err
+		}
+		normalized = append(normalized, scopedPath)
+	}
+	s.activeProjects = normalized
+	return nil
+}
+
+func (s *Server) workspaceActivateTool(args map[string]any) toolResult {
+	path, hasPath := stringArg(args, "path")
+	workspaceName, hasWorkspace := stringArg(args, "workspace")
+	if hasPath == hasWorkspace {
+		return errorToolResult(`tool "workspace_activate" requires exactly one of "path" or "workspace"`, nil)
+	}
+
+	activeProject := ""
+	result := workspaceActivateResult{}
+	if hasPath {
+		normalizedPath, err := app.NormalizeProjectPath(path)
+		if err != nil {
+			return errorToolResult(err.Error(), nil)
+		}
+		info, err := os.Stat(normalizedPath)
+		if err != nil {
+			return errorToolResult(err.Error(), nil)
+		}
+		if !info.IsDir() {
+			return errorToolResult(fmt.Sprintf("project path %q is not a directory", normalizedPath), nil)
+		}
+		if err := s.setActiveProjects([]string{normalizedPath}); err != nil {
+			return errorToolResult(err.Error(), nil)
+		}
+		activeProject = normalizedPath
+		if boundWorkspace, err := s.app.FindWorkspaceByProjectPath(normalizedPath); err == nil {
+			result.WorkspaceName = boundWorkspace
+		}
+	} else {
+		inspect, err := s.app.InspectWorkspace(workspaceName)
+		if err != nil {
+			return errorToolResult(err.Error(), nil)
+		}
+		if strings.TrimSpace(inspect.Manifest.ProjectPath) == "" {
+			return errorToolResult(fmt.Sprintf("workspace %q is not bound to a project path", workspaceName), nil)
+		}
+		if err := s.setActiveProjects([]string{inspect.Manifest.ProjectPath}); err != nil {
+			return errorToolResult(err.Error(), nil)
+		}
+		activeProject = inspect.Manifest.ProjectPath
+		result.WorkspaceName = workspaceName
+	}
+
+	result.ActiveProject = activeProject
+	return successToolResult(
+		fmt.Sprintf("Activated MCP scope for project %q.", activeProject),
+		result,
+	)
 }
 
 func (s *Server) workspaceStatusTool(args map[string]any) toolResult {
 	projectPath, ok := stringArg(args, "path")
 	if !ok {
 		return errorToolResult(`tool "workspace_status" requires string argument "path"`, nil)
+	}
+	projectPath, err := s.scopedProjectPath(projectPath)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
 	}
 
 	workspaceName, created, err := s.app.ResolveOrCreateWorkspaceByProjectPath(projectPath)
@@ -521,6 +700,10 @@ func (s *Server) workspaceSetupTool(args map[string]any) toolResult {
 	projectPath, ok := stringArg(args, "path")
 	if !ok {
 		return errorToolResult(`tool "workspace_setup" requires string argument "path"`, nil)
+	}
+	projectPath, err := s.scopedProjectPath(projectPath)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
 	}
 	attachDetected := boolArgOrDefault(args, "attach_detected", true)
 	installDetected := boolArgOrDefault(args, "install_detected", true)
@@ -562,6 +745,10 @@ func (s *Server) workspaceExecTool(args map[string]any) toolResult {
 	projectPath, ok := stringArg(args, "path")
 	if !ok {
 		return errorToolResult(`tool "workspace_exec" requires string argument "path"`, nil)
+	}
+	projectPath, err := s.scopedProjectPath(projectPath)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
 	}
 	command, ok := stringArg(args, "command")
 	if !ok {
@@ -635,6 +822,10 @@ func (s *Server) workspaceInspectTool(args map[string]any) toolResult {
 	if !ok {
 		return errorToolResult(`tool "workspace_inspect" requires string argument "path"`, nil)
 	}
+	projectPath, err := s.scopedProjectPath(projectPath)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
 
 	workspaceName, created, err := s.app.ResolveOrCreateWorkspaceByProjectPath(projectPath)
 	if err != nil {
@@ -662,6 +853,10 @@ func (s *Server) workspaceEnvTool(args map[string]any) toolResult {
 	projectPath, ok := stringArg(args, "path")
 	if !ok {
 		return errorToolResult(`tool "workspace_env" requires string argument "path"`, nil)
+	}
+	projectPath, err := s.scopedProjectPath(projectPath)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
 	}
 
 	workspaceName, created, err := s.app.ResolveOrCreateWorkspaceByProjectPath(projectPath)
@@ -691,6 +886,10 @@ func (s *Server) workspaceAttachTool(args map[string]any) toolResult {
 	projectPath, ok := stringArg(args, "path")
 	if !ok {
 		return errorToolResult(`tool "workspace_attach" requires string argument "path"`, nil)
+	}
+	projectPath, err := s.scopedProjectPath(projectPath)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
 	}
 	toolchains, err := stringSliceArg(args, "toolchains")
 	if err != nil {
@@ -742,6 +941,10 @@ func (s *Server) workspaceInstallTool(args map[string]any) toolResult {
 	if !ok {
 		return errorToolResult(`tool "workspace_install" requires string argument "path"`, nil)
 	}
+	projectPath, err := s.scopedProjectPath(projectPath)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
 
 	workspaceName, created, err := s.app.ResolveOrCreateWorkspaceByProjectPath(projectPath)
 	if err != nil {
@@ -768,6 +971,30 @@ func (s *Server) workspaceInstallTool(args map[string]any) toolResult {
 	}
 	return successToolResult(
 		fmt.Sprintf("Installed attached toolchains for workspace %q.", workspaceName),
+		result,
+	)
+}
+
+func (s *Server) workspaceExportTool(args map[string]any) toolResult {
+	projectPath, ok := stringArg(args, "path")
+	if !ok {
+		return errorToolResult(`tool "workspace_export" requires string argument "path"`, nil)
+	}
+	projectPath, err := s.scopedProjectPath(projectPath)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+
+	exported, err := s.app.ExportWorkspaceByProjectPath(projectPath)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+
+	result := workspaceExportResult{
+		Export: exported.Workspace,
+	}
+	return successToolResult(
+		fmt.Sprintf("Workspace %q exported.", exported.Workspace.Name),
 		result,
 	)
 }

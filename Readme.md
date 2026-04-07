@@ -24,6 +24,7 @@ The current MCP direction is documented in [docs/agent.md](/Users/aristotelistri
 - Enter a project path by resolving or auto-creating the matching workspace
 - Execute one-off commands against a project path by resolving or auto-creating the matching workspace
 - Open a project path by resolving or auto-creating the matching workspace
+- Export an existing workspace contract from a project path as portable JSON
 - Print runtime ownership status for a project path by resolving or auto-creating the matching workspace
 - Create and delete workspaces
 - Bind a workspace to an existing project directory
@@ -110,6 +111,7 @@ That likely means:
 groot init
 groot open <path>
 groot open <path> --setup
+groot export <path>
 groot status <path>
 groot status <path> --json
 groot enter <path>
@@ -171,6 +173,7 @@ groot open ~/Documents/crawlly --setup-detected
 ```bash
 groot enter ~/Documents/crawlly
 groot exec ~/Documents/crawlly git status
+groot export ~/Documents/crawlly
 groot status ~/Documents/crawlly
 groot status ~/Documents/crawlly --json
 ```
@@ -179,6 +182,7 @@ These commands resolve the workspace by `project_path` first and create/bind one
 
 - `open` is the main human GUI shortcut
 - `enter` and `exec` use the strict workspace runtime
+- `export` writes the current workspace contract as portable JSON without bundling toolchain binaries or caches
 - `status` shows detected, attached, installed, and host-fallback runtime state for the project path, and `--json` exposes the same state as structured output for automation and future agents
 - `ws ...` remains the lower-level runtime surface for explicit control
 
@@ -190,8 +194,34 @@ Groot now exposes a testable MCP server over stdio:
 groot mcp
 ```
 
+Recommended everyday flow:
+
+```bash
+groot mcp
+```
+
+Then let the agent activate one project for the session with `workspace_activate`.
+
+Optional hard-lock startup scope:
+
+```bash
+groot mcp --workspace crawlly
+groot mcp --project ~/Documents/crawlly --project ~/Documents/the_grime_tcg
+groot mcp --workspace crawlly --workspace the_grime_tcg
+```
+
+Scope rules:
+
+- with no scope flags, MCP starts unscoped and a trusted agent can activate one project for the session with `workspace_activate`
+- in an unscoped session, `workspace_activate` can switch the live project later in the same MCP session
+- with `--project` and/or `--workspace`, MCP tool calls are limited to those bound project paths only
+- `workspace_activate` sets the live session scope without requiring MCP server reconfiguration
+- startup scope flags remain useful when you want a hard lock from the moment the server starts
+- this keeps normal single-project agent sessions isolated by default while still allowing explicit multi-project workflows when requested
+
 Current MCP tools:
 
+- `workspace_activate`
 - `workspace_status`
 - `workspace_setup`
 - `workspace_exec`
@@ -199,15 +229,18 @@ Current MCP tools:
 - `workspace_env`
 - `workspace_attach`
 - `workspace_install`
+- `workspace_export`
 
 These tools let an external MCP-capable agent:
 
+- activate one project as the live MCP session scope
 - inspect a project's runtime ownership state
 - move a project toward a Groot-owned runtime
 - execute one strict-runtime command in that workspace
 - inspect the concrete workspace manifest and layout when it needs lower-level context
 - load the strict workspace env as structured data
 - attach and install explicit toolchains through Groot instead of improvising host-side installs
+- export the current workspace contract as portable structured data for later import/recreation
 
 The current MCP tool contract is documented in [docs/agent-contract.md](/Users/aristotelistriantafyllidis/Documents/groot/docs/agent-contract.md).
 

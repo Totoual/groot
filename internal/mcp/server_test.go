@@ -52,8 +52,8 @@ func TestServerHandleInitializeAndListTools(t *testing.T) {
 	if err := json.Unmarshal(response, &listResponse); err != nil {
 		t.Fatalf("Unmarshal tools/list response returned error: %v", err)
 	}
-	if len(listResponse.Result.Tools) != 7 {
-		t.Fatalf("len(tools) = %d, want %d", len(listResponse.Result.Tools), 7)
+	if len(listResponse.Result.Tools) != 9 {
+		t.Fatalf("len(tools) = %d, want %d", len(listResponse.Result.Tools), 9)
 	}
 }
 
@@ -100,6 +100,310 @@ func TestServerWorkspaceStatusToolReturnsStructuredContent(t *testing.T) {
 	}
 	if rpc.Result.StructuredContent.Status.Status != "partial runtime ownership" {
 		t.Fatalf("status = %q, want %q", rpc.Result.StructuredContent.Status.Status, "partial runtime ownership")
+	}
+}
+
+func TestServerWorkspaceActivateToolSetsSessionScopeFromProjectPath(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+	crawllyPath := filepath.Join(root, "repos", "crawlly")
+	tcgPath := filepath.Join(root, "repos", "the_grime_tcg")
+	for _, projectPath := range []string{crawllyPath, tcgPath} {
+		if err := os.MkdirAll(filepath.Join(projectPath, "backend"), 0o755); err != nil {
+			t.Fatalf("MkdirAll returned error: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(projectPath, "backend", "go.mod"), []byte("module example.com/test\n\ngo 1.25.4\n"), 0o600); err != nil {
+			t.Fatalf("WriteFile returned error: %v", err)
+		}
+	}
+
+	server := NewServer(a)
+	activate := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"workspace_activate","arguments":{"path":"` + crawllyPath + `"}}}`
+	response, err := server.HandleMessage([]byte(activate))
+	if err != nil {
+		t.Fatalf("HandleMessage activate returned error: %v", err)
+	}
+
+	var activateRPC struct {
+		Result struct {
+			IsError           bool `json:"isError"`
+			StructuredContent struct {
+				ActiveProject string `json:"active_project"`
+			} `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(response, &activateRPC); err != nil {
+		t.Fatalf("Unmarshal activate response returned error: %v", err)
+	}
+	if activateRPC.Result.IsError {
+		t.Fatal("expected workspace_activate success result")
+	}
+	if activateRPC.Result.StructuredContent.ActiveProject != crawllyPath {
+		t.Fatalf("active_project = %q, want %q", activateRPC.Result.StructuredContent.ActiveProject, crawllyPath)
+	}
+
+	reject := `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"workspace_status","arguments":{"path":"` + tcgPath + `"}}}`
+	response, err = server.HandleMessage([]byte(reject))
+	if err != nil {
+		t.Fatalf("HandleMessage status returned error: %v", err)
+	}
+
+	var rejectRPC struct {
+		Result struct {
+			IsError bool `json:"isError"`
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(response, &rejectRPC); err != nil {
+		t.Fatalf("Unmarshal reject response returned error: %v", err)
+	}
+	if !rejectRPC.Result.IsError {
+		t.Fatal("expected workspace_status to be rejected after activation")
+	}
+	if len(rejectRPC.Result.Content) == 0 || !strings.Contains(rejectRPC.Result.Content[0].Text, "outside the MCP scope") {
+		t.Fatalf("unexpected reject content: %#v", rejectRPC.Result.Content)
+	}
+}
+
+func TestServerWorkspaceActivateToolCanSwitchProjectsInUnscopedSession(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+	crawllyPath := filepath.Join(root, "repos", "crawlly")
+	tcgPath := filepath.Join(root, "repos", "the_grime_tcg")
+	for _, projectPath := range []string{crawllyPath, tcgPath} {
+		if err := os.MkdirAll(filepath.Join(projectPath, "backend"), 0o755); err != nil {
+			t.Fatalf("MkdirAll returned error: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(projectPath, "backend", "go.mod"), []byte("module example.com/test\n\ngo 1.25.4\n"), 0o600); err != nil {
+			t.Fatalf("WriteFile returned error: %v", err)
+		}
+	}
+
+	server := NewServer(a)
+	for _, request := range []string{
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"workspace_activate","arguments":{"path":"` + crawllyPath + `"}}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"workspace_activate","arguments":{"path":"` + tcgPath + `"}}}`,
+	} {
+		response, err := server.HandleMessage([]byte(request))
+		if err != nil {
+			t.Fatalf("HandleMessage returned error: %v", err)
+		}
+		var rpc struct {
+			Result struct {
+				IsError bool `json:"isError"`
+			} `json:"result"`
+		}
+		if err := json.Unmarshal(response, &rpc); err != nil {
+			t.Fatalf("Unmarshal returned error: %v", err)
+		}
+		if rpc.Result.IsError {
+			t.Fatalf("expected activation request %q to succeed", request)
+		}
+	}
+
+	rejectOld := `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"workspace_status","arguments":{"path":"` + crawllyPath + `"}}}`
+	response, err := server.HandleMessage([]byte(rejectOld))
+	if err != nil {
+		t.Fatalf("HandleMessage returned error: %v", err)
+	}
+	var rejectRPC struct {
+		Result struct {
+			IsError bool `json:"isError"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(response, &rejectRPC); err != nil {
+		t.Fatalf("Unmarshal returned error: %v", err)
+	}
+	if !rejectRPC.Result.IsError {
+		t.Fatal("expected previous active project to be rejected after switching activation")
+	}
+
+	allowNew := `{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"workspace_status","arguments":{"path":"` + tcgPath + `"}}}`
+	response, err = server.HandleMessage([]byte(allowNew))
+	if err != nil {
+		t.Fatalf("HandleMessage returned error: %v", err)
+	}
+	var allowRPC struct {
+		Result struct {
+			IsError           bool `json:"isError"`
+			StructuredContent struct {
+				Status struct {
+					WorkspaceName string `json:"workspace_name"`
+				} `json:"status"`
+			} `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(response, &allowRPC); err != nil {
+		t.Fatalf("Unmarshal returned error: %v", err)
+	}
+	if allowRPC.Result.IsError {
+		t.Fatal("expected current active project to stay allowed after switching activation")
+	}
+	if allowRPC.Result.StructuredContent.Status.WorkspaceName != "the_grime_tcg" {
+		t.Fatalf("workspace_name = %q, want %q", allowRPC.Result.StructuredContent.Status.WorkspaceName, "the_grime_tcg")
+	}
+}
+
+func TestServerWorkspaceActivateToolSupportsBoundWorkspaceName(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+	projectPath := filepath.Join(root, "repos", "crawlly")
+	if err := os.MkdirAll(projectPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := a.CreateNewWorkspace("crawlly"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+	if err := a.BindWorkspace("crawlly", projectPath); err != nil {
+		t.Fatalf("BindWorkspace returned error: %v", err)
+	}
+
+	server := NewServer(a)
+	request := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"workspace_activate","arguments":{"workspace":"crawlly"}}}`
+	response, err := server.HandleMessage([]byte(request))
+	if err != nil {
+		t.Fatalf("HandleMessage returned error: %v", err)
+	}
+
+	var rpc struct {
+		Result struct {
+			IsError           bool `json:"isError"`
+			StructuredContent struct {
+				ActiveProject string `json:"active_project"`
+				WorkspaceName string `json:"workspace_name"`
+			} `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(response, &rpc); err != nil {
+		t.Fatalf("Unmarshal returned error: %v", err)
+	}
+	if rpc.Result.IsError {
+		t.Fatal("expected workspace_activate success result")
+	}
+	if rpc.Result.StructuredContent.ActiveProject != projectPath {
+		t.Fatalf("active_project = %q, want %q", rpc.Result.StructuredContent.ActiveProject, projectPath)
+	}
+	if rpc.Result.StructuredContent.WorkspaceName != "crawlly" {
+		t.Fatalf("workspace_name = %q, want %q", rpc.Result.StructuredContent.WorkspaceName, "crawlly")
+	}
+}
+
+func TestScopedServerRejectsProjectPathOutsideAllowedScope(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+	allowedPath := filepath.Join(root, "repos", "crawlly")
+	otherPath := filepath.Join(root, "repos", "the_grime_tcg")
+	for _, projectPath := range []string{allowedPath, otherPath} {
+		if err := os.MkdirAll(filepath.Join(projectPath, "backend"), 0o755); err != nil {
+			t.Fatalf("MkdirAll returned error: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(projectPath, "backend", "go.mod"), []byte("module example.com/test\n\ngo 1.25.4\n"), 0o600); err != nil {
+			t.Fatalf("WriteFile returned error: %v", err)
+		}
+	}
+
+	server := NewScopedServer(a, []string{allowedPath})
+	request := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"workspace_status","arguments":{"path":"` + otherPath + `"}}}`
+	response, err := server.HandleMessage([]byte(request))
+	if err != nil {
+		t.Fatalf("HandleMessage returned error: %v", err)
+	}
+
+	var rpc struct {
+		Result struct {
+			IsError bool `json:"isError"`
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(response, &rpc); err != nil {
+		t.Fatalf("Unmarshal returned error: %v", err)
+	}
+	if !rpc.Result.IsError {
+		t.Fatal("expected scoped server to reject out-of-scope path")
+	}
+	if len(rpc.Result.Content) == 0 || !strings.Contains(rpc.Result.Content[0].Text, "outside the MCP scope") {
+		t.Fatalf("unexpected error content: %#v", rpc.Result.Content)
+	}
+}
+
+func TestScopedServerActivateCannotEscapeStartupScope(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+	allowedPath := filepath.Join(root, "repos", "crawlly")
+	otherPath := filepath.Join(root, "repos", "the_grime_tcg")
+	for _, projectPath := range []string{allowedPath, otherPath} {
+		if err := os.MkdirAll(projectPath, 0o755); err != nil {
+			t.Fatalf("MkdirAll returned error: %v", err)
+		}
+	}
+
+	server := NewScopedServer(a, []string{allowedPath})
+	request := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"workspace_activate","arguments":{"path":"` + otherPath + `"}}}`
+	response, err := server.HandleMessage([]byte(request))
+	if err != nil {
+		t.Fatalf("HandleMessage returned error: %v", err)
+	}
+
+	var rpc struct {
+		Result struct {
+			IsError bool `json:"isError"`
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(response, &rpc); err != nil {
+		t.Fatalf("Unmarshal returned error: %v", err)
+	}
+	if !rpc.Result.IsError {
+		t.Fatal("expected workspace_activate to stay inside startup scope")
+	}
+	if len(rpc.Result.Content) == 0 || !strings.Contains(rpc.Result.Content[0].Text, "outside the MCP scope") {
+		t.Fatalf("unexpected error content: %#v", rpc.Result.Content)
+	}
+}
+
+func TestScopedServerAllowsEquivalentProjectPathWithinScope(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+	projectPath := filepath.Join(root, "repos", "crawlly")
+	if err := os.MkdirAll(filepath.Join(projectPath, "backend"), 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(projectPath, "backend", "go.mod"), []byte("module example.com/crawlly\n\ngo 1.25.4\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile returned error: %v", err)
+	}
+
+	server := NewScopedServer(a, []string{projectPath})
+	messyPath := filepath.Join(projectPath, "..", "crawlly")
+	request := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"workspace_status","arguments":{"path":"` + messyPath + `"}}}`
+	response, err := server.HandleMessage([]byte(request))
+	if err != nil {
+		t.Fatalf("HandleMessage returned error: %v", err)
+	}
+
+	var rpc struct {
+		Result struct {
+			IsError           bool `json:"isError"`
+			StructuredContent struct {
+				Status struct {
+					WorkspaceName string `json:"workspace_name"`
+				} `json:"status"`
+			} `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(response, &rpc); err != nil {
+		t.Fatalf("Unmarshal returned error: %v", err)
+	}
+	if rpc.Result.IsError {
+		t.Fatal("expected scoped server to allow equivalent project path")
+	}
+	if rpc.Result.StructuredContent.Status.WorkspaceName != "crawlly" {
+		t.Fatalf("workspace_name = %q, want %q", rpc.Result.StructuredContent.Status.WorkspaceName, "crawlly")
 	}
 }
 
@@ -382,6 +686,82 @@ func TestServerWorkspaceInstallToolInstallsAttachedToolchains(t *testing.T) {
 	}
 	if rpc.Result.StructuredContent.Status.Status != "runtime owned by Groot" && rpc.Result.StructuredContent.Status.Status != "no runtimes detected" && rpc.Result.StructuredContent.Status.Status != "partial runtime ownership" {
 		t.Fatalf("unexpected status %q", rpc.Result.StructuredContent.Status.Status)
+	}
+}
+
+func TestServerWorkspaceExportToolReturnsPortableWorkspaceContract(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+	projectPath := filepath.Join(root, "repos", "the_grime_tcg")
+	backendDir := filepath.Join(projectPath, "backend")
+	if err := os.MkdirAll(backendDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(backendDir, "go.mod"), []byte("module example.com/tcg\n\ngo 1.25.4\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile returned error: %v", err)
+	}
+	if err := a.CreateNewWorkspace("the_grime_tcg"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+	if err := a.BindWorkspace("the_grime_tcg", projectPath); err != nil {
+		t.Fatalf("BindWorkspace returned error: %v", err)
+	}
+	if err := a.AttachToWorkspace("the_grime_tcg", []string{"go@1.25.4"}); err != nil {
+		t.Fatalf("AttachToWorkspace returned error: %v", err)
+	}
+	binPath := filepath.Join(root, "toolchains", "go", "1.25.4", "go", "bin", "go")
+	if err := os.MkdirAll(filepath.Dir(binPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := os.WriteFile(binPath, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatalf("WriteFile returned error: %v", err)
+	}
+
+	server := NewServer(a)
+	request := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"workspace_export","arguments":{"path":"` + projectPath + `"}}}`
+	response, err := server.HandleMessage([]byte(request))
+	if err != nil {
+		t.Fatalf("HandleMessage returned error: %v", err)
+	}
+
+	var rpc struct {
+		Result struct {
+			IsError           bool `json:"isError"`
+			StructuredContent struct {
+				Export struct {
+					Name        string `json:"name"`
+					ProjectPath string `json:"project_path"`
+					Manifest    struct {
+						Name        string `json:"name"`
+						ProjectPath string `json:"project_path"`
+					} `json:"manifest"`
+					Runtime struct {
+						Status string `json:"status"`
+					} `json:"runtime"`
+				} `json:"export"`
+			} `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(response, &rpc); err != nil {
+		t.Fatalf("Unmarshal returned error: %v", err)
+	}
+	if rpc.Result.IsError {
+		t.Fatal("expected workspace_export success result")
+	}
+	if rpc.Result.StructuredContent.Export.Name != "the_grime_tcg" {
+		t.Fatalf("export.name = %q, want %q", rpc.Result.StructuredContent.Export.Name, "the_grime_tcg")
+	}
+	if rpc.Result.StructuredContent.Export.ProjectPath != projectPath {
+		t.Fatalf("export.project_path = %q, want %q", rpc.Result.StructuredContent.Export.ProjectPath, projectPath)
+	}
+	if rpc.Result.StructuredContent.Export.Manifest.Name != "the_grime_tcg" {
+		t.Fatalf("export.manifest.name = %q, want %q", rpc.Result.StructuredContent.Export.Manifest.Name, "the_grime_tcg")
+	}
+	if rpc.Result.StructuredContent.Export.Manifest.ProjectPath != projectPath {
+		t.Fatalf("export.manifest.project_path = %q, want %q", rpc.Result.StructuredContent.Export.Manifest.ProjectPath, projectPath)
+	}
+	if rpc.Result.StructuredContent.Export.Runtime.Status != "runtime owned by Groot" {
+		t.Fatalf("export.runtime.status = %q, want %q", rpc.Result.StructuredContent.Export.Runtime.Status, "runtime owned by Groot")
 	}
 }
 
