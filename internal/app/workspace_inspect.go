@@ -50,14 +50,41 @@ func (a *App) WorkspaceEnvMap(name string) (map[string]string, string, error) {
 		return nil, "", err
 	}
 
-	envMap := make(map[string]string, len(env))
+	return exportedWorkspaceEnvMap(env, workDir), workDir, nil
+}
+
+func exportedWorkspaceEnvMap(env []string, workDir string) map[string]string {
+	envMap := make(map[string]string, len(env)+1)
 	for _, entry := range env {
 		key, value, ok := strings.Cut(entry, "=")
 		if !ok || key == "" {
 			continue
 		}
+		if key == "PS1" || key == "PROMPT" {
+			continue
+		}
+		if !exportedWorkspaceEnvKey(key) {
+			continue
+		}
 		envMap[key] = value
 	}
+	envMap["GROOT_WORKDIR"] = workDir
+	return envMap
+}
 
-	return envMap, workDir, nil
+func exportedWorkspaceEnvKey(key string) bool {
+	switch key {
+	case "HOME", "PATH", "SHELL", "LANG", "TMPDIR":
+		return true
+	}
+
+	if strings.HasPrefix(key, "GROOT_") || strings.HasPrefix(key, "XDG_") || strings.HasPrefix(key, "LC_") {
+		return true
+	}
+
+	if strings.HasSuffix(key, "_HOME") || strings.HasSuffix(key, "_ROOT") {
+		return true
+	}
+
+	return false
 }

@@ -61,39 +61,28 @@ type toolContent struct {
 	Text string `json:"text"`
 }
 
-type workspaceStatus struct {
-	WorkspaceName       string                  `json:"workspace_name"`
-	ProjectPath         string                  `json:"project_path,omitempty"`
-	Status              string                  `json:"status"`
-	Detected            []app.DetectedToolchain `json:"detected"`
-	Attached            []app.Component         `json:"attached"`
-	Installed           []app.Component         `json:"installed"`
-	AttachedUninstalled []app.Component         `json:"attached_uninstalled"`
-	Missing             []app.DetectedToolchain `json:"missing"`
-}
-
 type workspaceStatusResult struct {
-	Created bool            `json:"created"`
-	Status  workspaceStatus `json:"status"`
+	Created bool                         `json:"created"`
+	Status  app.WorkspaceRuntimeSnapshot `json:"status"`
 }
 
 type workspaceSetupResult struct {
-	Created bool                     `json:"created"`
-	Plan    app.FirstOpenRuntimePlan `json:"plan"`
-	Status  workspaceStatus          `json:"status"`
+	Created bool                         `json:"created"`
+	Plan    app.FirstOpenRuntimePlan     `json:"plan"`
+	Status  app.WorkspaceRuntimeSnapshot `json:"status"`
 }
 
 type workspaceExecResult struct {
-	Created    bool            `json:"created"`
-	Workspace  workspaceStatus `json:"workspace"`
-	Command    string          `json:"command"`
-	Args       []string        `json:"args"`
-	WorkDir    string          `json:"workdir"`
-	Stdout     string          `json:"stdout,omitempty"`
-	Stderr     string          `json:"stderr,omitempty"`
-	ExitCode   int             `json:"exit_code"`
-	Warnings   []string        `json:"warnings,omitempty"`
-	StrictMode bool            `json:"strict_mode"`
+	Created    bool                         `json:"created"`
+	Workspace  app.WorkspaceRuntimeSnapshot `json:"workspace"`
+	Command    string                       `json:"command"`
+	Args       []string                     `json:"args"`
+	WorkDir    string                       `json:"workdir"`
+	Stdout     string                       `json:"stdout,omitempty"`
+	Stderr     string                       `json:"stderr,omitempty"`
+	ExitCode   int                          `json:"exit_code"`
+	Warnings   []string                     `json:"warnings,omitempty"`
+	StrictMode bool                         `json:"strict_mode"`
 }
 
 type workspaceInspectResult struct {
@@ -106,28 +95,29 @@ type workspaceExportResult struct {
 }
 
 type workspaceImportResult struct {
-	Created       bool            `json:"created"`
-	WorkspaceName string          `json:"workspace_name"`
-	ProjectPath   string          `json:"project_path"`
-	Status        workspaceStatus `json:"status"`
+	Created       bool                         `json:"created"`
+	WorkspaceName string                       `json:"workspace_name"`
+	ProjectPath   string                       `json:"project_path"`
+	Status        app.WorkspaceRuntimeSnapshot `json:"status"`
 }
 
 type workspaceEnvResult struct {
-	Created bool              `json:"created"`
-	WorkDir string            `json:"workdir"`
-	Env     map[string]string `json:"env"`
+	Created       bool              `json:"created"`
+	WorkspaceName string            `json:"workspace_name"`
+	WorkDir       string            `json:"workdir"`
+	Env           map[string]string `json:"env"`
 }
 
 type workspaceAttachResult struct {
-	Created  bool            `json:"created"`
-	Attached []app.Component `json:"attached"`
-	Status   workspaceStatus `json:"status"`
+	Created  bool                         `json:"created"`
+	Attached []app.Component              `json:"attached"`
+	Status   app.WorkspaceRuntimeSnapshot `json:"status"`
 }
 
 type workspaceInstallResult struct {
-	Created   bool            `json:"created"`
-	Installed []app.Component `json:"installed"`
-	Status    workspaceStatus `json:"status"`
+	Created   bool                         `json:"created"`
+	Installed []app.Component              `json:"installed"`
+	Status    app.WorkspaceRuntimeSnapshot `json:"status"`
 }
 
 type workspaceActivateResult struct {
@@ -136,14 +126,14 @@ type workspaceActivateResult struct {
 }
 
 type workspaceInspection struct {
-	WorkspaceName string          `json:"workspace_name"`
-	WorkspaceDir  string          `json:"workspace_dir"`
-	ManifestPath  string          `json:"manifest_path"`
-	HomeDir       string          `json:"home_dir"`
-	StateDir      string          `json:"state_dir"`
-	LogsDir       string          `json:"logs_dir"`
-	Manifest      app.Manifest    `json:"manifest"`
-	Runtime       workspaceStatus `json:"runtime"`
+	WorkspaceName string                       `json:"workspace_name"`
+	WorkspaceDir  string                       `json:"workspace_dir"`
+	ManifestPath  string                       `json:"manifest_path"`
+	HomeDir       string                       `json:"home_dir"`
+	StateDir      string                       `json:"state_dir"`
+	LogsDir       string                       `json:"logs_dir"`
+	Manifest      app.Manifest                 `json:"manifest"`
+	Runtime       app.WorkspaceRuntimeSnapshot `json:"runtime"`
 }
 
 func NewServer(a *app.App) *Server {
@@ -734,7 +724,7 @@ func (s *Server) workspaceStatusTool(args map[string]any) toolResult {
 
 	result := workspaceStatusResult{
 		Created: created,
-		Status:  makeWorkspaceStatus(report),
+		Status:  app.WorkspaceRuntimeSnapshotFor(report),
 	}
 	return successToolResult(
 		fmt.Sprintf("Workspace %q is %s.", report.WorkspaceName, app.RuntimeOwnershipStatusLabel(report)),
@@ -779,7 +769,7 @@ func (s *Server) workspaceSetupTool(args map[string]any) toolResult {
 	result := workspaceSetupResult{
 		Created: created,
 		Plan:    plan,
-		Status:  makeWorkspaceStatus(report),
+		Status:  app.WorkspaceRuntimeSnapshotFor(report),
 	}
 	return successToolResult(
 		fmt.Sprintf("Workspace %q setup completed with status %q.", report.WorkspaceName, app.RuntimeOwnershipStatusLabel(report)),
@@ -822,7 +812,7 @@ func (s *Server) workspaceExecTool(args map[string]any) toolResult {
 				fmt.Sprintf("strict runtime mode rejected undeclared detected runtimes for workspace %q", workspaceName),
 				workspaceExecResult{
 					Created:    created,
-					Workspace:  makeWorkspaceStatus(report),
+					Workspace:  app.WorkspaceRuntimeSnapshotFor(report),
 					Command:    command,
 					Args:       commandArgs,
 					Warnings:   warnings,
@@ -836,7 +826,7 @@ func (s *Server) workspaceExecTool(args map[string]any) toolResult {
 	if err != nil {
 		return errorToolResult(err.Error(), workspaceExecResult{
 			Created:    created,
-			Workspace:  makeWorkspaceStatus(report),
+			Workspace:  app.WorkspaceRuntimeSnapshotFor(report),
 			Command:    command,
 			Args:       commandArgs,
 			Warnings:   warnings,
@@ -846,7 +836,7 @@ func (s *Server) workspaceExecTool(args map[string]any) toolResult {
 
 	result := workspaceExecResult{
 		Created:    created,
-		Workspace:  makeWorkspaceStatus(report),
+		Workspace:  app.WorkspaceRuntimeSnapshotFor(report),
 		Command:    command,
 		Args:       commandArgs,
 		WorkDir:    execResult.WorkDir,
@@ -918,9 +908,10 @@ func (s *Server) workspaceEnvTool(args map[string]any) toolResult {
 	}
 
 	result := workspaceEnvResult{
-		Created: created,
-		WorkDir: workDir,
-		Env:     envMap,
+		Created:       created,
+		WorkspaceName: workspaceName,
+		WorkDir:       workDir,
+		Env:           envMap,
 	}
 	return successToolResult(
 		fmt.Sprintf("Workspace %q environment loaded.", workspaceName),
@@ -974,7 +965,7 @@ func (s *Server) workspaceAttachTool(args map[string]any) toolResult {
 	result := workspaceAttachResult{
 		Created:  created,
 		Attached: attached,
-		Status:   makeWorkspaceStatus(report),
+		Status:   app.WorkspaceRuntimeSnapshotFor(report),
 	}
 	return successToolResult(
 		fmt.Sprintf("Attached %d toolchains to workspace %q.", len(attached), workspaceName),
@@ -1013,7 +1004,7 @@ func (s *Server) workspaceInstallTool(args map[string]any) toolResult {
 	result := workspaceInstallResult{
 		Created:   created,
 		Installed: append([]app.Component{}, report.Installed...),
-		Status:    makeWorkspaceStatus(report),
+		Status:    app.WorkspaceRuntimeSnapshotFor(report),
 	}
 	return successToolResult(
 		fmt.Sprintf("Installed attached toolchains for workspace %q.", workspaceName),
@@ -1078,25 +1069,12 @@ func (s *Server) workspaceImportTool(args map[string]any) toolResult {
 		Created:       imported.Created,
 		WorkspaceName: imported.WorkspaceName,
 		ProjectPath:   imported.ProjectPath,
-		Status:        makeWorkspaceStatus(imported.Status),
+		Status:        app.WorkspaceRuntimeSnapshotFor(imported.Status),
 	}
 	return successToolResult(
 		fmt.Sprintf("Workspace %q imported for %s.", imported.WorkspaceName, imported.ProjectPath),
 		result,
 	)
-}
-
-func makeWorkspaceStatus(report app.WorkspaceRuntimeOwnership) workspaceStatus {
-	return workspaceStatus{
-		WorkspaceName:       report.WorkspaceName,
-		ProjectPath:         report.ProjectPath,
-		Status:              app.RuntimeOwnershipStatusLabel(report),
-		Detected:            append([]app.DetectedToolchain{}, report.Detected...),
-		Attached:            append([]app.Component{}, report.Attached...),
-		Installed:           append([]app.Component{}, report.Installed...),
-		AttachedUninstalled: append([]app.Component{}, report.Uninstalled...),
-		Missing:             append([]app.DetectedToolchain{}, report.Missing...),
-	}
 }
 
 func makeWorkspaceInspection(inspect app.WorkspaceInspection) workspaceInspection {
@@ -1108,7 +1086,7 @@ func makeWorkspaceInspection(inspect app.WorkspaceInspection) workspaceInspectio
 		StateDir:      inspect.StateDir,
 		LogsDir:       inspect.LogsDir,
 		Manifest:      inspect.Manifest,
-		Runtime:       makeWorkspaceStatus(inspect.Runtime),
+		Runtime:       app.WorkspaceRuntimeSnapshotFor(inspect.Runtime),
 	}
 }
 

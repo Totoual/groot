@@ -7,6 +7,7 @@ import (
 	"sort"
 
 	"github.com/totoual/groot/internal/app"
+	"github.com/totoual/groot/internal/cli/cliutil"
 	"github.com/totoual/groot/internal/cli/interfaces"
 )
 
@@ -25,7 +26,7 @@ func NewRouter(cmds ...interfaces.Cmd) *Router {
 }
 
 func (r *Router) Run(a *app.App, args []string) error {
-	if len(args) == 0 || args[0] == "help" || args[0] == "-h" || args[0] == "--help" || args[0] == "-help" {
+	if cliutil.IsHelpRequest(args) {
 		r.PrintHelp(os.Stdout)
 		return nil
 	}

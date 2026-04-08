@@ -217,8 +217,11 @@ Input:
 Structured result:
 
 - `created`
+- `workspace_name`
 - `workdir`
 - `env`
+
+The `env` payload is intentionally filtered to the stable runtime keys Groot owns or injects for the workspace, such as `GROOT_*`, `HOME`, `XDG_*`, `PATH`, locale values, and toolchain-specific homes like `JAVA_HOME` or `CARGO_HOME`. It should not be treated as a dump of the full host session environment.
 
 ### `workspace_attach`
 

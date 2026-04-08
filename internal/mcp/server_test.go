@@ -564,9 +564,10 @@ func TestServerWorkspaceEnvToolReturnsStructuredEnv(t *testing.T) {
 	var rpc struct {
 		Result struct {
 			StructuredContent struct {
-				Created bool              `json:"created"`
-				WorkDir string            `json:"workdir"`
-				Env     map[string]string `json:"env"`
+				Created       bool              `json:"created"`
+				WorkspaceName string            `json:"workspace_name"`
+				WorkDir       string            `json:"workdir"`
+				Env           map[string]string `json:"env"`
 			} `json:"structuredContent"`
 		} `json:"result"`
 	}
@@ -576,11 +577,20 @@ func TestServerWorkspaceEnvToolReturnsStructuredEnv(t *testing.T) {
 	if !rpc.Result.StructuredContent.Created {
 		t.Fatal("expected workspace_env to report created=true on first use")
 	}
+	if rpc.Result.StructuredContent.WorkspaceName != "the_grime_tcg" {
+		t.Fatalf("workspace_name = %q, want %q", rpc.Result.StructuredContent.WorkspaceName, "the_grime_tcg")
+	}
 	if rpc.Result.StructuredContent.WorkDir != projectPath {
 		t.Fatalf("workdir = %q, want %q", rpc.Result.StructuredContent.WorkDir, projectPath)
 	}
 	if rpc.Result.StructuredContent.Env["GROOT_WORKSPACE"] != "the_grime_tcg" {
 		t.Fatalf("GROOT_WORKSPACE = %q, want %q", rpc.Result.StructuredContent.Env["GROOT_WORKSPACE"], "the_grime_tcg")
+	}
+	if rpc.Result.StructuredContent.Env["GROOT_WORKDIR"] != projectPath {
+		t.Fatalf("GROOT_WORKDIR = %q, want %q", rpc.Result.StructuredContent.Env["GROOT_WORKDIR"], projectPath)
+	}
+	if _, ok := rpc.Result.StructuredContent.Env["TERM"]; ok {
+		t.Fatalf("expected TERM to be omitted, got %#v", rpc.Result.StructuredContent.Env)
 	}
 }
 

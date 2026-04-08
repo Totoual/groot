@@ -86,7 +86,7 @@ func (p PythonInstaller) EnsureInstalled(ic *itoolchain.InstallContext, version 
 	archiveName := p.archiveName(resolvedVersion)
 	archivePath := filepath.Join(ic.CacheDir, archiveName)
 	if _, err := os.Stat(archivePath); os.IsNotExist(err) {
-		fmt.Println("Downloading", p.archiveURL(resolvedVersion))
+		emitInstallStep("Downloading %s", p.archiveURL(resolvedVersion))
 		if err := helpers.DownloadFile(p.archiveURL(resolvedVersion), archivePath); err != nil {
 			return err
 		}
@@ -99,7 +99,7 @@ func (p PythonInstaller) EnsureInstalled(ic *itoolchain.InstallContext, version 
 		return err
 	}
 
-	fmt.Println("Verifying checksum")
+	emitInstallStep("Verifying checksum")
 	if err := helpers.VerifyDownloadedArchiveWithExpectedSHA256(archivePath, archiveName, checksum); err != nil {
 		return err
 	}
@@ -111,7 +111,7 @@ func (p PythonInstaller) EnsureInstalled(ic *itoolchain.InstallContext, version 
 
 	sourceRoot := filepath.Join(installDir, "src")
 	if _, err := os.Stat(p.sourceDir(ic.ToolchainDir, resolvedVersion)); os.IsNotExist(err) {
-		fmt.Println("Extracting", archivePath)
+		emitInstallStep("Extracting %s", archivePath)
 		if err := os.MkdirAll(sourceRoot, 0o755); err != nil {
 			return err
 		}
@@ -128,7 +128,7 @@ func (p PythonInstaller) EnsureInstalled(ic *itoolchain.InstallContext, version 
 		return err
 	}
 
-	fmt.Println("Building Python", resolvedVersion)
+	emitInstallStep("Building Python %s", resolvedVersion)
 	if err := helpers.RunCommand("./configure", []string{"--prefix=" + prefixDir, "--without-ensurepip"}, sourceDir, nil); err != nil {
 		return err
 	}

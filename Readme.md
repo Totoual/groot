@@ -246,6 +246,7 @@ These tools let an external MCP-capable agent:
 - execute one strict-runtime command in that workspace
 - inspect the concrete workspace manifest and layout when it needs lower-level context
 - load the strict workspace env as structured data
+- read only the stable Groot-owned runtime keys from that env surface instead of inheriting unrelated host session noise
 - attach and install explicit toolchains through Groot instead of improvising host-side installs
 - export the current workspace contract as portable structured data for later import/recreation
 - import that exported contract onto an existing local repo path

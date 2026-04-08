@@ -48,6 +48,22 @@ func TestWorkspaceCmdRunRejectsUnknownSubcommand(t *testing.T) {
 	}
 }
 
+func TestWorkspaceCmdRunTreatsHelpFlagsAsHelpRequest(t *testing.T) {
+	ws := NewWorkspaceCmd(&stubCmd{name: "bind", help: "Bind workspace"})
+
+	for _, args := range [][]string{
+		nil,
+		{"help"},
+		{"-h"},
+		{"--help"},
+		{"-help"},
+	} {
+		if err := ws.Run(nil, args); err != nil {
+			t.Fatalf("Run(%v) returned error: %v", args, err)
+		}
+	}
+}
+
 func TestWorkspaceCmdPrintHelpIncludesSortedCommands(t *testing.T) {
 	ws := NewWorkspaceCmd(
 		&stubCmd{name: "shell", help: "Activate"},
