@@ -150,7 +150,8 @@ This layer makes Groot usable by a top-level agent without inventing a separate 
 - [ ] Add machine-readable command results for agent-driven flows.
 - [ ] Add machine-readable workspace inspection, for example `groot ws inspect <name> --json`.
 - [ ] Add machine-readable environment output in addition to shell exports.
-- [ ] Expose manifest, logs, and workspace metadata as agent-readable resources, likely through MCP resources.
+- [x] Expose manifest and workspace metadata as agent-readable resources through MCP resources.
+- [ ] Expose logs and longer-lived execution history as agent-readable MCP resources.
 - [ ] Ensure `ws exec` works cleanly for non-interactive commands and long-running processes.
 - [ ] Expose logs, state, and workspace metadata in a predictable way.
 - [ ] Add deterministic workspace resolution from a repo path for agent use.

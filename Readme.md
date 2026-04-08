@@ -253,6 +253,13 @@ These tools let an external MCP-capable agent:
 
 The current MCP tool contract is documented in [docs/agent-contract.md](/Users/aristotelistriantafyllidis/Documents/groot/docs/agent-contract.md).
 
+Groot also exposes initial MCP resources for the currently active/scoped project:
+
+- workspace manifest
+- workspace metadata and runtime snapshot
+
+These resources are read-only context surfaces for agents. They let an agent fetch the manifest or workspace metadata directly instead of using mutating/runtime tools just to inspect state.
+
 ## Advanced Commands
 
 ```bash

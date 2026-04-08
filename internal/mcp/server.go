@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"strings"
 
@@ -59,6 +60,27 @@ type toolResult struct {
 type toolContent struct {
 	Type string `json:"type"`
 	Text string `json:"text"`
+}
+
+type resourceDefinition struct {
+	URI         string `json:"uri"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	MIMEType    string `json:"mimeType,omitempty"`
+}
+
+type resourceReadParams struct {
+	URI string `json:"uri"`
+}
+
+type resourceReadResult struct {
+	Contents []resourceContent `json:"contents"`
+}
+
+type resourceContent struct {
+	URI      string `json:"uri"`
+	MIMEType string `json:"mimeType,omitempty"`
+	Text     string `json:"text,omitempty"`
 }
 
 type workspaceStatusResult struct {
@@ -133,6 +155,17 @@ type workspaceInspection struct {
 	StateDir      string                       `json:"state_dir"`
 	LogsDir       string                       `json:"logs_dir"`
 	Manifest      app.Manifest                 `json:"manifest"`
+	Runtime       app.WorkspaceRuntimeSnapshot `json:"runtime"`
+}
+
+type workspaceMetadataResource struct {
+	WorkspaceName string                       `json:"workspace_name"`
+	ProjectPath   string                       `json:"project_path,omitempty"`
+	WorkspaceDir  string                       `json:"workspace_dir"`
+	ManifestPath  string                       `json:"manifest_path"`
+	HomeDir       string                       `json:"home_dir"`
+	StateDir      string                       `json:"state_dir"`
+	LogsDir       string                       `json:"logs_dir"`
 	Runtime       app.WorkspaceRuntimeSnapshot `json:"runtime"`
 }
 
@@ -245,7 +278,8 @@ func (s *Server) handleSingle(message []byte) ([]byte, error) {
 			Result: map[string]any{
 				"protocolVersion": ProtocolVersion,
 				"capabilities": map[string]any{
-					"tools": map[string]any{},
+					"tools":     map[string]any{},
+					"resources": map[string]any{},
 				},
 				"serverInfo": map[string]any{
 					"name":    "groot",
@@ -266,6 +300,36 @@ func (s *Server) handleSingle(message []byte) ([]byte, error) {
 			Result: map[string]any{
 				"tools": s.tools(),
 			},
+		})
+	case "resources/list":
+		return marshalResponse(rpcResponse{
+			JSONRPC: "2.0",
+			ID:      req.ID,
+			Result: map[string]any{
+				"resources": s.resources(),
+			},
+		})
+	case "resources/read":
+		var params resourceReadParams
+		if err := json.Unmarshal(req.Params, &params); err != nil {
+			return marshalResponse(rpcResponse{
+				JSONRPC: "2.0",
+				ID:      req.ID,
+				Error:   &rpcError{Code: -32602, Message: "invalid resource read params"},
+			})
+		}
+		result, rpcErr := s.readResource(params)
+		if rpcErr != nil {
+			return marshalResponse(rpcResponse{
+				JSONRPC: "2.0",
+				ID:      req.ID,
+				Error:   rpcErr,
+			})
+		}
+		return marshalResponse(rpcResponse{
+			JSONRPC: "2.0",
+			ID:      req.ID,
+			Result:  result,
 		})
 	case "tools/call":
 		var params toolCallParams
@@ -580,6 +644,36 @@ func (s *Server) tools() []toolDefinition {
 	}
 }
 
+func (s *Server) resources() []resourceDefinition {
+	scopeProjects := s.currentScopeProjects()
+	if len(scopeProjects) == 0 {
+		return []resourceDefinition{}
+	}
+
+	resources := make([]resourceDefinition, 0, len(scopeProjects)*2)
+	for _, projectPath := range scopeProjects {
+		workspaceName, _, err := s.app.ResolveOrCreateWorkspaceByProjectPath(projectPath)
+		if err != nil {
+			continue
+		}
+		resources = append(resources,
+			resourceDefinition{
+				URI:         workspaceResourceURI(workspaceName, "manifest"),
+				Name:        fmt.Sprintf("%s manifest", workspaceName),
+				Description: fmt.Sprintf("Workspace manifest for %s.", workspaceName),
+				MIMEType:    "application/json",
+			},
+			resourceDefinition{
+				URI:         workspaceResourceURI(workspaceName, "metadata"),
+				Name:        fmt.Sprintf("%s metadata", workspaceName),
+				Description: fmt.Sprintf("Workspace metadata and runtime snapshot for %s.", workspaceName),
+				MIMEType:    "application/json",
+			},
+		)
+	}
+	return resources
+}
+
 func (s *Server) callTool(params toolCallParams) toolResult {
 	switch params.Name {
 	case "workspace_activate":
@@ -605,6 +699,60 @@ func (s *Server) callTool(params toolCallParams) toolResult {
 	default:
 		return errorToolResult(fmt.Sprintf("unknown tool %q", params.Name), nil)
 	}
+}
+
+func (s *Server) readResource(params resourceReadParams) (resourceReadResult, *rpcError) {
+	if strings.TrimSpace(params.URI) == "" {
+		return resourceReadResult{}, &rpcError{Code: -32602, Message: `resource read requires "uri"`}
+	}
+
+	workspaceName, kind, err := parseWorkspaceResourceURI(params.URI)
+	if err != nil {
+		return resourceReadResult{}, &rpcError{Code: -32602, Message: err.Error()}
+	}
+
+	inspect, err := s.app.InspectWorkspace(workspaceName)
+	if err != nil {
+		return resourceReadResult{}, &rpcError{Code: -32000, Message: err.Error()}
+	}
+	if strings.TrimSpace(inspect.Manifest.ProjectPath) == "" {
+		return resourceReadResult{}, &rpcError{Code: -32000, Message: fmt.Sprintf("workspace %q is not bound to a project path", workspaceName)}
+	}
+	if _, err := s.scopedProjectPath(inspect.Manifest.ProjectPath); err != nil {
+		return resourceReadResult{}, &rpcError{Code: -32000, Message: err.Error()}
+	}
+
+	var payload any
+	switch kind {
+	case "manifest":
+		payload = inspect.Manifest
+	case "metadata":
+		payload = workspaceMetadataResource{
+			WorkspaceName: inspect.WorkspaceName,
+			ProjectPath:   inspect.Manifest.ProjectPath,
+			WorkspaceDir:  inspect.WorkspaceDir,
+			ManifestPath:  inspect.ManifestPath,
+			HomeDir:       inspect.HomeDir,
+			StateDir:      inspect.StateDir,
+			LogsDir:       inspect.LogsDir,
+			Runtime:       app.WorkspaceRuntimeSnapshotFor(inspect.Runtime),
+		}
+	default:
+		return resourceReadResult{}, &rpcError{Code: -32602, Message: fmt.Sprintf("unsupported resource kind %q", kind)}
+	}
+
+	data, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		return resourceReadResult{}, &rpcError{Code: -32000, Message: fmt.Sprintf("marshal resource %q: %v", params.URI, err)}
+	}
+
+	return resourceReadResult{
+		Contents: []resourceContent{{
+			URI:      params.URI,
+			MIMEType: "application/json",
+			Text:     string(data) + "\n",
+		}},
+	}, nil
 }
 
 func (s *Server) currentScopeProjects() []string {
@@ -1258,6 +1406,36 @@ func responseID(id json.RawMessage) json.RawMessage {
 		return json.RawMessage("null")
 	}
 	return id
+}
+
+func workspaceResourceURI(workspaceName, kind string) string {
+	return fmt.Sprintf("groot://workspace/%s/%s", url.PathEscape(workspaceName), kind)
+}
+
+func parseWorkspaceResourceURI(raw string) (workspaceName, kind string, err error) {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", "", fmt.Errorf("invalid resource uri %q", raw)
+	}
+	if u.Scheme != "groot" || u.Host != "workspace" {
+		return "", "", fmt.Errorf("unsupported resource uri %q", raw)
+	}
+
+	parts := strings.Split(strings.TrimPrefix(u.EscapedPath(), "/"), "/")
+	if len(parts) != 2 {
+		return "", "", fmt.Errorf("unsupported resource uri %q", raw)
+	}
+
+	workspaceName, err = url.PathUnescape(parts[0])
+	if err != nil || strings.TrimSpace(workspaceName) == "" {
+		return "", "", fmt.Errorf("invalid resource uri %q", raw)
+	}
+	kind, err = url.PathUnescape(parts[1])
+	if err != nil || strings.TrimSpace(kind) == "" {
+		return "", "", fmt.Errorf("invalid resource uri %q", raw)
+	}
+
+	return workspaceName, kind, nil
 }
 
 func marshalResponse(response rpcResponse) ([]byte, error) {

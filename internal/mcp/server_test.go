@@ -22,7 +22,10 @@ func TestServerHandleInitializeAndListTools(t *testing.T) {
 	var initResponse struct {
 		Result struct {
 			ProtocolVersion string `json:"protocolVersion"`
-			ServerInfo      struct {
+			Capabilities    struct {
+				Resources map[string]any `json:"resources"`
+			} `json:"capabilities"`
+			ServerInfo struct {
 				Name string `json:"name"`
 			} `json:"serverInfo"`
 		} `json:"result"`
@@ -32,6 +35,9 @@ func TestServerHandleInitializeAndListTools(t *testing.T) {
 	}
 	if initResponse.Result.ProtocolVersion != ProtocolVersion {
 		t.Fatalf("protocolVersion = %q, want %q", initResponse.Result.ProtocolVersion, ProtocolVersion)
+	}
+	if initResponse.Result.Capabilities.Resources == nil {
+		t.Fatal("expected resources capability to be advertised")
 	}
 	if initResponse.Result.ServerInfo.Name != "groot" {
 		t.Fatalf("serverInfo.name = %q, want %q", initResponse.Result.ServerInfo.Name, "groot")
@@ -54,6 +60,150 @@ func TestServerHandleInitializeAndListTools(t *testing.T) {
 	}
 	if len(listResponse.Result.Tools) != 10 {
 		t.Fatalf("len(tools) = %d, want %d", len(listResponse.Result.Tools), 10)
+	}
+}
+
+func TestServerResourcesListReturnsManifestAndMetadataForActiveWorkspace(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+	projectPath := filepath.Join(root, "repos", "the_grime_tcg")
+	if err := os.MkdirAll(filepath.Join(projectPath, "backend"), 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(projectPath, "backend", "go.mod"), []byte("module example.com/tcg\n\ngo 1.25.4\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile returned error: %v", err)
+	}
+
+	server := NewServer(a)
+	activate := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"workspace_activate","arguments":{"path":"` + projectPath + `"}}}`
+	if _, err := server.HandleMessage([]byte(activate)); err != nil {
+		t.Fatalf("HandleMessage activate returned error: %v", err)
+	}
+
+	response, err := server.HandleMessage([]byte(`{"jsonrpc":"2.0","id":2,"method":"resources/list"}`))
+	if err != nil {
+		t.Fatalf("HandleMessage resources/list returned error: %v", err)
+	}
+
+	var rpc struct {
+		Result struct {
+			Resources []struct {
+				URI  string `json:"uri"`
+				Name string `json:"name"`
+			} `json:"resources"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(response, &rpc); err != nil {
+		t.Fatalf("Unmarshal returned error: %v", err)
+	}
+	if len(rpc.Result.Resources) != 2 {
+		t.Fatalf("len(resources) = %d, want %d", len(rpc.Result.Resources), 2)
+	}
+	uris := []string{rpc.Result.Resources[0].URI, rpc.Result.Resources[1].URI}
+	if !slicesContainsString(uris, "groot://workspace/the_grime_tcg/manifest") {
+		t.Fatalf("missing manifest resource in %#v", uris)
+	}
+	if !slicesContainsString(uris, "groot://workspace/the_grime_tcg/metadata") {
+		t.Fatalf("missing metadata resource in %#v", uris)
+	}
+}
+
+func TestServerResourcesReadReturnsManifestJSON(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+	projectPath := filepath.Join(root, "repos", "the_grime_tcg")
+	if err := os.MkdirAll(filepath.Join(projectPath, "backend"), 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := a.CreateNewWorkspace("the_grime_tcg"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+	if err := a.BindWorkspace("the_grime_tcg", projectPath); err != nil {
+		t.Fatalf("BindWorkspace returned error: %v", err)
+	}
+
+	server := NewServer(a)
+	activate := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"workspace_activate","arguments":{"workspace":"the_grime_tcg"}}}`
+	if _, err := server.HandleMessage([]byte(activate)); err != nil {
+		t.Fatalf("HandleMessage activate returned error: %v", err)
+	}
+
+	request := `{"jsonrpc":"2.0","id":2,"method":"resources/read","params":{"uri":"groot://workspace/the_grime_tcg/manifest"}}`
+	response, err := server.HandleMessage([]byte(request))
+	if err != nil {
+		t.Fatalf("HandleMessage resources/read returned error: %v", err)
+	}
+
+	var rpc struct {
+		Result struct {
+			Contents []struct {
+				URI  string `json:"uri"`
+				Text string `json:"text"`
+			} `json:"contents"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(response, &rpc); err != nil {
+		t.Fatalf("Unmarshal returned error: %v", err)
+	}
+	if len(rpc.Result.Contents) != 1 {
+		t.Fatalf("len(contents) = %d, want %d", len(rpc.Result.Contents), 1)
+	}
+	if rpc.Result.Contents[0].URI != "groot://workspace/the_grime_tcg/manifest" {
+		t.Fatalf("uri = %q", rpc.Result.Contents[0].URI)
+	}
+
+	var manifest app.Manifest
+	if err := json.Unmarshal([]byte(rpc.Result.Contents[0].Text), &manifest); err != nil {
+		t.Fatalf("Unmarshal manifest text returned error: %v", err)
+	}
+	if manifest.Name != "the_grime_tcg" {
+		t.Fatalf("manifest.name = %q, want %q", manifest.Name, "the_grime_tcg")
+	}
+}
+
+func TestServerResourcesReadRespectsScope(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+	allowedPath := filepath.Join(root, "repos", "crawlly")
+	otherPath := filepath.Join(root, "repos", "the_grime_tcg")
+	for _, projectPath := range []string{allowedPath, otherPath} {
+		if err := os.MkdirAll(projectPath, 0o755); err != nil {
+			t.Fatalf("MkdirAll returned error: %v", err)
+		}
+	}
+	if err := a.CreateNewWorkspace("crawlly"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+	if err := a.BindWorkspace("crawlly", allowedPath); err != nil {
+		t.Fatalf("BindWorkspace returned error: %v", err)
+	}
+	if err := a.CreateNewWorkspace("the_grime_tcg"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+	if err := a.BindWorkspace("the_grime_tcg", otherPath); err != nil {
+		t.Fatalf("BindWorkspace returned error: %v", err)
+	}
+
+	server := NewScopedServer(a, []string{allowedPath})
+	request := `{"jsonrpc":"2.0","id":1,"method":"resources/read","params":{"uri":"groot://workspace/the_grime_tcg/metadata"}}`
+	response, err := server.HandleMessage([]byte(request))
+	if err != nil {
+		t.Fatalf("HandleMessage resources/read returned error: %v", err)
+	}
+
+	var rpc struct {
+		Error *struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(response, &rpc); err != nil {
+		t.Fatalf("Unmarshal returned error: %v", err)
+	}
+	if rpc.Error == nil {
+		t.Fatal("expected resources/read to return an RPC error for out-of-scope resource")
+	}
+	if !strings.Contains(rpc.Error.Message, "outside the MCP scope") {
+		t.Fatalf("unexpected error message %q", rpc.Error.Message)
 	}
 }
 
@@ -947,4 +1097,13 @@ func TestServerServeUsesNewlineDelimitedMessages(t *testing.T) {
 	if len(lines) != 2 {
 		t.Fatalf("expected 2 response lines, got %d: %q", len(lines), out.String())
 	}
+}
+
+func slicesContainsString(items []string, want string) bool {
+	for _, item := range items {
+		if item == want {
+			return true
+		}
+	}
+	return false
 }

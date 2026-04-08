@@ -63,7 +63,7 @@ The current MCP surface is intentionally small:
 It does not yet cover:
 
 - workspace creation by explicit name
-- workspace resources like logs or manifest
+- logs or other long-lived execution history resources
 
 ## Available Tools
 
@@ -312,6 +312,41 @@ If the exported workspace name already exists on the target machine, pass `works
 
 Import restores the Groot workspace contract, not the source repository contents. If the target path does not contain the original project files yet, Groot can still report attached and installed runtimes from the imported contract even though runtime detection at that path is still empty.
 
+## Available Resources
+
+When a project is active or startup-scoped, Groot exposes read-only MCP resources for that workspace.
+
+### Manifest Resource
+
+URI shape:
+
+```text
+groot://workspace/<workspace-name>/manifest
+```
+
+Content:
+
+- the raw `manifest.json` content as JSON
+
+### Metadata Resource
+
+URI shape:
+
+```text
+groot://workspace/<workspace-name>/metadata
+```
+
+Content:
+
+- workspace name
+- bound project path
+- workspace dir
+- manifest path
+- home/state/log dirs
+- runtime ownership snapshot
+
+Resources are scoped the same way as tools. In an unscoped MCP session, agents should activate a project first so these resources become available.
+
 ## Design Rules
 
 External agents should treat Groot as:
@@ -330,6 +365,6 @@ External agents should not:
 
 The next MCP additions should likely be:
 
-1. manifest and log resources
+1. logs and other execution-history resources
 2. `workspace_bind` / `workspace_create` if agents need lower-level control
 3. richer import conflict and recovery flows
