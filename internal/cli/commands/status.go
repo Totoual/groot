@@ -12,17 +12,6 @@ import (
 
 type StatusCmd struct{}
 
-type statusJSONOutput struct {
-	WorkspaceName       string                  `json:"workspace_name"`
-	ProjectPath         string                  `json:"project_path,omitempty"`
-	Status              string                  `json:"status"`
-	Detected            []app.DetectedToolchain `json:"detected"`
-	Attached            []app.Component         `json:"attached"`
-	Installed           []app.Component         `json:"installed"`
-	AttachedUninstalled []app.Component         `json:"attached_uninstalled"`
-	Missing             []app.DetectedToolchain `json:"missing"`
-}
-
 func (c *StatusCmd) Name() string { return "status" }
 
 func (c *StatusCmd) Help() string {
@@ -67,18 +56,7 @@ func (c *StatusCmd) Run(a *app.App, args []string) error {
 }
 
 func writeWorkspaceRuntimeStatusJSON(report app.WorkspaceRuntimeOwnership) error {
-	output := statusJSONOutput{
-		WorkspaceName:       report.WorkspaceName,
-		ProjectPath:         report.ProjectPath,
-		Status:              app.RuntimeOwnershipStatusLabel(report),
-		Detected:            append([]app.DetectedToolchain{}, report.Detected...),
-		Attached:            append([]app.Component{}, report.Attached...),
-		Installed:           append([]app.Component{}, report.Installed...),
-		AttachedUninstalled: append([]app.Component{}, report.Uninstalled...),
-		Missing:             append([]app.DetectedToolchain{}, report.Missing...),
-	}
-
-	data, err := json.MarshalIndent(output, "", "  ")
+	data, err := json.MarshalIndent(app.WorkspaceRuntimeSnapshotFor(report), "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal status json: %w", err)
 	}

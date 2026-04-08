@@ -190,18 +190,7 @@ func (a *App) WorkspaceEnv(name string) (string, error) {
 		return "", err
 	}
 
-	envMap := make(map[string]string, len(env)+1)
-	for _, entry := range env {
-		key, value, ok := strings.Cut(entry, "=")
-		if !ok || key == "" {
-			continue
-		}
-		if key == "PS1" || key == "PROMPT" {
-			continue
-		}
-		envMap[key] = value
-	}
-	envMap["GROOT_WORKDIR"] = workDir
+	envMap := exportedWorkspaceEnvMap(env, workDir)
 
 	keys := make([]string, 0, len(envMap))
 	for key := range envMap {

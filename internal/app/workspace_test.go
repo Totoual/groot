@@ -915,6 +915,9 @@ func TestWorkspaceEnvPrintsShellExportsWithoutPromptVars(t *testing.T) {
 	t.Setenv("SHELL", "/bin/zsh")
 	hostHome := filepath.Join(root, "host-home")
 	t.Setenv("HOME", hostHome)
+	t.Setenv("USER", "ari")
+	t.Setenv("SSH_AUTH_SOCK", "/tmp/ssh-agent.sock")
+	t.Setenv("TERM", "xterm-256color")
 	t.Setenv("PWD", root)
 	t.Setenv("PATH", strings.Join([]string{
 		filepath.Join(hostHome, ".antigravity", "bin"),
@@ -978,8 +981,77 @@ func TestWorkspaceEnvPrintsShellExportsWithoutPromptVars(t *testing.T) {
 	if strings.Contains(output, "export PWD=") {
 		t.Fatalf("expected PWD to be omitted, got %q", output)
 	}
+	if strings.Contains(output, "export USER=") {
+		t.Fatalf("expected USER to be omitted, got %q", output)
+	}
+	if strings.Contains(output, "export SSH_AUTH_SOCK=") {
+		t.Fatalf("expected SSH_AUTH_SOCK to be omitted, got %q", output)
+	}
+	if strings.Contains(output, "export TERM=") {
+		t.Fatalf("expected TERM to be omitted, got %q", output)
+	}
 	if strings.Contains(output, hostHome) {
 		t.Fatalf("expected host-home PATH entries to be filtered, got %q", output)
+	}
+}
+
+func TestWorkspaceEnvMapReturnsFilteredStableRuntimeKeys(t *testing.T) {
+	root := t.TempDir()
+	app := NewApp(root)
+	hostHome := filepath.Join(root, "host-home")
+	t.Setenv("HOME", hostHome)
+	t.Setenv("SHELL", "/bin/zsh")
+	t.Setenv("USER", "ari")
+	t.Setenv("SSH_AUTH_SOCK", "/tmp/ssh-agent.sock")
+	t.Setenv("TERM", "xterm-256color")
+	t.Setenv("PATH", "/usr/bin:/bin")
+
+	projectPath := filepath.Join(root, "repos", "crawlly")
+	if err := os.MkdirAll(projectPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := app.CreateNewWorkspace("crawlly"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+	if err := app.BindWorkspace("crawlly", projectPath); err != nil {
+		t.Fatalf("BindWorkspace returned error: %v", err)
+	}
+
+	stub := &stubInstaller{
+		name:   "stub",
+		binDir: "/toolchains/stub/1.0/bin",
+		env: map[string]string{
+			"STUB_HOME": "/toolchains/stub/1.0",
+		},
+	}
+	app.toolchains = map[string]itoolchain.ToolchainInstaller{
+		"stub": stub,
+	}
+	if err := app.AttachToWorkspace("crawlly", []string{"stub@1.0"}); err != nil {
+		t.Fatalf("AttachToWorkspace returned error: %v", err)
+	}
+
+	envMap, workDir, err := app.WorkspaceEnvMap("crawlly")
+	if err != nil {
+		t.Fatalf("WorkspaceEnvMap returned error: %v", err)
+	}
+	if workDir != projectPath {
+		t.Fatalf("workDir = %q, want %q", workDir, projectPath)
+	}
+	if envMap["GROOT_WORKDIR"] != projectPath {
+		t.Fatalf("GROOT_WORKDIR = %q, want %q", envMap["GROOT_WORKDIR"], projectPath)
+	}
+	if envMap["STUB_HOME"] != "/toolchains/stub/1.0" {
+		t.Fatalf("STUB_HOME = %q", envMap["STUB_HOME"])
+	}
+	if _, ok := envMap["USER"]; ok {
+		t.Fatalf("expected USER to be omitted, got %#v", envMap)
+	}
+	if _, ok := envMap["SSH_AUTH_SOCK"]; ok {
+		t.Fatalf("expected SSH_AUTH_SOCK to be omitted, got %#v", envMap)
+	}
+	if _, ok := envMap["TERM"]; ok {
+		t.Fatalf("expected TERM to be omitted, got %#v", envMap)
 	}
 }
 
