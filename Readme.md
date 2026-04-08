@@ -25,6 +25,7 @@ The current MCP direction is documented in [docs/agent.md](/Users/aristotelistri
 - Execute one-off commands against a project path by resolving or auto-creating the matching workspace
 - Open a project path by resolving or auto-creating the matching workspace
 - Export an existing workspace contract from a project path as portable JSON
+- Import a portable workspace contract onto an existing local project path
 - Print runtime ownership status for a project path by resolving or auto-creating the matching workspace
 - Create and delete workspaces
 - Bind a workspace to an existing project directory
@@ -112,6 +113,7 @@ groot init
 groot open <path>
 groot open <path> --setup
 groot export <path>
+groot import <export.json|-> --project-path <path> [--workspace-name name]
 groot status <path>
 groot status <path> --json
 groot enter <path>
@@ -174,6 +176,8 @@ groot open ~/Documents/crawlly --setup-detected
 groot enter ~/Documents/crawlly
 groot exec ~/Documents/crawlly git status
 groot export ~/Documents/crawlly
+groot import crawlly-export.json --project-path ~/Documents/crawlly
+groot import crawlly-export.json --project-path ~/Documents/crawlly-copy --workspace-name crawlly-copy
 groot status ~/Documents/crawlly
 groot status ~/Documents/crawlly --json
 ```
@@ -183,6 +187,8 @@ These commands resolve the workspace by `project_path` first and create/bind one
 - `open` is the main human GUI shortcut
 - `enter` and `exec` use the strict workspace runtime
 - `export` writes the current workspace contract as portable JSON without bundling toolchain binaries or caches
+- `import` recreates that workspace contract around an existing local repo path without cloning the repo for you, and can rename the imported workspace if the original name already exists locally
+- if you import onto an empty local directory, Groot can still restore the attached and installed toolchains from the workspace contract even though no project runtimes are detected from files at that path yet
 - `status` shows detected, attached, installed, and host-fallback runtime state for the project path, and `--json` exposes the same state as structured output for automation and future agents
 - `ws ...` remains the lower-level runtime surface for explicit control
 
@@ -230,6 +236,7 @@ Current MCP tools:
 - `workspace_attach`
 - `workspace_install`
 - `workspace_export`
+- `workspace_import`
 
 These tools let an external MCP-capable agent:
 
@@ -241,6 +248,7 @@ These tools let an external MCP-capable agent:
 - load the strict workspace env as structured data
 - attach and install explicit toolchains through Groot instead of improvising host-side installs
 - export the current workspace contract as portable structured data for later import/recreation
+- import that exported contract onto an existing local repo path
 
 The current MCP tool contract is documented in [docs/agent-contract.md](/Users/aristotelistriantafyllidis/Documents/groot/docs/agent-contract.md).
 

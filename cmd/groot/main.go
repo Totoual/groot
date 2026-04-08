@@ -36,6 +36,7 @@ func main() {
 		&commands.EnterCmd{},
 		&commands.ExecCmd{},
 		&commands.ExportCmd{},
+		&commands.ImportCmd{},
 		&commands.InitCmd{},
 		&commands.MCPCmd{},
 		&commands.OpenCmd{},

@@ -66,6 +66,7 @@ Current tools:
 - `workspace_attach`
 - `workspace_install`
 - `workspace_export`
+- `workspace_import`
 
 Those tools are documented in [docs/agent-contract.md](/Users/aristotelistriantafyllidis/Documents/groot/docs/agent-contract.md).
 
