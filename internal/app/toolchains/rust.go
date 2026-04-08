@@ -65,7 +65,7 @@ func (r RustInstaller) EnsureInstalled(ic *itoolchain.InstallContext, version st
 	bootstrapPath := filepath.Join(ic.CacheDir, "rustup-init-"+target)
 
 	if _, err := os.Stat(bootstrapPath); os.IsNotExist(err) {
-		fmt.Println("Downloading", bootstrapURL)
+		emitInstallStep("Downloading %s", bootstrapURL)
 		if err := helpers.DownloadFile(bootstrapURL, bootstrapPath); err != nil {
 			return err
 		}
@@ -73,7 +73,7 @@ func (r RustInstaller) EnsureInstalled(ic *itoolchain.InstallContext, version st
 		return fmt.Errorf("stat rust bootstrap: %w", err)
 	}
 
-	fmt.Println("Verifying checksum")
+	emitInstallStep("Verifying checksum")
 	if err := helpers.VerifyDownloadedArchive(bootstrapPath, filepath.Base(bootstrapPath), checksumURL); err != nil {
 		return err
 	}
@@ -93,7 +93,7 @@ func (r RustInstaller) EnsureInstalled(ic *itoolchain.InstallContext, version st
 		"CARGO_INIT_SKIP_PATH_CHECK": "yes",
 	}
 
-	fmt.Println("Installing Rust toolchain", version)
+	emitInstallStep("Installing Rust toolchain %s", version)
 	return helpers.RunCommand(
 		bootstrapPath,
 		[]string{"-y", "--profile", "minimal", "--no-modify-path", "--default-toolchain", version},

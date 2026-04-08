@@ -74,7 +74,7 @@ func (j JavaInstaller) EnsureInstalled(ic *itoolchain.InstallContext, version st
 
 	archivePath := filepath.Join(ic.CacheDir, asset.Name)
 	if _, err := os.Stat(archivePath); os.IsNotExist(err) {
-		fmt.Println("Downloading", asset.Link)
+		emitInstallStep("Downloading %s", asset.Link)
 		if err := helpers.DownloadFile(asset.Link, archivePath); err != nil {
 			return err
 		}
@@ -82,7 +82,7 @@ func (j JavaInstaller) EnsureInstalled(ic *itoolchain.InstallContext, version st
 		return fmt.Errorf("stat cached archive: %w", err)
 	}
 
-	fmt.Println("Verifying checksum")
+	emitInstallStep("Verifying checksum")
 	if err := helpers.VerifyDownloadedArchiveWithExpectedSHA256(archivePath, asset.Name, asset.Checksum); err != nil {
 		return err
 	}
@@ -92,7 +92,7 @@ func (j JavaInstaller) EnsureInstalled(ic *itoolchain.InstallContext, version st
 		return err
 	}
 
-	fmt.Println("Extracting", archivePath)
+	emitInstallStep("Extracting %s", archivePath)
 	if err := helpers.ExtractTarGz(archivePath, installDir); err != nil {
 		return err
 	}

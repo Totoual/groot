@@ -48,6 +48,22 @@ func TestRouterRunRejectsUnknownCommand(t *testing.T) {
 	}
 }
 
+func TestRouterRunTreatsHelpFlagsAsHelpRequest(t *testing.T) {
+	r := NewRouter(&stubCmd{name: "ws", help: "Manage workspaces"})
+
+	for _, args := range [][]string{
+		nil,
+		{"help"},
+		{"-h"},
+		{"--help"},
+		{"-help"},
+	} {
+		if err := r.Run(nil, args); err != nil {
+			t.Fatalf("Run(%v) returned error: %v", args, err)
+		}
+	}
+}
+
 func TestRouterPrintHelpIncludesSortedCommands(t *testing.T) {
 	r := NewRouter(
 		&stubCmd{name: "shell-hook", help: "Install shell hook"},

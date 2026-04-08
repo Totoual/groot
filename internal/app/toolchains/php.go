@@ -71,7 +71,7 @@ func (p PHPInstaller) EnsureInstalled(ic *itoolchain.InstallContext, version str
 	archiveName := p.archiveName(resolvedVersion)
 	archivePath := filepath.Join(ic.CacheDir, archiveName)
 	if _, err := os.Stat(archivePath); os.IsNotExist(err) {
-		fmt.Println("Downloading", p.archiveURL(resolvedVersion))
+		emitInstallStep("Downloading %s", p.archiveURL(resolvedVersion))
 		if err := helpers.DownloadFile(p.archiveURL(resolvedVersion), archivePath); err != nil {
 			return err
 		}
@@ -79,7 +79,7 @@ func (p PHPInstaller) EnsureInstalled(ic *itoolchain.InstallContext, version str
 		return fmt.Errorf("stat cached archive: %w", err)
 	}
 
-	fmt.Println("Verifying checksum")
+	emitInstallStep("Verifying checksum")
 	if err := helpers.VerifyDownloadedArchiveWithExpectedSHA256(archivePath, archiveName, checksum); err != nil {
 		return err
 	}
@@ -92,7 +92,7 @@ func (p PHPInstaller) EnsureInstalled(ic *itoolchain.InstallContext, version str
 	sourceRoot := filepath.Join(installDir, "src")
 	sourceDir := p.sourceDir(ic.ToolchainDir, version)
 	if _, err := os.Stat(sourceDir); os.IsNotExist(err) {
-		fmt.Println("Extracting", archivePath)
+		emitInstallStep("Extracting %s", archivePath)
 		if err := os.MkdirAll(sourceRoot, 0o755); err != nil {
 			return err
 		}
@@ -108,7 +108,7 @@ func (p PHPInstaller) EnsureInstalled(ic *itoolchain.InstallContext, version str
 		return err
 	}
 
-	fmt.Println("Building PHP", resolvedVersion)
+	emitInstallStep("Building PHP %s", resolvedVersion)
 	if err := helpers.RunCommand("./configure", []string{"--prefix=" + prefixDir, "--disable-all", "--enable-cli"}, sourceDir, nil); err != nil {
 		return err
 	}

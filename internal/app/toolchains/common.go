@@ -49,7 +49,7 @@ func installArchiveWithExtractorIfNeeded(
 
 	archivePath := filepath.Join(ic.CacheDir, archiveName)
 	if _, err := os.Stat(archivePath); os.IsNotExist(err) {
-		fmt.Println("Downloading", archiveURL)
+		emitInstallStep("Downloading %s", archiveURL)
 		if err := helpers.DownloadFile(archiveURL, archivePath); err != nil {
 			return err
 		}
@@ -57,7 +57,7 @@ func installArchiveWithExtractorIfNeeded(
 		return fmt.Errorf("stat cached archive: %w", err)
 	}
 
-	fmt.Println("Verifying checksum")
+	emitInstallStep("Verifying checksum")
 	if err := verify(archivePath); err != nil {
 		return err
 	}
@@ -85,7 +85,7 @@ func installArchiveWithExtractorIfNeeded(
 		}
 	}()
 
-	fmt.Println("Extracting", archivePath)
+	emitInstallStep("Extracting %s", archivePath)
 	if err := extract(archivePath, stagingDir); err != nil {
 		return err
 	}

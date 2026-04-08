@@ -79,11 +79,11 @@ func writeWorkspaceRuntimeStatus(report app.WorkspaceRuntimeOwnership) {
 	}
 	if len(report.Missing) > 0 {
 		fmt.Fprintf(os.Stdout, "Host Fallback Risk: %s\n", formatDetectedToolchains(report.Missing))
-		fmt.Fprintf(os.Stdout, "Status: %s\n", app.RuntimeOwnershipStatusLabel(report))
+		writeRuntimeStatusLine(report)
 		return
 	}
 	fmt.Fprintln(os.Stdout, "Host Fallback Risk: none")
-	fmt.Fprintf(os.Stdout, "Status: %s\n", app.RuntimeOwnershipStatusLabel(report))
+	writeRuntimeStatusLine(report)
 }
 
 func writeFirstOpenSummary(plan app.FirstOpenRuntimePlan) {
@@ -106,4 +106,8 @@ func formatComponents(components []app.Component) string {
 		parts = append(parts, fmt.Sprintf("%s@%s", comp.Name, comp.Version))
 	}
 	return strings.Join(parts, ", ")
+}
+
+func writeRuntimeStatusLine(report app.WorkspaceRuntimeOwnership) {
+	fmt.Fprintf(os.Stdout, "Status: %s\n", app.RuntimeOwnershipStatusLabel(report))
 }
