@@ -40,6 +40,9 @@ func RuntimeOwnershipStatusLabel(report WorkspaceRuntimeOwnership) string {
 	if len(report.Uninstalled) > 0 {
 		return "runtime declared but install pending"
 	}
+	if len(report.Detected) == 0 && (len(report.Attached) > 0 || len(report.Installed) > 0) {
+		return "workspace runtime available, but no project runtimes detected"
+	}
 	if len(report.Detected) == 0 {
 		return "no runtimes detected"
 	}

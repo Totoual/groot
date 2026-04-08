@@ -307,6 +307,8 @@ Structured result:
 
 If the exported workspace name already exists on the target machine, pass `workspace_name` to import the contract under a different local workspace identity.
 
+Import restores the Groot workspace contract, not the source repository contents. If the target path does not contain the original project files yet, Groot can still report attached and installed runtimes from the imported contract even though runtime detection at that path is still empty.
+
 ## Design Rules
 
 External agents should treat Groot as:

@@ -684,7 +684,10 @@ func TestServerWorkspaceInstallToolInstallsAttachedToolchains(t *testing.T) {
 	if len(rpc.Result.StructuredContent.Installed) != 1 {
 		t.Fatalf("len(installed) = %d, want %d", len(rpc.Result.StructuredContent.Installed), 1)
 	}
-	if rpc.Result.StructuredContent.Status.Status != "runtime owned by Groot" && rpc.Result.StructuredContent.Status.Status != "no runtimes detected" && rpc.Result.StructuredContent.Status.Status != "partial runtime ownership" {
+	if rpc.Result.StructuredContent.Status.Status != "runtime owned by Groot" &&
+		rpc.Result.StructuredContent.Status.Status != "no runtimes detected" &&
+		rpc.Result.StructuredContent.Status.Status != "partial runtime ownership" &&
+		rpc.Result.StructuredContent.Status.Status != "workspace runtime available, but no project runtimes detected" {
 		t.Fatalf("unexpected status %q", rpc.Result.StructuredContent.Status.Status)
 	}
 }

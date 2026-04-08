@@ -188,6 +188,7 @@ These commands resolve the workspace by `project_path` first and create/bind one
 - `enter` and `exec` use the strict workspace runtime
 - `export` writes the current workspace contract as portable JSON without bundling toolchain binaries or caches
 - `import` recreates that workspace contract around an existing local repo path without cloning the repo for you, and can rename the imported workspace if the original name already exists locally
+- if you import onto an empty local directory, Groot can still restore the attached and installed toolchains from the workspace contract even though no project runtimes are detected from files at that path yet
 - `status` shows detected, attached, installed, and host-fallback runtime state for the project path, and `--json` exposes the same state as structured output for automation and future agents
 - `ws ...` remains the lower-level runtime surface for explicit control
 
