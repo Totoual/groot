@@ -16,44 +16,43 @@ The product target is:
 
 If Groot does not make that experience materially better than normal local development, it is not yet doing its job.
 
-## Next Product Milestone: First Open Owns The Runtime
+## Phase Model
 
-This is the next milestone that should define whether Groot is becoming a real product.
+The roadmap is now intentionally phased:
 
-When a user runs:
+- Phase 1: Groot Runtime
+- Phase 1.5: Groot MCP Control Plane
+- Phase 2: Intent Compiler And Planning Surface
+- Phase 3: GOS Direction
 
-```bash
-groot open ~/dev/some-project
-```
+This keeps the product sequencing honest:
 
-Groot should move toward:
+- prove the runtime is useful before broadening scope
+- keep MCP as a structured adapter, not the core identity
+- add intent/planning without competing with general-purpose agents
+- only evolve toward deeper OS-style control if the runtime becomes indispensable
 
-- resolving or creating the workspace automatically
-- creating the manifest automatically
-- detecting likely runtimes from the repo
-- attaching or at least suggesting the right toolchains
-- making it obvious when the workspace is still using host toolchains
-- making IDE and terminal behavior feel clearly Groot-managed
+## Phase 1: Groot Runtime
 
-### Immediate Next Tasks
+Phase 1 is about proving that workspace-first local runtime is genuinely better than unmanaged machine state.
 
-- [x] Detect likely runtimes on first open, for example Go, Node, Python, Rust, Bun, Deno, PHP, Java.
-- [x] Define first-open behavior when no toolchains are attached yet:
-  - warn only
-  - suggest attach/install
-  - or auto-attach common runtimes
-- [x] Surface when a workspace is still using host toolchains instead of Groot-managed ones.
-- [x] Add a stricter runtime mode or warning mode for undeclared toolchains.
-- [x] Decide whether `groot open <path>` should only open, or whether it should also offer/setup runtime ownership on first use.
-- [x] Add an opt-in first-open setup path that can auto-attach and install detected runtimes with flags.
-- [x] Add a path-based status/inspect view so users can see detected, attached, installed, and host-fallback runtime state.
-- [x] Make the first-open experience feel product-shaped, not like a thin alias over lower-level commands.
+### What Phase 1 Must Prove
 
-## Layer 1: Core Runtime
+- workspaces reduce global machine pollution
+- switching projects feels cleaner than global installs
+- deletion and recreation feel safe and powerful
+- first-open/setup/import/export feel normal, not clever
+- IDE and shell use are good enough for daily work
 
-This is the stable control plane Groot should expose for shells, IDE launchers, and future agents.
+### Phase 1 Exit Criteria
 
-### Workspace Model
+- Groot is used daily across multiple real repos
+- users stop installing at least some toolchains globally
+- workspace deletion and recreation are trusted
+- `$HOME` pollution is materially reduced
+- Groot-managed execution feels predictable enough to prefer it
+
+### Runtime Core
 
 - [x] Make `delete` the canonical workspace removal command.
 - [x] Add `project_path` to the workspace manifest.
@@ -81,7 +80,45 @@ This is the stable control plane Groot should expose for shells, IDE launchers, 
 - [x] Harden extraction against path traversal and partial installs.
 - [x] Reuse installed toolchains in both `ws shell` and `ws exec`.
 
-### Tests And Cleanup
+### First Open Owns The Runtime
+
+- [x] Detect likely runtimes on first open, for example Go, Node, Python, Rust, Bun, Deno, PHP, Java.
+- [x] Define first-open behavior when no toolchains are attached yet:
+  - warn only
+  - suggest attach/install
+  - or auto-attach common runtimes
+- [x] Surface when a workspace is still using host toolchains instead of Groot-managed ones.
+- [x] Add a stricter runtime mode or warning mode for undeclared toolchains.
+- [x] Decide whether `groot open <path>` should only open, or whether it should also offer/setup runtime ownership on first use.
+- [x] Add an opt-in first-open setup path that can auto-attach and install detected runtimes with flags.
+- [x] Add a path-based status/inspect view so users can see detected, attached, installed, and host-fallback runtime state.
+- [x] Make the first-open experience feel product-shaped, not like a thin alias over lower-level commands.
+
+### IDE Strategy
+
+- [x] Prioritize a reliable IDE launch story as the next product milestone after the runtime core.
+- [x] Implement a soft IDE mode that preserves project cwd, toolchain PATH, and `GROOT_*` vars without forcing full GUI `HOME` isolation.
+- [x] Add a dedicated IDE launcher command, for example `groot ws open <name> --ide code`.
+- [x] Add a generic shell hook so terminals launched from a soft-opened IDE can automatically re-enter the strict Groot runtime.
+- [x] Document shell-hook setup so terminal activation does not depend on IDE-specific settings.
+- [ ] Verify first-launch behavior for a brand-new workspace in VS Code before treating IDE support as fully proven.
+- [ ] Decide the default IDE launch policy:
+  - strict workspace mode
+  - soft IDE mode
+  - editor-specific behavior
+- [ ] Define which environment variables should be preserved for GUI IDE launches and which should stay isolated.
+- [ ] Ensure first-open IDE terminals clearly reflect Groot-managed toolchains when those toolchains are attached and installed.
+- [ ] Ensure IDEs can open the bound project path without forcing a separate GUI app identity.
+- [ ] Document the tradeoff between terminal isolation and GUI IDE compatibility.
+
+### Human Runtime Shortcuts
+
+- [x] Decide whether `groot open <path>` should exist as a first-class non-agent shortcut.
+- [x] Decide whether `groot enter <path>` should exist as a shell-first shortcut.
+- [ ] Consider `groot init <name> --bind <path>` or `groot init <path>` as an explicit setup shortcut.
+- [ ] Keep human shortcuts thin wrappers over the same runtime primitives.
+
+### Runtime Validation And Repair
 
 - [x] Add tests for manifest load/save behavior.
 - [x] Add tests for bind/unbind behavior.
@@ -90,50 +127,28 @@ This is the stable control plane Groot should expose for shells, IDE launchers, 
 - [x] Add tests for installer path helpers.
 - [x] Add tests for checksum verification.
 - [x] Add shared toolchain garbage collection after the runtime flow is stable.
+- [ ] Expose logs, state, and workspace metadata in a predictable way for debugging.
+- [ ] Define recovery behavior for partially configured or broken workspaces.
+- [ ] Keep validating Groot in day-to-day use across multiple real repos.
 
-## Layer 2: Agent-Driven UX
+## Phase 1.5: Groot MCP Control Plane
 
-This layer should make Groot easy for normal developers while keeping external agents on the same runtime contract.
+Phase 1.5 is the structured adapter layer on top of the same runtime core.
 
-- [x] Provide a CLI + JSON bridge that external tools can use today via `groot status <path> --json`.
+The goal is not to make Groot “an agent”.
+The goal is to make Groot usable by external agents through a stable, scoped, inspectable control plane.
+
+### What Phase 1.5 Must Prove
+
+- external agents can inspect and operate on one project predictably
+- runtime ownership can be verified and enforced through MCP
+- mutating actions and read-only context are clearly separated
+- MCP feels like a real control plane, not a shell wrapper in disguise
+
+### Completed MCP Surface
+
 - [x] Decide that MCP is the primary agent adapter for Groot.
-- [x] Add workspace lookup by `project_path`.
-- [x] Add a path-based open/enter flow for non-agent fallback usage.
-- [x] Ensure Groot can auto-create or auto-bind a workspace when a repo is first seen.
-- [ ] Decide the primary future intent entrypoint:
-  - `groot "<intent>"`
-  - `groot open <path> --agent`
-  - or no direct intent mode at all
-- [x] Document the normal user workflow as path-first, with `groot ws ...` kept as advanced/runtime commands and MCP kept as the agent surface.
-
-## Layer 2.5: IDE Strategy
-
-This layer decides how Groot keeps project isolation without breaking normal IDE behavior.
-
-- [ ] Define the boundary between project runtime state, agent workspace state, and GUI IDE identity.
-- [x] Prioritize a reliable IDE launch story as the next product milestone after Layer 1.
-- [ ] Decide the default IDE launch policy:
-  - strict workspace mode
-  - soft IDE mode
-  - editor-specific behavior
-- [x] Implement a soft IDE mode that preserves project cwd, toolchain PATH, and `GROOT_*` vars without forcing full GUI `HOME` isolation.
-- [x] Add a dedicated IDE launcher command, for example `groot ws open <name> --ide code`.
-- [x] Add a generic shell hook so terminals launched from a soft-opened IDE can automatically re-enter the strict Groot runtime.
-- [x] Document shell-hook setup so terminal activation does not depend on IDE-specific settings.
-- [ ] Verify first-launch behavior for a brand-new workspace in VS Code before treating IDE support as working.
-- [ ] Define which environment variables should be preserved for GUI IDE launches and which should stay isolated.
-- [ ] Ensure first-open IDE terminals clearly reflect Groot-managed toolchains when those toolchains are attached and installed.
-- [ ] Decide where project-scoped agent memory and conversation state should live inside Groot.
-- [ ] Ensure IDEs can open the bound project path without forcing a separate GUI app identity.
-- [ ] Document the tradeoff between terminal isolation and GUI IDE compatibility.
-
-## Layer 3: Agent Foundation
-
-This layer makes Groot usable by a top-level agent without inventing a separate runtime path.
-
-- [ ] Keep `ws exec` as the primary agent execution primitive; treat `ws open` as a human GUI action, not an agent-core runtime primitive.
-- [x] Add machine-readable runtime ownership output for the path-first flow via `groot status <path> --json`.
-- [x] Decide that the first external agent integration path is MCP first, with CLI+JSON kept as a debug and compatibility surface.
+- [x] Provide a CLI + JSON bridge that external tools can use today via `groot status <path> --json`.
 - [x] Expose the core runtime through an initial MCP server backed by the same app layer.
 - [x] Define and implement the first MCP tool surface:
   - `workspace_status`
@@ -147,36 +162,117 @@ This layer makes Groot usable by a top-level agent without inventing a separate 
 - [x] Support explicit workspace renaming on import so contracts can be restored on machines where the original workspace name already exists.
 - [x] Add scoped MCP mode so agents can be limited to one project or an explicit multi-project allowlist.
 - [x] Add session-level MCP workspace activation so agents can select one project without requiring MCP server reconfiguration.
-- [ ] Add machine-readable command results for agent-driven flows.
+- [x] Expose manifest and workspace metadata as agent-readable resources through MCP resources.
+
+### Remaining MCP Foundation Work
+
+- [ ] Keep `ws exec` as the primary agent execution primitive; treat `ws open` as a human GUI action, not an agent-core runtime primitive.
+- [ ] Add machine-readable command results for agent-driven flows where plain stdout/stderr is not enough.
 - [ ] Add machine-readable workspace inspection, for example `groot ws inspect <name> --json`.
-- [ ] Add machine-readable environment output in addition to shell exports.
-- [ ] Expose manifest, logs, and workspace metadata as agent-readable resources, likely through MCP resources.
+- [ ] Add machine-readable environment output in addition to shell exports where that still matters.
+- [ ] Expose logs and longer-lived execution history as agent-readable MCP resources.
 - [ ] Ensure `ws exec` works cleanly for non-interactive commands and long-running processes.
-- [ ] Expose logs, state, and workspace metadata in a predictable way.
 - [ ] Add deterministic workspace resolution from a repo path for agent use.
-- [ ] Define agent-side recovery behavior for partially configured workspaces.
-- [ ] Define the agent entry model around Groot primitives instead of direct host access.
 - [ ] Keep CLI and MCP surfaces backed by the same runtime core and data model.
-- [x] Define initial import semantics for project runtime state around an existing local repo path.
-- [ ] Extend import semantics to cover richer conflict handling and agent workspace state.
 
-## Layer 4: Human Shortcuts
+## Phase 2: Intent Compiler And Planning Surface
 
-This layer can add direct human-facing convenience commands after the runtime and agent model are stable.
+Phase 2 is not “Groot becomes the agent”.
 
-- [x] Decide whether `groot open <path>` should exist as a first-class non-agent shortcut.
-- [x] Decide whether `groot enter <path>` should exist as a shell-first shortcut.
-- [ ] Consider `groot init <name> --bind <path>` or `groot init <path>` as an explicit setup shortcut.
-- [ ] Keep human shortcuts thin wrappers over the same runtime and agent-capable primitives.
+Phase 2 means:
+
+- the user expresses intent to an external agent
+- the external agent calls Groot through MCP
+- Groot turns intent into a deterministic manifest/runtime plan
+- Groot shows a preview or diff
+- execution only happens after explicit approval
+
+The agent handles:
+
+- language understanding
+- conversation
+- orchestration
+
+Groot handles:
+
+- workspace planning
+- manifest compilation
+- runtime diffing
+- approval boundary
+- deterministic execution
+
+### What Phase 2 Must Prove
+
+- intent can be compiled into a safe, reviewable runtime plan
+- users can approve changes before mutation
+- Groot remains predictable even when the entrypoint is higher-level intent
+- Groot does not need to compete with general-purpose agents
+
+### Phase 2 Entry Criteria
+
+- Phase 1 is genuinely useful in daily work
+- Phase 1.5 MCP is trusted enough for external agents to use it repeatedly
+- runtime ownership and import/export are stable enough that planning on top of them is not shaky
+
+### Phase 2 Planning Surface
+
+- [ ] Define the plan object Groot should return for intent-driven changes.
+- [ ] Define the manifest proposal shape separately from the apply step.
+- [ ] Define what counts as preview-only versus approval-required mutation.
+- [ ] Add MCP planning tools, likely along the lines of:
+  - `workspace_plan`
+  - `workspace_diff`
+  - `workspace_apply_plan`
+- [ ] Define how toolchain attach/install, bind, import, and setup steps appear inside a plan.
+- [ ] Define what happens when Groot cannot confidently infer versions or services.
+- [ ] Decide whether Groot needs any direct CLI planning entrypoint at all, or whether Phase 2 stays MCP-first.
+- [ ] Define how project-scoped agent memory, conversation state, and generated plans should live inside Groot.
+
+## Phase 3: GOS Direction
+
+Phase 3 is only justified if Phase 1 and Phase 2 become sticky enough in real use.
+
+GOS is not:
+
+- a kernel rewrite
+- a desktop OS replacement
+- an excuse to broaden scope prematurely
+
+GOS is:
+
+- a workspace-native operating environment built on top of existing kernels, where isolation, capabilities, and structured execution become first-class
+
+### What Phase 3 Must Prove
+
+- the workspace/runtime abstraction survives backend changes
+- stronger isolation can be introduced without breaking the user model
+- multi-workspace orchestration and capability grants can be added cleanly above Groot
+
+### Phase 3 Architectural Direction
+
+- [ ] Keep workspace lifecycle separate from execution.
+- [ ] Keep execution separate from installation.
+- [ ] Keep installation separate from storage.
+- [ ] Keep UI separate from runtime.
+- [ ] Keep agents calling structured APIs only.
+- [ ] Define a coordinator layer above Groot, not inside its core runtime.
+- [ ] Define capability-based access for:
+  - project workspaces
+  - additional folders
+  - apps and services
+  - multi-project sessions
+- [ ] Explore stronger execution backends only after the abstraction is stable:
+  - OCI backend
+  - namespace isolation
+  - VM backend for macOS
+  - supervised service orchestration
 
 ## Recommended Order
 
-1. Finish the core runtime.
-2. Make first open own the runtime instead of silently relying on host toolchains.
-3. Keep IDE launch reliable for fresh workspaces while preserving runtime ownership.
-4. Define the MCP-facing contract and agent-driven setup/open flows.
-5. Add the machine-readable agent foundation on top of the same runtime.
-6. Add optional direct human shortcuts on top of the same runtime.
+1. Finish proving daily value for the Phase 1 runtime.
+2. Keep Phase 1.5 MCP clean, scoped, and trusted for external agents.
+3. Build the Phase 2 planning surface on top of MCP instead of inventing a separate agent stack.
+4. Only explore Phase 3 / GOS evolution if the earlier phases are clearly sticky in real use.
 
 ## Definition Of Success For The Current Phase
 
@@ -199,16 +295,24 @@ groot ws open crawlly --ide code
 
 ## Definition Of Success For The Product Direction
 
-Once the MCP-driven layer is in place, the workflow should feel closer to:
+Phase 1 success should feel like:
 
 ```bash
-external-agent -> groot mcp -> workspace_status / workspace_setup / workspace_exec
+groot open ~/dev/crawlly --setup
+groot enter ~/dev/crawlly
+groot exec ~/dev/crawlly go test ./...
 ```
 
-or:
+Phase 1.5 success should feel like:
 
 ```bash
-groot open ~/dev/crawlly
+external-agent -> groot mcp -> workspace_activate / workspace_status / workspace_setup / workspace_exec
 ```
 
-with Groot resolving or creating the right workspace, binding the repo, ensuring toolchains, preserving a usable IDE experience, and keeping project runtime and agent state separate from the user's normal machine profile.
+Phase 2 success should feel like:
+
+```text
+user intent -> external agent -> groot MCP planning surface -> explicit approval -> Groot apply
+```
+
+Phase 3 only matters if all of the above already feel worth keeping in daily life.

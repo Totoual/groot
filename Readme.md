@@ -18,6 +18,17 @@ The agent-facing direction is for Groot to expose the same runtime core through 
 
 The current MCP direction is documented in [docs/agent.md](/Users/aristotelistriantafyllidis/Documents/groot/docs/agent.md).
 
+## Phase Model
+
+Groot is being built in deliberate phases:
+
+- Phase 1: workspace-first runtime for local development
+- Phase 1.5: MCP control plane over the same runtime
+- Phase 2: intent compiler and planning surface on top of external agents
+- Phase 3: deeper GOS-style runtime evolution only if the earlier phases prove daily value
+
+This matters because Groot is not trying to become a general-purpose agent product. The runtime comes first. MCP is the structured adapter. Planning comes later on top of the same primitives.
+
 ## Current Scope
 
 - Initialize a Groot root under `~/.groot`
@@ -238,6 +249,12 @@ Current MCP tools:
 - `workspace_export`
 - `workspace_import`
 
+This MCP layer should be thought of as Phase 1.5:
+
+- it makes Groot usable by external agents
+- it does not replace the runtime as the product center of gravity
+- it sets up Phase 2, where an external agent can ask Groot for a plan, preview, or manifest proposal before execution
+
 These tools let an external MCP-capable agent:
 
 - activate one project as the live MCP session scope
@@ -252,6 +269,13 @@ These tools let an external MCP-capable agent:
 - import that exported contract onto an existing local repo path
 
 The current MCP tool contract is documented in [docs/agent-contract.md](/Users/aristotelistriantafyllidis/Documents/groot/docs/agent-contract.md).
+
+Groot also exposes initial MCP resources for the currently active/scoped project:
+
+- workspace manifest
+- workspace metadata and runtime snapshot
+
+These resources are read-only context surfaces for agents. They let an agent fetch the manifest or workspace metadata directly instead of using mutating/runtime tools just to inspect state.
 
 ## Advanced Commands
 
