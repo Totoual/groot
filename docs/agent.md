@@ -8,6 +8,12 @@ The product direction is:
 - External agents connect to Groot through MCP.
 - Groot keeps one runtime core for humans, automation, and agents.
 
+In the broader roadmap, this MCP layer is Phase 1.5:
+
+- Phase 1 proves the workspace runtime is worth using daily.
+- Phase 1.5 exposes that runtime through MCP.
+- Phase 2 will let external agents turn intent into reviewed Groot plans instead of mutating state directly.
+
 ## Why
 
 Groot is already useful on its own through:
@@ -29,6 +35,7 @@ So the near-term agent strategy is:
 - keep Groot as the main CLI product
 - expose a thin MCP server through `groot mcp`
 - let existing MCP-capable agents drive Groot
+- use MCP as the bridge into future planning flows, not as a reason to build a second agent product
 
 ## Current MCP Direction
 
@@ -87,6 +94,14 @@ Keep expanding MCP only where it directly helps real external agents use Groot's
 - more workspace tools
 - import/export surfaces
 - resources for manifest and logs
+
+The next bigger step after that is not “more agent framework”.
+It is a planning surface where an external agent can ask Groot for:
+
+- manifest proposals
+- runtime plans
+- diffs / previews
+- explicit apply after approval
 
 Security boundary:
 

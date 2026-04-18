@@ -1,5 +1,11 @@
 # Groot MCP Contract v0
 
+This contract corresponds to the current Phase 1.5 surface:
+
+- Groot runtime first
+- MCP as a structured control plane over that runtime
+- planning and intent compilation coming later as Phase 2
+
 This document defines the first MCP surface for Groot.
 
 It replaces the earlier standalone `groot-agent` direction.
@@ -64,6 +70,7 @@ It does not yet cover:
 
 - workspace creation by explicit name
 - logs or other long-lived execution history resources
+- manifest planning / preview / approval flows
 
 ## Available Tools
 
