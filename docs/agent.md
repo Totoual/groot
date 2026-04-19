@@ -14,6 +14,14 @@ In the broader roadmap, this MCP layer is Phase 1.5:
 - Phase 1.5 exposes that runtime through MCP.
 - Phase 2 will let external agents turn intent into reviewed Groot plans instead of mutating state directly.
 
+The runtime step beneath that future planning layer is first-class execution lifecycle:
+
+- tasks
+- services
+- events
+
+That bridge is defined in [runtime-model-v1.md](/Users/aristotelistriantafyllidis/Documents/groot/docs/runtime-model-v1.md).
+
 ## Why
 
 Groot is already useful on its own through:

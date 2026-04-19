@@ -29,6 +29,15 @@ Groot is being built in deliberate phases:
 
 This matters because Groot is not trying to become a general-purpose agent product. The runtime comes first. MCP is the structured adapter. Planning comes later on top of the same primitives.
 
+The next architectural bridge toward the longer-term GOS direction is:
+
+- workspace ownership
+- task ownership
+- service ownership
+- event ownership
+
+That runtime direction is defined in [docs/runtime-model-v1.md](/Users/aristotelistriantafyllidis/Documents/groot/docs/runtime-model-v1.md).
+
 ## Current Scope
 
 - Initialize a Groot root under `~/.groot`
@@ -418,6 +427,7 @@ Example:
       "version": "22"
     }
   ],
+  "tasks": [],
   "services": [],
   "env": {}
 }
@@ -426,7 +436,9 @@ Example:
 ## Current Behavior Notes
 
 - `ws attach` validates `name@version` specs, rejects unsupported toolchains, and updates existing package entries by name
-- `services` exists in the schema but is not actively used yet
+- `packages` are the active toolchain declarations used by runtime ownership, install, and exec flows
+- `tasks` now have a dedicated manifest slot but do not yet have runtime lifecycle support
+- `services` now have a dedicated manifest slot but are not actively managed yet
 - `ws bind` stores the project location in `project_path`
 - `ws unbind` clears `project_path` without deleting the workspace runtime
 - `open` resolves a workspace from a project path and auto-creates/binds one on first open when needed

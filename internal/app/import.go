@@ -68,10 +68,13 @@ func (a *App) ImportWorkspaceAs(exported WorkspaceExport, projectPath, workspace
 	manifest.Name = workspaceName
 	manifest.ProjectPath = normalizedPath
 	if manifest.Packages == nil {
-		manifest.Packages = []Component{}
+		manifest.Packages = []PackageSpec{}
+	}
+	if manifest.Tasks == nil {
+		manifest.Tasks = []TaskSpec{}
 	}
 	if manifest.Services == nil {
-		manifest.Services = []Component{}
+		manifest.Services = []ServiceSpec{}
 	}
 	if manifest.Env == nil {
 		manifest.Env = map[string]string{}

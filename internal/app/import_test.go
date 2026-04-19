@@ -3,6 +3,7 @@ package app
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 )
 
@@ -22,7 +23,7 @@ func TestImportWorkspaceCreatesWorkspaceFromExport(t *testing.T) {
 				SchemaVersion: 1,
 				Name:          "crawlly",
 				Packages:      []Component{{Name: "go", Version: "1.25.4"}},
-				Services:      []Component{{Name: "postgres", Version: "16"}},
+				Services:      []ServiceSpec{{Name: "postgres", Version: "16"}},
 				Env:           map[string]string{"APP_ENV": "dev"},
 			},
 		},
@@ -49,7 +50,7 @@ func TestImportWorkspaceCreatesWorkspaceFromExport(t *testing.T) {
 	if len(manifest.Packages) != 1 || manifest.Packages[0] != (Component{Name: "go", Version: "1.25.4"}) {
 		t.Fatalf("unexpected packages: %#v", manifest.Packages)
 	}
-	if len(manifest.Services) != 1 || manifest.Services[0] != (Component{Name: "postgres", Version: "16"}) {
+	if len(manifest.Services) != 1 || !reflect.DeepEqual(manifest.Services[0], ServiceSpec{Name: "postgres", Version: "16"}) {
 		t.Fatalf("unexpected services: %#v", manifest.Services)
 	}
 	if manifest.Env["APP_ENV"] != "dev" {

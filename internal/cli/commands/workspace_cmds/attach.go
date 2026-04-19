@@ -13,7 +13,7 @@ type AttachCmd struct{}
 
 func (at *AttachCmd) Name() string { return "attach" }
 
-func (at *AttachCmd) Help() string { return "Attach a tool or a service in a workspace" }
+func (at *AttachCmd) Help() string { return "Attach one or more toolchains in a workspace" }
 
 func (at *AttachCmd) Run(a *app.App, args []string) error {
 	fs := flag.NewFlagSet("attach", flag.ContinueOnError)
@@ -34,14 +34,14 @@ func (at *AttachCmd) Run(a *app.App, args []string) error {
 
 	if fs.NArg() < 2 {
 		fs.Usage()
-		return fmt.Errorf("workspace name required and at least one tool")
+		return fmt.Errorf("workspace name required and at least one toolchain")
 	}
 
 	name := fs.Arg(0)
 
 	err := a.AttachToWorkspace(name, args[1:])
 	if err != nil {
-		return fmt.Errorf("Couldn't attach tools workspace: %w", err)
+		return fmt.Errorf("couldn't attach toolchains to workspace: %w", err)
 	}
 	return nil
 }

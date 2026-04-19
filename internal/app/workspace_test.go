@@ -3,6 +3,7 @@ package app
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -71,6 +72,9 @@ func TestCreateNewWorkspaceOmitsProjectsDirAndInitializesManifest(t *testing.T) 
 	}
 	if len(manifest.Packages) != 0 {
 		t.Fatalf("expected no packages, got %d", len(manifest.Packages))
+	}
+	if len(manifest.Tasks) != 0 {
+		t.Fatalf("expected no tasks, got %d", len(manifest.Tasks))
 	}
 	if len(manifest.Services) != 0 {
 		t.Fatalf("expected no services, got %d", len(manifest.Services))
@@ -626,8 +630,11 @@ func TestWriteManifestRoundTrip(t *testing.T) {
 		Packages: []Component{
 			{Name: "go", Version: "1.25.0"},
 		},
-		Services: []Component{
-			{Name: "redis", Version: "7"},
+		Tasks: []TaskSpec{
+			{Name: "test", Command: []string{"go", "test", "./..."}, Cwd: "."},
+		},
+		Services: []ServiceSpec{
+			{Name: "redis", Version: "7", Restart: "on-failure"},
 		},
 		Env: map[string]string{
 			"APP_ENV": "dev",
@@ -649,7 +656,10 @@ func TestWriteManifestRoundTrip(t *testing.T) {
 	if len(got.Packages) != 1 || got.Packages[0] != want.Packages[0] {
 		t.Fatalf("unexpected packages: %#v", got.Packages)
 	}
-	if len(got.Services) != 1 || got.Services[0] != want.Services[0] {
+	if len(got.Tasks) != 1 || !reflect.DeepEqual(got.Tasks[0], want.Tasks[0]) {
+		t.Fatalf("unexpected tasks: %#v", got.Tasks)
+	}
+	if len(got.Services) != 1 || !reflect.DeepEqual(got.Services[0], want.Services[0]) {
 		t.Fatalf("unexpected services: %#v", got.Services)
 	}
 	if got.Env["APP_ENV"] != "dev" {

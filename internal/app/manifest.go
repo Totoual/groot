@@ -14,15 +14,32 @@ type Manifest struct {
 	CreatedAt     time.Time         `json:"created_at"`
 	Name          string            `json:"name"`
 	ProjectPath   string            `json:"project_path"`
-	Packages      []Component       `json:"packages"`
-	Services      []Component       `json:"services"`
+	Packages      []PackageSpec     `json:"packages"`
+	Tasks         []TaskSpec        `json:"tasks"`
+	Services      []ServiceSpec     `json:"services"`
 	Env           map[string]string `json:"env"`
 }
 
-type Component struct {
+type PackageSpec struct {
 	Name    string `json:"name"`
 	Version string `json:"version"`
 }
+
+type TaskSpec struct {
+	Name    string   `json:"name"`
+	Command []string `json:"command"`
+	Cwd     string   `json:"cwd,omitempty"`
+}
+
+type ServiceSpec struct {
+	Name    string   `json:"name"`
+	Command []string `json:"command,omitempty"`
+	Cwd     string   `json:"cwd,omitempty"`
+	Restart string   `json:"restart,omitempty"`
+	Version string   `json:"version,omitempty"`
+}
+
+type Component = PackageSpec
 
 func NewManifest(name string) *Manifest {
 	return &Manifest{
@@ -30,8 +47,9 @@ func NewManifest(name string) *Manifest {
 		CreatedAt:     time.Now(),
 		Name:          name,
 		ProjectPath:   "",
-		Packages:      make([]Component, 0),
-		Services:      make([]Component, 0),
+		Packages:      make([]PackageSpec, 0),
+		Tasks:         make([]TaskSpec, 0),
+		Services:      make([]ServiceSpec, 0),
 		Env:           make(map[string]string),
 	}
 }
@@ -74,8 +92,8 @@ func (a *App) writeManifest(wsPath string, manifest Manifest) error {
 	return nil
 }
 
-func (a *App) parseComponents(args []string) ([]Component, error) {
-	components := make([]Component, 0)
+func (a *App) parsePackageSpecs(args []string) ([]PackageSpec, error) {
+	packages := make([]PackageSpec, 0)
 	for _, arg := range args {
 		name, version, ok := strings.Cut(strings.TrimSpace(arg), "@")
 		if !ok {
@@ -93,14 +111,14 @@ func (a *App) parseComponents(args []string) ([]Component, error) {
 			return nil, fmt.Errorf("unsupported toolchain %q", name)
 		}
 
-		comp := Component{
+		pkg := PackageSpec{
 			Name:    name,
 			Version: version,
 		}
-		components = append(components, comp)
+		packages = append(packages, pkg)
 	}
 
-	return components, nil
+	return packages, nil
 }
 
 func (a *App) CreateManifest(name string) error {
