@@ -65,11 +65,12 @@ The current MCP surface is intentionally small:
 - install attached toolchains into Groot's managed store
 - export the current workspace contract as portable structured data
 - import that exported contract onto an existing local repo path
+- start, inspect, list, stop, and read logs for workspace-owned task runs
 
 It does not yet cover:
 
 - workspace creation by explicit name
-- logs or other long-lived execution history resources
+- services, events, or streaming logs
 - manifest planning / preview / approval flows
 
 ## Available Tools
@@ -318,6 +319,118 @@ Structured result:
 If the exported workspace name already exists on the target machine, pass `workspace_name` to import the contract under a different local workspace identity.
 
 Import restores the Groot workspace contract, not the source repository contents. If the target path does not contain the original project files yet, Groot can still report attached and installed runtimes from the imported contract even though runtime detection at that path is still empty.
+
+### `task_start`
+
+Resolve or create a workspace from a project path and start a task run inside the strict Groot runtime.
+
+Ad hoc input:
+
+```json
+{
+  "path": "/Users/example/Documents/the_grime_tcg",
+  "name": "tests",
+  "command": "go",
+  "args": ["test", "./..."],
+  "cwd": "."
+}
+```
+
+Declared task input:
+
+```json
+{
+  "path": "/Users/example/Documents/the_grime_tcg",
+  "task": "tests"
+}
+```
+
+Structured result:
+
+- `created`
+- `task.id`
+- `task.name`
+- `task.workspace`
+- `task.command`
+- `task.args`
+- `task.cwd`
+- `task.declared`
+- `task.state`
+- `task.stdout_log`
+- `task.stderr_log`
+
+### `task_status`
+
+Return the current status for a task run.
+
+Input:
+
+```json
+{
+  "path": "/Users/example/Documents/the_grime_tcg",
+  "task_id": "1776629605797-a5b69c7a5c5c"
+}
+```
+
+Structured result:
+
+- `created`
+- `task`
+
+### `task_list`
+
+List persisted task runs for a project path.
+
+Input:
+
+```json
+{
+  "path": "/Users/example/Documents/the_grime_tcg"
+}
+```
+
+Structured result:
+
+- `created`
+- `tasks`
+
+### `task_logs`
+
+Return captured stdout and stderr for a task run.
+
+Input:
+
+```json
+{
+  "path": "/Users/example/Documents/the_grime_tcg",
+  "task_id": "1776629605797-a5b69c7a5c5c"
+}
+```
+
+Structured result:
+
+- `created`
+- `logs.task_id`
+- `logs.stdout`
+- `logs.stderr`
+
+### `task_stop`
+
+Stop a running task run.
+
+Input:
+
+```json
+{
+  "path": "/Users/example/Documents/the_grime_tcg",
+  "task_id": "1776629605797-a5b69c7a5c5c"
+}
+```
+
+Structured result:
+
+- `created`
+- `task`
 
 ## Available Resources
 

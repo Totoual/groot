@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/totoual/groot/internal/app"
 )
@@ -58,8 +59,17 @@ func TestServerHandleInitializeAndListTools(t *testing.T) {
 	if err := json.Unmarshal(response, &listResponse); err != nil {
 		t.Fatalf("Unmarshal tools/list response returned error: %v", err)
 	}
-	if len(listResponse.Result.Tools) != 10 {
-		t.Fatalf("len(tools) = %d, want %d", len(listResponse.Result.Tools), 10)
+	if len(listResponse.Result.Tools) != 15 {
+		t.Fatalf("len(tools) = %d, want %d", len(listResponse.Result.Tools), 15)
+	}
+	names := make([]string, 0, len(listResponse.Result.Tools))
+	for _, tool := range listResponse.Result.Tools {
+		names = append(names, tool.Name)
+	}
+	for _, want := range []string{"task_start", "task_status", "task_list", "task_logs", "task_stop"} {
+		if !slicesContainsString(names, want) {
+			t.Fatalf("missing tool %q in %#v", want, names)
+		}
 	}
 }
 
@@ -1080,6 +1090,156 @@ func TestWorkspaceExportFromArgAcceptsLegacyPayloadShape(t *testing.T) {
 	}
 }
 
+func TestServerTaskToolsStartStatusListAndLogs(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+	projectPath := filepath.Join(root, "repos", "crawlly")
+	if err := os.MkdirAll(projectPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := a.CreateNewWorkspace("crawlly"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+	if err := a.BindWorkspace("crawlly", projectPath); err != nil {
+		t.Fatalf("BindWorkspace returned error: %v", err)
+	}
+
+	server := NewServer(a)
+	start := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"task_start","arguments":{"path":"` + projectPath + `","name":"echo","command":"/bin/sh","args":["-c","printf out; printf err >&2"]}}}`
+	response, err := server.HandleMessage([]byte(start))
+	if err != nil {
+		t.Fatalf("HandleMessage task_start returned error: %v", err)
+	}
+	taskID := decodeTaskRunResult(t, response).Task.ID
+	if taskID == "" {
+		t.Fatal("expected task_start to return task id")
+	}
+
+	task := waitForMCPTaskState(t, server, projectPath, taskID, app.TaskRunSucceeded)
+	if task.ExitCode == nil || *task.ExitCode != 0 {
+		t.Fatalf("unexpected exit code: %#v", task.ExitCode)
+	}
+
+	list := `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"task_list","arguments":{"path":"` + projectPath + `"}}}`
+	response, err = server.HandleMessage([]byte(list))
+	if err != nil {
+		t.Fatalf("HandleMessage task_list returned error: %v", err)
+	}
+	var listRPC struct {
+		Result struct {
+			IsError           bool `json:"isError"`
+			StructuredContent struct {
+				Tasks []app.TaskRun `json:"tasks"`
+			} `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(response, &listRPC); err != nil {
+		t.Fatalf("Unmarshal task_list returned error: %v", err)
+	}
+	if listRPC.Result.IsError {
+		t.Fatal("expected task_list success result")
+	}
+	if len(listRPC.Result.StructuredContent.Tasks) != 1 || listRPC.Result.StructuredContent.Tasks[0].ID != taskID {
+		t.Fatalf("unexpected task_list result: %#v", listRPC.Result.StructuredContent.Tasks)
+	}
+
+	logs := `{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"task_logs","arguments":{"path":"` + projectPath + `","task_id":"` + taskID + `"}}}`
+	response, err = server.HandleMessage([]byte(logs))
+	if err != nil {
+		t.Fatalf("HandleMessage task_logs returned error: %v", err)
+	}
+	var logsRPC struct {
+		Result struct {
+			IsError           bool `json:"isError"`
+			StructuredContent struct {
+				Logs app.TaskRunLogs `json:"logs"`
+			} `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(response, &logsRPC); err != nil {
+		t.Fatalf("Unmarshal task_logs returned error: %v", err)
+	}
+	if logsRPC.Result.IsError {
+		t.Fatal("expected task_logs success result")
+	}
+	if logsRPC.Result.StructuredContent.Logs.Stdout != "out" {
+		t.Fatalf("stdout = %q, want %q", logsRPC.Result.StructuredContent.Logs.Stdout, "out")
+	}
+	if logsRPC.Result.StructuredContent.Logs.Stderr != "err" {
+		t.Fatalf("stderr = %q, want %q", logsRPC.Result.StructuredContent.Logs.Stderr, "err")
+	}
+}
+
+func TestServerTaskStopCancelsRunningTask(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+	projectPath := filepath.Join(root, "repos", "crawlly")
+	if err := os.MkdirAll(projectPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := a.CreateNewWorkspace("crawlly"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+	if err := a.BindWorkspace("crawlly", projectPath); err != nil {
+		t.Fatalf("BindWorkspace returned error: %v", err)
+	}
+
+	server := NewServer(a)
+	start := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"task_start","arguments":{"path":"` + projectPath + `","name":"sleep","command":"/bin/sh","args":["-c","sleep 30"]}}}`
+	response, err := server.HandleMessage([]byte(start))
+	if err != nil {
+		t.Fatalf("HandleMessage task_start returned error: %v", err)
+	}
+	taskID := decodeTaskRunResult(t, response).Task.ID
+
+	stop := `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"task_stop","arguments":{"path":"` + projectPath + `","task_id":"` + taskID + `"}}}`
+	response, err = server.HandleMessage([]byte(stop))
+	if err != nil {
+		t.Fatalf("HandleMessage task_stop returned error: %v", err)
+	}
+	task := decodeTaskRunResult(t, response).Task
+	if task.State != app.TaskRunCancelled {
+		t.Fatalf("task state = %q, want %q", task.State, app.TaskRunCancelled)
+	}
+}
+
+func TestServerTaskToolsRespectScope(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+	allowedPath := filepath.Join(root, "repos", "allowed")
+	otherPath := filepath.Join(root, "repos", "other")
+	if err := os.MkdirAll(allowedPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll allowed returned error: %v", err)
+	}
+	if err := os.MkdirAll(otherPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll other returned error: %v", err)
+	}
+
+	server := NewScopedServer(a, []string{allowedPath})
+	request := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"task_start","arguments":{"path":"` + otherPath + `","command":"/bin/sh","args":["-c","printf nope"]}}}`
+	response, err := server.HandleMessage([]byte(request))
+	if err != nil {
+		t.Fatalf("HandleMessage returned error: %v", err)
+	}
+	var rpc struct {
+		Result struct {
+			IsError bool `json:"isError"`
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(response, &rpc); err != nil {
+		t.Fatalf("Unmarshal returned error: %v", err)
+	}
+	if !rpc.Result.IsError {
+		t.Fatal("expected task_start to fail outside scope")
+	}
+	if len(rpc.Result.Content) == 0 || !strings.Contains(rpc.Result.Content[0].Text, "outside the MCP scope") {
+		t.Fatalf("unexpected error content: %#v", rpc.Result.Content)
+	}
+}
+
 func TestServerServeUsesNewlineDelimitedMessages(t *testing.T) {
 	server := NewServer(app.NewApp(t.TempDir()))
 
@@ -1097,6 +1257,42 @@ func TestServerServeUsesNewlineDelimitedMessages(t *testing.T) {
 	if len(lines) != 2 {
 		t.Fatalf("expected 2 response lines, got %d: %q", len(lines), out.String())
 	}
+}
+
+func decodeTaskRunResult(t *testing.T, response []byte) taskRunResult {
+	t.Helper()
+	var rpc struct {
+		Result struct {
+			IsError           bool          `json:"isError"`
+			StructuredContent taskRunResult `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(response, &rpc); err != nil {
+		t.Fatalf("Unmarshal task run response returned error: %v", err)
+	}
+	if rpc.Result.IsError {
+		t.Fatalf("expected task tool success response: %s", response)
+	}
+	return rpc.Result.StructuredContent
+}
+
+func waitForMCPTaskState(t *testing.T, server *Server, projectPath, taskID string, want app.TaskRunState) app.TaskRun {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		status := `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"task_status","arguments":{"path":"` + projectPath + `","task_id":"` + taskID + `"}}}`
+		response, err := server.HandleMessage([]byte(status))
+		if err != nil {
+			t.Fatalf("HandleMessage task_status returned error: %v", err)
+		}
+		task := decodeTaskRunResult(t, response).Task
+		if task.State == want {
+			return task
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for task %q to reach %q", taskID, want)
+	return app.TaskRun{}
 }
 
 func slicesContainsString(items []string, want string) bool {

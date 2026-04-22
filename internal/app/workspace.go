@@ -634,21 +634,21 @@ func (a *App) AttachToWorkspace(name string, args []string) error {
 	if err != nil {
 		return err
 	}
-	components, err := a.parseComponents(args)
+	packages, err := a.parsePackageSpecs(args)
 	if err != nil {
 		return err
 	}
-	for _, comp := range components {
+	for _, pkg := range packages {
 		updated := false
 		for i := range manifest.Packages {
-			if manifest.Packages[i].Name == comp.Name {
-				manifest.Packages[i].Version = comp.Version
+			if manifest.Packages[i].Name == pkg.Name {
+				manifest.Packages[i].Version = pkg.Version
 				updated = true
 				break
 			}
 		}
 		if !updated {
-			manifest.Packages = append(manifest.Packages, comp)
+			manifest.Packages = append(manifest.Packages, pkg)
 		}
 	}
 

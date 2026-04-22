@@ -242,6 +242,19 @@ GOS is:
 
 - a workspace-native operating environment built on top of existing kernels, where isolation, capabilities, and structured execution become first-class
 
+### Immediate Bridge To Phase 3
+
+The next architectural bridge is not more workspace naming or shell sugar.
+
+It is:
+
+- from workspace ownership
+- to task ownership
+- to service ownership
+- to event ownership
+
+That bridge is defined in [docs/runtime-model-v1.md](/Users/aristotelistriantafyllidis/Documents/groot/docs/runtime-model-v1.md).
+
 ### What Phase 3 Must Prove
 
 - the workspace/runtime abstraction survives backend changes
@@ -250,6 +263,31 @@ GOS is:
 
 ### Phase 3 Architectural Direction
 
+- [x] Write `GROOT_RUNTIME_MODEL_V1` to define task, service, and event ownership.
+- [x] Split the manifest schema so packages, tasks, and services have distinct types.
+- [ ] Keep desired runtime config in the manifest and live execution state in the workspace `state/` dir.
+- [x] Add first-class task resources in the app layer with:
+  - start
+  - stop
+  - status
+  - list
+  - logs
+- [x] Expose task lifecycle through the human CLI with:
+  - `groot task start`
+  - `groot task status`
+  - `groot task list`
+  - `groot task logs`
+  - `groot task stop`
+- [ ] Add first-class service resources in the app layer with:
+  - start
+  - stop
+  - restart
+  - status
+  - list
+  - logs
+- [ ] Add persisted event records for task/service lifecycle changes before adding streaming.
+- [x] Expose task lifecycle through MCP from the same app-layer primitives.
+- [ ] Expose service and event lifecycle through CLI and MCP from the same app-layer primitives.
 - [ ] Keep workspace lifecycle separate from execution.
 - [ ] Keep execution separate from installation.
 - [ ] Keep installation separate from storage.
@@ -271,8 +309,9 @@ GOS is:
 
 1. Finish proving daily value for the Phase 1 runtime.
 2. Keep Phase 1.5 MCP clean, scoped, and trusted for external agents.
-3. Build the Phase 2 planning surface on top of MCP instead of inventing a separate agent stack.
-4. Only explore Phase 3 / GOS evolution if the earlier phases are clearly sticky in real use.
+3. Define and then implement `GROOT_RUNTIME_MODEL_V1` so Groot can own execution lifecycle, not just workspace activation.
+4. Build the Phase 2 planning surface on top of MCP instead of inventing a separate agent stack.
+5. Only explore Phase 3 / GOS evolution if the earlier phases are clearly sticky in real use.
 
 ## Definition Of Success For The Current Phase
 
