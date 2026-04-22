@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -11,6 +12,18 @@ import (
 	"github.com/totoual/groot/internal/app"
 )
 
+func TestTaskCmdZeroValueUsesDefaultSubcommands(t *testing.T) {
+	var buf bytes.Buffer
+	(&TaskCmd{}).PrintHelp(&buf)
+
+	output := buf.String()
+	for _, want := range []string{"start", "status", "list", "logs", "stop"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("expected help to include %q, got %q", want, output)
+		}
+	}
+}
+
 func TestTaskStartAndStatusCmdRun(t *testing.T) {
 	root := t.TempDir()
 	a := app.NewApp(root)
@@ -18,7 +31,7 @@ func TestTaskStartAndStatusCmdRun(t *testing.T) {
 	projectPath := setupTaskProject(t, a, root)
 
 	stdout, stderr, err := captureCommandOutput(func() error {
-		return (&TaskStartCmdAlias{}).Run(a, []string{projectPath, "--name", "echo", "/bin/sh", "-c", "printf hello"})
+		return (&taskStartCmd{}).Run(a, []string{projectPath, "--name", "echo", "/bin/sh", "-c", "printf hello"})
 	})
 	if err != nil {
 		t.Fatalf("Run returned error: %v", err)
@@ -30,7 +43,7 @@ func TestTaskStartAndStatusCmdRun(t *testing.T) {
 	waitForTaskStateCmd(t, a, projectPath, taskID, app.TaskRunSucceeded)
 
 	stdout, stderr, err = captureCommandOutput(func() error {
-		return (&TaskStatusCmdAlias{}).Run(a, []string{projectPath, taskID})
+		return (&taskStatusCmd{}).Run(a, []string{projectPath, taskID})
 	})
 	if err != nil {
 		t.Fatalf("Run returned error: %v", err)
@@ -72,7 +85,7 @@ func TestTaskStartCmdRunStartsDeclaredTask(t *testing.T) {
 	}
 
 	stdout, stderr, err := captureCommandOutput(func() error {
-		return (&TaskStartCmdAlias{}).Run(a, []string{projectPath, "--task", "print"})
+		return (&taskStartCmd{}).Run(a, []string{projectPath, "--task", "print"})
 	})
 	if err != nil {
 		t.Fatalf("Run returned error: %v", err)
@@ -99,7 +112,7 @@ func TestTaskListCmdRunPrintsTasks(t *testing.T) {
 	waitForTaskStateCmd(t, a, projectPath, task.ID, app.TaskRunSucceeded)
 
 	stdout, stderr, err := captureCommandOutput(func() error {
-		return (&TaskListCmdAlias{}).Run(a, []string{projectPath})
+		return (&taskListCmd{}).Run(a, []string{projectPath})
 	})
 	if err != nil {
 		t.Fatalf("Run returned error: %v", err)
@@ -124,7 +137,7 @@ func TestTaskLogsCmdRunPrintsStdoutAndStderr(t *testing.T) {
 	waitForTaskStateCmd(t, a, projectPath, task.ID, app.TaskRunSucceeded)
 
 	stdout, stderr, err := captureCommandOutput(func() error {
-		return (&TaskLogsCmdAlias{}).Run(a, []string{projectPath, task.ID})
+		return (&taskLogsCmd{}).Run(a, []string{projectPath, task.ID})
 	})
 	if err != nil {
 		t.Fatalf("Run returned error: %v", err)
@@ -148,7 +161,7 @@ func TestTaskStopCmdRunCancelsTask(t *testing.T) {
 	}
 
 	stdout, stderr, err := captureCommandOutput(func() error {
-		return (&TaskStopCmdAlias{}).Run(a, []string{projectPath, task.ID})
+		return (&taskStopCmd{}).Run(a, []string{projectPath, task.ID})
 	})
 	if err != nil {
 		t.Fatalf("Run returned error: %v", err)

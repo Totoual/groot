@@ -19,11 +19,35 @@ type TaskCmd struct {
 }
 
 func NewTaskCmd(cmds ...interfaces.Cmd) *TaskCmd {
+	if len(cmds) == 0 {
+		cmds = defaultTaskCommands()
+	}
+	return &TaskCmd{subcmds: taskCommandMap(cmds...)}
+}
+
+func taskCommandMap(cmds ...interfaces.Cmd) map[string]interfaces.Cmd {
 	m := make(map[string]interfaces.Cmd, len(cmds))
 	for _, c := range cmds {
 		m[c.Name()] = c
 	}
-	return &TaskCmd{subcmds: m}
+	return m
+}
+
+func defaultTaskCommands() []interfaces.Cmd {
+	return []interfaces.Cmd{
+		&taskStartCmd{},
+		&taskStatusCmd{},
+		&taskListCmd{},
+		&taskLogsCmd{},
+		&taskStopCmd{},
+	}
+}
+
+func (c *TaskCmd) commands() map[string]interfaces.Cmd {
+	if c.subcmds == nil {
+		c.subcmds = taskCommandMap(defaultTaskCommands()...)
+	}
+	return c.subcmds
 }
 
 func (c *TaskCmd) Name() string { return "task" }
@@ -38,7 +62,7 @@ func (c *TaskCmd) Run(a *app.App, args []string) error {
 		return nil
 	}
 
-	subcmd, ok := c.subcmds[args[0]]
+	subcmd, ok := c.commands()[args[0]]
 	if !ok {
 		return fmt.Errorf("unknown task command %q (try: groot task -h)", args[0])
 	}
@@ -50,12 +74,12 @@ func (c *TaskCmd) PrintHelp(w io.Writer) {
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "commands:")
 	var names []string
-	for name := range c.subcmds {
+	for name := range c.commands() {
 		names = append(names, name)
 	}
 	sort.Strings(names)
 	for _, name := range names {
-		cmd := c.subcmds[name]
+		cmd := c.commands()[name]
 		fmt.Fprintf(w, "  %-12s %s\n", cmd.Name(), cmd.Help())
 	}
 	fmt.Fprintln(w)
@@ -63,7 +87,6 @@ func (c *TaskCmd) PrintHelp(w io.Writer) {
 }
 
 type taskStartCmd struct{}
-type TaskStartCmdAlias = taskStartCmd
 
 func (c *taskStartCmd) Name() string { return "start" }
 func (c *taskStartCmd) Help() string { return "Start an ad hoc or declared task for a project path" }
@@ -135,7 +158,6 @@ func (c *taskStartCmd) Run(a *app.App, args []string) error {
 }
 
 type taskStatusCmd struct{}
-type TaskStatusCmdAlias = taskStatusCmd
 
 func (c *taskStatusCmd) Name() string { return "status" }
 func (c *taskStatusCmd) Help() string { return "Print task status for a project path and task id" }
@@ -172,7 +194,6 @@ func (c *taskStatusCmd) Run(a *app.App, args []string) error {
 }
 
 type taskListCmd struct{}
-type TaskListCmdAlias = taskListCmd
 
 func (c *taskListCmd) Name() string { return "list" }
 func (c *taskListCmd) Help() string { return "List tasks for a project path" }
@@ -215,7 +236,6 @@ func (c *taskListCmd) Run(a *app.App, args []string) error {
 }
 
 type taskLogsCmd struct{}
-type TaskLogsCmdAlias = taskLogsCmd
 
 func (c *taskLogsCmd) Name() string { return "logs" }
 func (c *taskLogsCmd) Help() string { return "Print captured stdout and stderr for a task" }
@@ -257,7 +277,6 @@ func (c *taskLogsCmd) Run(a *app.App, args []string) error {
 }
 
 type taskStopCmd struct{}
-type TaskStopCmdAlias = taskStopCmd
 
 func (c *taskStopCmd) Name() string { return "stop" }
 func (c *taskStopCmd) Help() string { return "Stop a running task for a project path" }
