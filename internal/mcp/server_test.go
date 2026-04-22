@@ -1115,7 +1115,7 @@ func TestServerTaskToolsStartStatusListAndLogs(t *testing.T) {
 		t.Fatal("expected task_start to return task id")
 	}
 
-	task := waitForMCPTaskState(t, server, projectPath, taskID, app.WorkspaceTaskSucceeded)
+	task := waitForMCPTaskState(t, server, projectPath, taskID, app.TaskRunSucceeded)
 	if task.ExitCode == nil || *task.ExitCode != 0 {
 		t.Fatalf("unexpected exit code: %#v", task.ExitCode)
 	}
@@ -1129,7 +1129,7 @@ func TestServerTaskToolsStartStatusListAndLogs(t *testing.T) {
 		Result struct {
 			IsError           bool `json:"isError"`
 			StructuredContent struct {
-				Tasks []app.WorkspaceTask `json:"tasks"`
+				Tasks []app.TaskRun `json:"tasks"`
 			} `json:"structuredContent"`
 		} `json:"result"`
 	}
@@ -1152,7 +1152,7 @@ func TestServerTaskToolsStartStatusListAndLogs(t *testing.T) {
 		Result struct {
 			IsError           bool `json:"isError"`
 			StructuredContent struct {
-				Logs app.WorkspaceTaskLogs `json:"logs"`
+				Logs app.TaskRunLogs `json:"logs"`
 			} `json:"structuredContent"`
 		} `json:"result"`
 	}
@@ -1198,8 +1198,8 @@ func TestServerTaskStopCancelsRunningTask(t *testing.T) {
 		t.Fatalf("HandleMessage task_stop returned error: %v", err)
 	}
 	task := decodeTaskRunResult(t, response).Task
-	if task.State != app.WorkspaceTaskCancelled {
-		t.Fatalf("task state = %q, want %q", task.State, app.WorkspaceTaskCancelled)
+	if task.State != app.TaskRunCancelled {
+		t.Fatalf("task state = %q, want %q", task.State, app.TaskRunCancelled)
 	}
 }
 
@@ -1276,7 +1276,7 @@ func decodeTaskRunResult(t *testing.T, response []byte) taskRunResult {
 	return rpc.Result.StructuredContent
 }
 
-func waitForMCPTaskState(t *testing.T, server *Server, projectPath, taskID string, want app.WorkspaceTaskState) app.WorkspaceTask {
+func waitForMCPTaskState(t *testing.T, server *Server, projectPath, taskID string, want app.TaskRunState) app.TaskRun {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
@@ -1292,7 +1292,7 @@ func waitForMCPTaskState(t *testing.T, server *Server, projectPath, taskID strin
 		time.Sleep(50 * time.Millisecond)
 	}
 	t.Fatalf("timed out waiting for task %q to reach %q", taskID, want)
-	return app.WorkspaceTask{}
+	return app.TaskRun{}
 }
 
 func slicesContainsString(items []string, want string) bool {

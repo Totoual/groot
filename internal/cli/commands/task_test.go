@@ -27,7 +27,7 @@ func TestTaskStartAndStatusCmdRun(t *testing.T) {
 		t.Fatalf("expected stderr to stay quiet, got %q", stderr)
 	}
 	taskID := extractTaskID(t, stdout)
-	waitForTaskStateCmd(t, a, projectPath, taskID, app.WorkspaceTaskSucceeded)
+	waitForTaskStateCmd(t, a, projectPath, taskID, app.TaskRunSucceeded)
 
 	stdout, stderr, err = captureCommandOutput(func() error {
 		return (&TaskStatusCmdAlias{}).Run(a, []string{projectPath, taskID})
@@ -81,7 +81,7 @@ func TestTaskStartCmdRunStartsDeclaredTask(t *testing.T) {
 		t.Fatalf("expected stderr to stay quiet, got %q", stderr)
 	}
 	taskID := extractTaskID(t, stdout)
-	waitForTaskStateCmd(t, a, projectPath, taskID, app.WorkspaceTaskSucceeded)
+	waitForTaskStateCmd(t, a, projectPath, taskID, app.TaskRunSucceeded)
 	if !strings.Contains(stdout, "Declared: yes") {
 		t.Fatalf("expected declared task output, got %q", stdout)
 	}
@@ -96,7 +96,7 @@ func TestTaskListCmdRunPrintsTasks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("StartTask returned error: %v", err)
 	}
-	waitForTaskStateCmd(t, a, projectPath, task.ID, app.WorkspaceTaskSucceeded)
+	waitForTaskStateCmd(t, a, projectPath, task.ID, app.TaskRunSucceeded)
 
 	stdout, stderr, err := captureCommandOutput(func() error {
 		return (&TaskListCmdAlias{}).Run(a, []string{projectPath})
@@ -121,7 +121,7 @@ func TestTaskLogsCmdRunPrintsStdoutAndStderr(t *testing.T) {
 	if err != nil {
 		t.Fatalf("StartTask returned error: %v", err)
 	}
-	waitForTaskStateCmd(t, a, projectPath, task.ID, app.WorkspaceTaskSucceeded)
+	waitForTaskStateCmd(t, a, projectPath, task.ID, app.TaskRunSucceeded)
 
 	stdout, stderr, err := captureCommandOutput(func() error {
 		return (&TaskLogsCmdAlias{}).Run(a, []string{projectPath, task.ID})
@@ -188,7 +188,7 @@ func extractTaskID(t *testing.T, output string) string {
 	return ""
 }
 
-func waitForTaskStateCmd(t *testing.T, a *app.App, projectPath, taskID string, want app.WorkspaceTaskState) {
+func waitForTaskStateCmd(t *testing.T, a *app.App, projectPath, taskID string, want app.TaskRunState) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {

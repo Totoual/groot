@@ -14,33 +14,33 @@ import (
 	"time"
 )
 
-type WorkspaceTaskState string
+type TaskRunState string
 
 const (
-	WorkspaceTaskPending   WorkspaceTaskState = "pending"
-	WorkspaceTaskRunning   WorkspaceTaskState = "running"
-	WorkspaceTaskSucceeded WorkspaceTaskState = "succeeded"
-	WorkspaceTaskFailed    WorkspaceTaskState = "failed"
-	WorkspaceTaskCancelled WorkspaceTaskState = "cancelled"
+	TaskRunPending   TaskRunState = "pending"
+	TaskRunRunning   TaskRunState = "running"
+	TaskRunSucceeded TaskRunState = "succeeded"
+	TaskRunFailed    TaskRunState = "failed"
+	TaskRunCancelled TaskRunState = "cancelled"
 )
 
-type WorkspaceTask struct {
-	ID           string             `json:"id"`
-	Name         string             `json:"name"`
-	Workspace    string             `json:"workspace"`
-	Command      string             `json:"command"`
-	Args         []string           `json:"args"`
-	Cwd          string             `json:"cwd"`
-	Declared     bool               `json:"declared"`
-	State        WorkspaceTaskState `json:"state"`
-	CreatedAt    time.Time          `json:"created_at"`
-	StartedAt    time.Time          `json:"started_at"`
-	FinishedAt   *time.Time         `json:"finished_at,omitempty"`
-	ExitCode     *int               `json:"exit_code,omitempty"`
-	PID          int                `json:"pid,omitempty"`
-	StdoutLog    string             `json:"stdout_log"`
-	StderrLog    string             `json:"stderr_log"`
-	CancelReason string             `json:"cancel_reason,omitempty"`
+type TaskRun struct {
+	ID           string       `json:"id"`
+	Name         string       `json:"name"`
+	Workspace    string       `json:"workspace"`
+	Command      string       `json:"command"`
+	Args         []string     `json:"args"`
+	Cwd          string       `json:"cwd"`
+	Declared     bool         `json:"declared"`
+	State        TaskRunState `json:"state"`
+	CreatedAt    time.Time    `json:"created_at"`
+	StartedAt    time.Time    `json:"started_at"`
+	FinishedAt   *time.Time   `json:"finished_at,omitempty"`
+	ExitCode     *int         `json:"exit_code,omitempty"`
+	PID          int          `json:"pid,omitempty"`
+	StdoutLog    string       `json:"stdout_log"`
+	StderrLog    string       `json:"stderr_log"`
+	CancelReason string       `json:"cancel_reason,omitempty"`
 }
 
 type TaskStartSpec struct {
@@ -50,7 +50,7 @@ type TaskStartSpec struct {
 	Cwd     string
 }
 
-type WorkspaceTaskLogs struct {
+type TaskRunLogs struct {
 	TaskID string `json:"task_id"`
 	Stdout string `json:"stdout"`
 	Stderr string `json:"stderr"`
@@ -74,33 +74,33 @@ type taskRecord struct {
 	CancelReason string     `json:"cancel_reason,omitempty"`
 }
 
-func (a *App) StartTask(workspaceName string, spec TaskStartSpec) (WorkspaceTask, error) {
+func (a *App) StartTask(workspaceName string, spec TaskStartSpec) (TaskRun, error) {
 	wsPath, err := a.EnsureWorkspace(workspaceName)
 	if err != nil {
-		return WorkspaceTask{}, err
+		return TaskRun{}, err
 	}
 	env, workDir, err := a.workspaceRuntime(workspaceName)
 	if err != nil {
-		return WorkspaceTask{}, err
+		return TaskRun{}, err
 	}
 
 	command := strings.TrimSpace(spec.Command)
 	if command == "" {
-		return WorkspaceTask{}, fmt.Errorf("task command required")
+		return TaskRun{}, fmt.Errorf("task command required")
 	}
 	resolvedCommand, err := resolveCommandForEnv(command, env)
 	if err != nil {
-		return WorkspaceTask{}, err
+		return TaskRun{}, err
 	}
 
 	taskCwd, err := resolveTaskCwd(workDir, spec.Cwd)
 	if err != nil {
-		return WorkspaceTask{}, err
+		return TaskRun{}, err
 	}
 
 	taskID, err := newTaskID()
 	if err != nil {
-		return WorkspaceTask{}, err
+		return TaskRun{}, err
 	}
 	if strings.TrimSpace(spec.Name) == "" {
 		spec.Name = filepath.Base(command)
@@ -108,11 +108,11 @@ func (a *App) StartTask(workspaceName string, spec TaskStartSpec) (WorkspaceTask
 
 	taskDir := filepath.Join(wsPath, "state", "tasks", taskID)
 	if err := os.MkdirAll(taskDir, 0o700); err != nil {
-		return WorkspaceTask{}, fmt.Errorf("mkdir task state dir: %w", err)
+		return TaskRun{}, fmt.Errorf("mkdir task state dir: %w", err)
 	}
 	logDir := filepath.Join(wsPath, "logs", "tasks")
 	if err := os.MkdirAll(logDir, 0o700); err != nil {
-		return WorkspaceTask{}, fmt.Errorf("mkdir task logs dir: %w", err)
+		return TaskRun{}, fmt.Errorf("mkdir task logs dir: %w", err)
 	}
 
 	stdoutLog := filepath.Join(logDir, taskID+".stdout.log")
@@ -122,7 +122,7 @@ func (a *App) StartTask(workspaceName string, spec TaskStartSpec) (WorkspaceTask
 	cancelReasonPath := filepath.Join(taskDir, "cancel_reason")
 	supervisorPath := filepath.Join(taskDir, "supervise.sh")
 	if err := os.WriteFile(supervisorPath, []byte(taskSupervisorScript(stdoutLog, stderrLog, exitCodePath, finishedAtPath, cancelReasonPath)), 0o700); err != nil {
-		return WorkspaceTask{}, fmt.Errorf("write task supervisor: %w", err)
+		return TaskRun{}, fmt.Errorf("write task supervisor: %w", err)
 	}
 
 	createdAt := time.Now().UTC()
@@ -139,7 +139,7 @@ func (a *App) StartTask(workspaceName string, spec TaskStartSpec) (WorkspaceTask
 		StderrLog: stderrLog,
 	}
 	if err := a.writeTaskRecord(taskDir, record); err != nil {
-		return WorkspaceTask{}, err
+		return TaskRun{}, err
 	}
 
 	cmdArgs := append([]string{supervisorPath, resolvedCommand}, spec.Args...)
@@ -149,30 +149,30 @@ func (a *App) StartTask(workspaceName string, spec TaskStartSpec) (WorkspaceTask
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
 	if err := cmd.Start(); err != nil {
-		return WorkspaceTask{}, fmt.Errorf("start task: %w", err)
+		return TaskRun{}, fmt.Errorf("start task: %w", err)
 	}
 
 	record.StartedAt = time.Now().UTC()
 	record.PID = cmd.Process.Pid
 	if err := a.writeTaskRecord(taskDir, record); err != nil {
 		_ = cmd.Process.Kill()
-		return WorkspaceTask{}, err
+		return TaskRun{}, err
 	}
 	if err := cmd.Process.Release(); err != nil {
-		return WorkspaceTask{}, fmt.Errorf("release task process: %w", err)
+		return TaskRun{}, fmt.Errorf("release task process: %w", err)
 	}
 
 	return a.TaskStatus(workspaceName, taskID)
 }
 
-func (a *App) StartDeclaredTask(workspaceName, taskName string) (WorkspaceTask, error) {
+func (a *App) StartDeclaredTask(workspaceName, taskName string) (TaskRun, error) {
 	wsPath, err := a.EnsureWorkspace(workspaceName)
 	if err != nil {
-		return WorkspaceTask{}, err
+		return TaskRun{}, err
 	}
 	manifest, err := a.getManifest(wsPath)
 	if err != nil {
-		return WorkspaceTask{}, err
+		return TaskRun{}, err
 	}
 
 	var declared *TaskSpec
@@ -183,10 +183,10 @@ func (a *App) StartDeclaredTask(workspaceName, taskName string) (WorkspaceTask, 
 		}
 	}
 	if declared == nil {
-		return WorkspaceTask{}, fmt.Errorf("declared task %q not found", taskName)
+		return TaskRun{}, fmt.Errorf("declared task %q not found", taskName)
 	}
 	if len(declared.Command) == 0 {
-		return WorkspaceTask{}, fmt.Errorf("declared task %q has no command", taskName)
+		return TaskRun{}, fmt.Errorf("declared task %q has no command", taskName)
 	}
 
 	task, err := a.StartTask(workspaceName, TaskStartSpec{
@@ -196,35 +196,35 @@ func (a *App) StartDeclaredTask(workspaceName, taskName string) (WorkspaceTask, 
 		Cwd:     declared.Cwd,
 	})
 	if err != nil {
-		return WorkspaceTask{}, err
+		return TaskRun{}, err
 	}
 
 	taskDir := filepath.Join(wsPath, "state", "tasks", task.ID)
 	record, err := a.readTaskRecord(taskDir)
 	if err != nil {
-		return WorkspaceTask{}, err
+		return TaskRun{}, err
 	}
 	record.Declared = true
 	if err := a.writeTaskRecord(taskDir, record); err != nil {
-		return WorkspaceTask{}, err
+		return TaskRun{}, err
 	}
 	return a.TaskStatus(workspaceName, task.ID)
 }
 
-func (a *App) TaskStatus(workspaceName, taskID string) (WorkspaceTask, error) {
+func (a *App) TaskStatus(workspaceName, taskID string) (TaskRun, error) {
 	wsPath, err := a.EnsureWorkspace(workspaceName)
 	if err != nil {
-		return WorkspaceTask{}, err
+		return TaskRun{}, err
 	}
 	taskDir := filepath.Join(wsPath, "state", "tasks", taskID)
 	record, err := a.readTaskRecord(taskDir)
 	if err != nil {
-		return WorkspaceTask{}, err
+		return TaskRun{}, err
 	}
 	return a.taskFromRecord(taskDir, record)
 }
 
-func (a *App) TaskList(workspaceName string) ([]WorkspaceTask, error) {
+func (a *App) TaskList(workspaceName string) ([]TaskRun, error) {
 	wsPath, err := a.EnsureWorkspace(workspaceName)
 	if err != nil {
 		return nil, err
@@ -234,12 +234,12 @@ func (a *App) TaskList(workspaceName string) ([]WorkspaceTask, error) {
 	entries, err := os.ReadDir(taskRoot)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return []WorkspaceTask{}, nil
+			return []TaskRun{}, nil
 		}
 		return nil, fmt.Errorf("read tasks dir: %w", err)
 	}
 
-	tasks := make([]WorkspaceTask, 0, len(entries))
+	tasks := make([]TaskRun, 0, len(entries))
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
@@ -256,70 +256,70 @@ func (a *App) TaskList(workspaceName string) ([]WorkspaceTask, error) {
 		tasks = append(tasks, task)
 	}
 
-	slices.SortFunc(tasks, func(a, b WorkspaceTask) int {
+	slices.SortFunc(tasks, func(a, b TaskRun) int {
 		return b.CreatedAt.Compare(a.CreatedAt)
 	})
 	return tasks, nil
 }
 
-func (a *App) TaskLogs(workspaceName, taskID string) (WorkspaceTaskLogs, error) {
+func (a *App) TaskLogs(workspaceName, taskID string) (TaskRunLogs, error) {
 	task, err := a.TaskStatus(workspaceName, taskID)
 	if err != nil {
-		return WorkspaceTaskLogs{}, err
+		return TaskRunLogs{}, err
 	}
 	stdoutData, err := os.ReadFile(task.StdoutLog)
 	if err != nil && !os.IsNotExist(err) {
-		return WorkspaceTaskLogs{}, fmt.Errorf("read task stdout log: %w", err)
+		return TaskRunLogs{}, fmt.Errorf("read task stdout log: %w", err)
 	}
 	stderrData, err := os.ReadFile(task.StderrLog)
 	if err != nil && !os.IsNotExist(err) {
-		return WorkspaceTaskLogs{}, fmt.Errorf("read task stderr log: %w", err)
+		return TaskRunLogs{}, fmt.Errorf("read task stderr log: %w", err)
 	}
 
-	return WorkspaceTaskLogs{
+	return TaskRunLogs{
 		TaskID: task.ID,
 		Stdout: string(stdoutData),
 		Stderr: string(stderrData),
 	}, nil
 }
 
-func (a *App) StopTask(workspaceName, taskID string) (WorkspaceTask, error) {
+func (a *App) StopTask(workspaceName, taskID string) (TaskRun, error) {
 	wsPath, err := a.EnsureWorkspace(workspaceName)
 	if err != nil {
-		return WorkspaceTask{}, err
+		return TaskRun{}, err
 	}
 	taskDir := filepath.Join(wsPath, "state", "tasks", taskID)
 	record, err := a.readTaskRecord(taskDir)
 	if err != nil {
-		return WorkspaceTask{}, err
+		return TaskRun{}, err
 	}
 
 	task, err := a.taskFromRecord(taskDir, record)
 	if err != nil {
-		return WorkspaceTask{}, err
+		return TaskRun{}, err
 	}
-	if task.State != WorkspaceTaskRunning && task.State != WorkspaceTaskPending {
+	if task.State != TaskRunRunning && task.State != TaskRunPending {
 		return task, nil
 	}
 
 	process, err := os.FindProcess(record.PID)
 	if err != nil {
-		return WorkspaceTask{}, fmt.Errorf("find task process: %w", err)
+		return TaskRun{}, fmt.Errorf("find task process: %w", err)
 	}
 	if err := syscall.Kill(-record.PID, syscall.SIGTERM); err != nil {
-		return WorkspaceTask{}, fmt.Errorf("stop task: %w", err)
+		return TaskRun{}, fmt.Errorf("stop task: %w", err)
 	}
 	_ = process.Release()
 	finishedAt := time.Now().UTC()
 	exitCode := 143
 	if err := writeStringMarker(filepath.Join(taskDir, "cancel_reason"), "requested stop"); err != nil {
-		return WorkspaceTask{}, err
+		return TaskRun{}, err
 	}
 	if err := writeIntMarker(filepath.Join(taskDir, "exit_code"), exitCode); err != nil {
-		return WorkspaceTask{}, err
+		return TaskRun{}, err
 	}
 	if err := writeTimeMarker(filepath.Join(taskDir, "finished_at"), finishedAt); err != nil {
-		return WorkspaceTask{}, err
+		return TaskRun{}, err
 	}
 	return a.TaskStatus(workspaceName, taskID)
 }
@@ -353,8 +353,8 @@ func (a *App) writeTaskRecord(taskDir string, record taskRecord) error {
 	return nil
 }
 
-func (a *App) taskFromRecord(taskDir string, record taskRecord) (WorkspaceTask, error) {
-	task := WorkspaceTask{
+func (a *App) taskFromRecord(taskDir string, record taskRecord) (TaskRun, error) {
+	task := TaskRun{
 		ID:           record.ID,
 		Name:         record.Name,
 		Workspace:    record.Workspace,
@@ -371,32 +371,32 @@ func (a *App) taskFromRecord(taskDir string, record taskRecord) (WorkspaceTask, 
 	}
 
 	if finishedAt, ok, err := readTimeMarker(filepath.Join(taskDir, "finished_at")); err != nil {
-		return WorkspaceTask{}, err
+		return TaskRun{}, err
 	} else if ok {
 		task.FinishedAt = &finishedAt
 	}
 	if exitCode, ok, err := readIntMarker(filepath.Join(taskDir, "exit_code")); err != nil {
-		return WorkspaceTask{}, err
+		return TaskRun{}, err
 	} else if ok {
 		task.ExitCode = &exitCode
 	}
 	if cancelReason, ok, err := readStringMarker(filepath.Join(taskDir, "cancel_reason")); err != nil {
-		return WorkspaceTask{}, err
+		return TaskRun{}, err
 	} else if ok {
 		task.CancelReason = cancelReason
 	}
 
 	switch {
 	case task.FinishedAt != nil && task.CancelReason != "":
-		task.State = WorkspaceTaskCancelled
+		task.State = TaskRunCancelled
 	case task.FinishedAt != nil && task.ExitCode != nil && *task.ExitCode == 0:
-		task.State = WorkspaceTaskSucceeded
+		task.State = TaskRunSucceeded
 	case task.FinishedAt != nil:
-		task.State = WorkspaceTaskFailed
+		task.State = TaskRunFailed
 	case record.PID == 0:
-		task.State = WorkspaceTaskPending
+		task.State = TaskRunPending
 	default:
-		task.State = WorkspaceTaskRunning
+		task.State = TaskRunRunning
 	}
 
 	return task, nil

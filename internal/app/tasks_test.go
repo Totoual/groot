@@ -34,11 +34,11 @@ func TestStartTaskPersistsRecordAndLogs(t *testing.T) {
 	if task.ID == "" {
 		t.Fatal("expected task id to be set")
 	}
-	if task.State != WorkspaceTaskRunning {
+	if task.State != TaskRunRunning {
 		t.Fatalf("expected task to start running, got %q", task.State)
 	}
 
-	task = waitForTaskState(t, app, "crawlly", task.ID, WorkspaceTaskSucceeded)
+	task = waitForTaskState(t, app, "crawlly", task.ID, TaskRunSucceeded)
 	if task.ExitCode == nil || *task.ExitCode != 0 {
 		t.Fatalf("unexpected exit code: %#v", task.ExitCode)
 	}
@@ -97,7 +97,7 @@ func TestStartDeclaredTaskRunsManifestTask(t *testing.T) {
 		t.Fatal("expected declared task to be marked declared")
 	}
 
-	task = waitForTaskState(t, app, "crawlly", task.ID, WorkspaceTaskSucceeded)
+	task = waitForTaskState(t, app, "crawlly", task.ID, TaskRunSucceeded)
 	logs, err := app.TaskLogs("crawlly", task.ID)
 	if err != nil {
 		t.Fatalf("TaskLogs returned error: %v", err)
@@ -129,8 +129,8 @@ func TestTaskListReturnsNewestFirst(t *testing.T) {
 		t.Fatalf("StartTask second returned error: %v", err)
 	}
 
-	waitForTaskState(t, app, "crawlly", first.ID, WorkspaceTaskSucceeded)
-	waitForTaskState(t, app, "crawlly", second.ID, WorkspaceTaskSucceeded)
+	waitForTaskState(t, app, "crawlly", first.ID, TaskRunSucceeded)
+	waitForTaskState(t, app, "crawlly", second.ID, TaskRunSucceeded)
 
 	tasks, err := app.TaskList("crawlly")
 	if err != nil {
@@ -165,13 +165,13 @@ func TestStopTaskCancelsRunningTask(t *testing.T) {
 		t.Fatalf("StopTask returned error: %v", err)
 	}
 
-	task = waitForTaskState(t, app, "crawlly", task.ID, WorkspaceTaskCancelled)
+	task = waitForTaskState(t, app, "crawlly", task.ID, TaskRunCancelled)
 	if task.CancelReason == "" {
 		t.Fatal("expected cancel reason to be recorded")
 	}
 }
 
-func waitForTaskState(t *testing.T, app *App, workspaceName, taskID string, want WorkspaceTaskState) WorkspaceTask {
+func waitForTaskState(t *testing.T, app *App, workspaceName, taskID string, want TaskRunState) TaskRun {
 	t.Helper()
 
 	deadline := time.Now().Add(5 * time.Second)
@@ -191,5 +191,5 @@ func waitForTaskState(t *testing.T, app *App, workspaceName, taskID string, want
 		t.Fatalf("TaskStatus returned error: %v", err)
 	}
 	t.Fatalf("timed out waiting for task %q to reach state %q, got %q", taskID, want, task.State)
-	return WorkspaceTask{}
+	return TaskRun{}
 }

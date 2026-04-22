@@ -143,18 +143,18 @@ type workspaceInstallResult struct {
 }
 
 type taskRunResult struct {
-	Created bool              `json:"created"`
-	Task    app.WorkspaceTask `json:"task"`
+	Created bool        `json:"created"`
+	Task    app.TaskRun `json:"task"`
 }
 
 type taskListResult struct {
-	Created bool                `json:"created"`
-	Tasks   []app.WorkspaceTask `json:"tasks"`
+	Created bool          `json:"created"`
+	Tasks   []app.TaskRun `json:"tasks"`
 }
 
 type taskLogsResult struct {
-	Created bool                  `json:"created"`
-	Logs    app.WorkspaceTaskLogs `json:"logs"`
+	Created bool            `json:"created"`
+	Logs    app.TaskRunLogs `json:"logs"`
 }
 
 type workspaceActivateResult struct {
@@ -1421,7 +1421,7 @@ func (s *Server) taskStartTool(args map[string]any) toolResult {
 	if err != nil {
 		return errorToolResult(err.Error(), nil)
 	}
-	var task app.WorkspaceTask
+	var task app.TaskRun
 	switch {
 	case declaredTask != "" && command != "":
 		return errorToolResult(`tool "task_start" accepts either "task" or "command", not both`, nil)

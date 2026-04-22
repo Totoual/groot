@@ -107,7 +107,7 @@ func (c *taskStartCmd) Run(a *app.App, args []string) error {
 		return err
 	}
 
-	var task app.WorkspaceTask
+	var task app.TaskRun
 	if strings.TrimSpace(*declaredTask) != "" {
 		if fs.NArg() != 0 {
 			fs.Usage()
@@ -130,7 +130,7 @@ func (c *taskStartCmd) Run(a *app.App, args []string) error {
 		return err
 	}
 
-	writeWorkspaceTask(task)
+	writeTaskRun(task)
 	return nil
 }
 
@@ -167,7 +167,7 @@ func (c *taskStatusCmd) Run(a *app.App, args []string) error {
 	if err != nil {
 		return err
 	}
-	writeWorkspaceTask(task)
+	writeTaskRun(task)
 	return nil
 }
 
@@ -289,11 +289,11 @@ func (c *taskStopCmd) Run(a *app.App, args []string) error {
 	if err != nil {
 		return err
 	}
-	writeWorkspaceTask(task)
+	writeTaskRun(task)
 	return nil
 }
 
-func writeWorkspaceTask(task app.WorkspaceTask) {
+func writeTaskRun(task app.TaskRun) {
 	fmt.Fprintf(os.Stdout, "Task: %s\n", task.ID)
 	fmt.Fprintf(os.Stdout, "Name: %s\n", task.Name)
 	fmt.Fprintf(os.Stdout, "Workspace: %s\n", task.Workspace)
