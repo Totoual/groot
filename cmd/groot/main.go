@@ -34,6 +34,7 @@ func main() {
 
 	groot_router := router.NewRouter(
 		&commands.EnterCmd{},
+		&commands.EventCmd{},
 		&commands.ExecCmd{},
 		&commands.ExportCmd{},
 		&commands.ImportCmd{},

@@ -157,6 +157,11 @@ type taskLogsResult struct {
 	Logs    app.TaskRunLogs `json:"logs"`
 }
 
+type eventListResult struct {
+	Created bool               `json:"created"`
+	Events  []app.RuntimeEvent `json:"events"`
+}
+
 type workspaceActivateResult struct {
 	ActiveProject string `json:"active_project"`
 	WorkspaceName string `json:"workspace_name,omitempty"`
@@ -806,6 +811,33 @@ func (s *Server) tools() []toolDefinition {
 				"required": []string{"created", "task"},
 			},
 		},
+		{
+			Name:        "event_list",
+			Description: "Resolve or create a workspace from a project path and list persisted runtime events.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"path": map[string]any{
+						"type":        "string",
+						"description": "Absolute or ~/ project path.",
+					},
+					"limit": map[string]any{
+						"type":        "integer",
+						"description": "Optional maximum number of events to return.",
+					},
+				},
+				"required":             []string{"path"},
+				"additionalProperties": false,
+			},
+			OutputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"created": map[string]any{"type": "boolean"},
+					"events":  map[string]any{"type": "array"},
+				},
+				"required": []string{"created", "events"},
+			},
+		},
 	}
 }
 
@@ -871,6 +903,8 @@ func (s *Server) callTool(params toolCallParams) toolResult {
 		return s.taskLogsTool(params.Arguments)
 	case "task_stop":
 		return s.taskStopTool(params.Arguments)
+	case "event_list":
+		return s.eventListTool(params.Arguments)
 	default:
 		return errorToolResult(fmt.Sprintf("unknown tool %q", params.Name), nil)
 	}
@@ -1594,6 +1628,45 @@ func (s *Server) taskStopTool(args map[string]any) toolResult {
 	)
 }
 
+func (s *Server) eventListTool(args map[string]any) toolResult {
+	projectPath, ok := stringArg(args, "path")
+	if !ok {
+		return errorToolResult(`tool "event_list" requires string argument "path"`, nil)
+	}
+	projectPath, err := s.scopedProjectPath(projectPath)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	limit, err := intArgOrDefault(args, "limit", 0)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	if limit < 0 {
+		return errorToolResult(`tool "event_list" requires "limit" to be >= 0`, nil)
+	}
+
+	workspaceName, created, err := s.app.ResolveOrCreateWorkspaceByProjectPath(projectPath)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	events, err := s.app.EventList(workspaceName, app.EventListOptions{Limit: limit})
+	if err != nil {
+		return errorToolResult(err.Error(), map[string]any{
+			"workspace_name": workspaceName,
+			"created":        created,
+		})
+	}
+
+	result := eventListResult{
+		Created: created,
+		Events:  events,
+	}
+	return successToolResult(
+		fmt.Sprintf("Loaded %d events for workspace %q.", len(events), workspaceName),
+		result,
+	)
+}
+
 func makeWorkspaceInspection(inspect app.WorkspaceInspection) workspaceInspection {
 	return workspaceInspection{
 		WorkspaceName: inspect.WorkspaceName,
@@ -1665,6 +1738,27 @@ func stringArgOrDefault(args map[string]any, key string, fallback string) string
 		return fallback
 	}
 	return value
+}
+
+func intArgOrDefault(args map[string]any, key string, fallback int) (int, error) {
+	if args == nil {
+		return fallback, nil
+	}
+	raw, ok := args[key]
+	if !ok {
+		return fallback, nil
+	}
+	switch value := raw.(type) {
+	case float64:
+		if value != float64(int(value)) {
+			return 0, fmt.Errorf(`tool input requires "%s" to be an integer`, key)
+		}
+		return int(value), nil
+	case int:
+		return value, nil
+	default:
+		return 0, fmt.Errorf(`tool input requires "%s" to be an integer`, key)
+	}
 }
 
 func stringSliceArg(args map[string]any, key string) ([]string, error) {

@@ -44,10 +44,11 @@ type TaskRun struct {
 }
 
 type TaskStartSpec struct {
-	Name    string
-	Command string
-	Args    []string
-	Cwd     string
+	Name     string
+	Command  string
+	Args     []string
+	Cwd      string
+	Declared bool
 }
 
 type TaskRunLogs struct {
@@ -133,7 +134,7 @@ func (a *App) StartTask(workspaceName string, spec TaskStartSpec) (TaskRun, erro
 		Command:   resolvedCommand,
 		Args:      append([]string{}, spec.Args...),
 		Cwd:       taskCwd,
-		Declared:  false,
+		Declared:  spec.Declared,
 		CreatedAt: createdAt,
 		StdoutLog: stdoutLog,
 		StderrLog: stderrLog,
@@ -162,6 +163,9 @@ func (a *App) StartTask(workspaceName string, spec TaskStartSpec) (TaskRun, erro
 		return TaskRun{}, fmt.Errorf("release task process: %w", err)
 	}
 
+	if err := a.emitTaskStartedEvent(taskRunFromRecord(record)); err != nil {
+		return TaskRun{}, err
+	}
 	return a.TaskStatus(workspaceName, taskID)
 }
 
@@ -190,22 +194,13 @@ func (a *App) StartDeclaredTask(workspaceName, taskName string) (TaskRun, error)
 	}
 
 	task, err := a.StartTask(workspaceName, TaskStartSpec{
-		Name:    declared.Name,
-		Command: declared.Command[0],
-		Args:    append([]string{}, declared.Command[1:]...),
-		Cwd:     declared.Cwd,
+		Name:     declared.Name,
+		Command:  declared.Command[0],
+		Args:     append([]string{}, declared.Command[1:]...),
+		Cwd:      declared.Cwd,
+		Declared: true,
 	})
 	if err != nil {
-		return TaskRun{}, err
-	}
-
-	taskDir := filepath.Join(wsPath, "state", "tasks", task.ID)
-	record, err := a.readTaskRecord(taskDir)
-	if err != nil {
-		return TaskRun{}, err
-	}
-	record.Declared = true
-	if err := a.writeTaskRecord(taskDir, record); err != nil {
 		return TaskRun{}, err
 	}
 	return a.TaskStatus(workspaceName, task.ID)
@@ -354,21 +349,7 @@ func (a *App) writeTaskRecord(taskDir string, record taskRecord) error {
 }
 
 func (a *App) taskFromRecord(taskDir string, record taskRecord) (TaskRun, error) {
-	task := TaskRun{
-		ID:           record.ID,
-		Name:         record.Name,
-		Workspace:    record.Workspace,
-		Command:      record.Command,
-		Args:         append([]string{}, record.Args...),
-		Cwd:          record.Cwd,
-		Declared:     record.Declared,
-		CreatedAt:    record.CreatedAt,
-		StartedAt:    record.StartedAt,
-		PID:          record.PID,
-		StdoutLog:    record.StdoutLog,
-		StderrLog:    record.StderrLog,
-		CancelReason: record.CancelReason,
-	}
+	task := taskRunFromRecord(record)
 
 	if finishedAt, ok, err := readTimeMarker(filepath.Join(taskDir, "finished_at")); err != nil {
 		return TaskRun{}, err
@@ -399,7 +380,98 @@ func (a *App) taskFromRecord(taskDir string, record taskRecord) (TaskRun, error)
 		task.State = TaskRunRunning
 	}
 
+	if err := a.emitTaskTerminalEventIfNeeded(taskDir, task); err != nil {
+		return TaskRun{}, err
+	}
 	return task, nil
+}
+
+func taskRunFromRecord(record taskRecord) TaskRun {
+	state := TaskRunRunning
+	if record.PID == 0 {
+		state = TaskRunPending
+	}
+	return TaskRun{
+		ID:           record.ID,
+		Name:         record.Name,
+		Workspace:    record.Workspace,
+		Command:      record.Command,
+		Args:         append([]string{}, record.Args...),
+		Cwd:          record.Cwd,
+		Declared:     record.Declared,
+		State:        state,
+		CreatedAt:    record.CreatedAt,
+		StartedAt:    record.StartedAt,
+		PID:          record.PID,
+		StdoutLog:    record.StdoutLog,
+		StderrLog:    record.StderrLog,
+		CancelReason: record.CancelReason,
+	}
+}
+
+func (a *App) emitTaskStartedEvent(task TaskRun) error {
+	return a.emitEvent(task.Workspace, RuntimeEvent{
+		Kind:         EventKindTaskStarted,
+		ResourceType: "task",
+		ResourceID:   task.ID,
+		Message:      fmt.Sprintf("Task %q started.", task.Name),
+		Payload:      taskEventPayload(task),
+	})
+}
+
+func (a *App) emitTaskTerminalEventIfNeeded(taskDir string, task TaskRun) error {
+	if task.State != TaskRunSucceeded && task.State != TaskRunFailed && task.State != TaskRunCancelled {
+		return nil
+	}
+
+	markerPath := filepath.Join(taskDir, "terminal_event")
+	if _, err := os.Stat(markerPath); err == nil {
+		return nil
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+
+	kind := EventKindTaskExited
+	message := fmt.Sprintf("Task %q exited.", task.Name)
+	switch task.State {
+	case TaskRunFailed:
+		kind = EventKindTaskFailed
+		message = fmt.Sprintf("Task %q failed.", task.Name)
+	case TaskRunCancelled:
+		kind = EventKindTaskCancelled
+		message = fmt.Sprintf("Task %q was cancelled.", task.Name)
+	}
+
+	if err := a.emitEvent(task.Workspace, RuntimeEvent{
+		Kind:         kind,
+		ResourceType: "task",
+		ResourceID:   task.ID,
+		Message:      message,
+		Payload:      taskEventPayload(task),
+	}); err != nil {
+		return err
+	}
+	return os.WriteFile(markerPath, []byte(kind), 0o600)
+}
+
+func taskEventPayload(task TaskRun) map[string]any {
+	payload := map[string]any{
+		"task_id":  task.ID,
+		"name":     task.Name,
+		"state":    task.State,
+		"command":  task.Command,
+		"args":     append([]string{}, task.Args...),
+		"cwd":      task.Cwd,
+		"declared": task.Declared,
+		"pid":      task.PID,
+	}
+	if task.ExitCode != nil {
+		payload["exit_code"] = *task.ExitCode
+	}
+	if task.CancelReason != "" {
+		payload["cancel_reason"] = task.CancelReason
+	}
+	return payload
 }
 
 func resolveTaskCwd(baseDir, requested string) (string, error) {
@@ -429,11 +501,19 @@ func resolveTaskCwd(baseDir, requested string) (string, error) {
 }
 
 func newTaskID() (string, error) {
-	var suffix [6]byte
-	if _, err := rand.Read(suffix[:]); err != nil {
+	suffix, err := randomHex(6)
+	if err != nil {
 		return "", fmt.Errorf("generate task id: %w", err)
 	}
-	return fmt.Sprintf("%d-%s", time.Now().UTC().UnixMilli(), hex.EncodeToString(suffix[:])), nil
+	return fmt.Sprintf("%d-%s", time.Now().UTC().UnixMilli(), suffix), nil
+}
+
+func randomHex(size int) (string, error) {
+	suffix := make([]byte, size)
+	if _, err := rand.Read(suffix); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(suffix), nil
 }
 
 func taskSupervisorScript(stdoutLog, stderrLog, exitCodePath, finishedAtPath, cancelReasonPath string) string {

@@ -66,11 +66,12 @@ The current MCP surface is intentionally small:
 - export the current workspace contract as portable structured data
 - import that exported contract onto an existing local repo path
 - start, inspect, list, stop, and read logs for workspace-owned task runs
+- list persisted task lifecycle events
 
 It does not yet cover:
 
 - workspace creation by explicit name
-- services, events, or streaming logs
+- services or streaming logs
 - manifest planning / preview / approval flows
 
 ## Available Tools
@@ -431,6 +432,33 @@ Structured result:
 
 - `created`
 - `task`
+
+### `event_list`
+
+List persisted runtime events for a project path.
+
+Input:
+
+```json
+{
+  "path": "/Users/example/Documents/the_grime_tcg",
+  "limit": 20
+}
+```
+
+Structured result:
+
+- `created`
+- `events`
+
+Current task event kinds:
+
+- `task.started`
+- `task.exited`
+- `task.failed`
+- `task.cancelled`
+
+Task terminal events are emitted once when Groot observes the final task state through `task_status`, `task_list`, or `task_logs`.
 
 ## Available Resources
 
