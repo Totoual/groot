@@ -264,13 +264,20 @@ That bridge is defined in [docs/runtime-model-v1.md](/Users/aristotelistriantafy
 ### Phase 3 Architectural Direction
 
 - [x] Write `GROOT_RUNTIME_MODEL_V1` to define task, service, and event ownership.
+- [x] Split the manifest schema so packages, tasks, and services have distinct types.
 - [ ] Keep desired runtime config in the manifest and live execution state in the workspace `state/` dir.
-- [ ] Add first-class task resources in the app layer with:
+- [x] Add first-class task resources in the app layer with:
   - start
   - stop
   - status
   - list
   - logs
+- [x] Expose task lifecycle through the human CLI with:
+  - `groot task start`
+  - `groot task status`
+  - `groot task list`
+  - `groot task logs`
+  - `groot task stop`
 - [ ] Add first-class service resources in the app layer with:
   - start
   - stop
@@ -279,7 +286,8 @@ That bridge is defined in [docs/runtime-model-v1.md](/Users/aristotelistriantafy
   - list
   - logs
 - [ ] Add persisted event records for task/service lifecycle changes before adding streaming.
-- [ ] Expose task/service/event lifecycle through CLI and MCP from the same app-layer primitives.
+- [x] Expose task lifecycle through MCP from the same app-layer primitives.
+- [ ] Expose service and event lifecycle through CLI and MCP from the same app-layer primitives.
 - [ ] Keep workspace lifecycle separate from execution.
 - [ ] Keep execution separate from installation.
 - [ ] Keep installation separate from storage.

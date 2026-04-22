@@ -42,6 +42,13 @@ func main() {
 		&commands.OpenCmd{},
 		&commands.ShellHookCmd{},
 		&commands.StatusCmd{},
+		commands.NewTaskCmd(
+			&commands.TaskStartCmdAlias{},
+			&commands.TaskStatusCmdAlias{},
+			&commands.TaskListCmdAlias{},
+			&commands.TaskLogsCmdAlias{},
+			&commands.TaskStopCmdAlias{},
+		),
 		wscmd,
 	)
 

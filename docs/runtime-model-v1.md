@@ -116,9 +116,32 @@ The manifest must not become the mutable execution database.
 
 ## Task Resource
 
-A task is a named or ad hoc command executed inside a workspace runtime.
+A task has two related shapes:
 
-Minimum task fields:
+- `TaskSpec`: an optional manifest declaration describing what can be run
+- `TaskRun`: one persisted execution record for a specific run
+
+The task lifecycle work in V1 is centered on `TaskRun`.
+
+A task run is a workspace-owned execution record that captures one command's lifecycle, state, logs, and result inside the workspace runtime.
+
+Groot does not replace the OS process table. The OS still owns the process. Groot records, controls, and observes the execution through the workspace runtime.
+
+### TaskSpec
+
+`TaskSpec` lives in the manifest as desired configuration.
+
+Minimum `TaskSpec` fields:
+
+- `name`
+- `command`
+- `cwd`
+
+### TaskRun
+
+`TaskRun` lives under the workspace `state/` directory.
+
+Minimum `TaskRun` fields:
 
 - `id`
 - `name`
@@ -134,13 +157,18 @@ Minimum task fields:
 - `stdout_log`
 - `stderr_log`
 
-Task states:
+Task run states:
 
 - `pending`
 - `running`
 - `succeeded`
 - `failed`
 - `cancelled`
+
+Possible later states:
+
+- `unknown`
+- `orphaned`
 
 Minimum task operations:
 
@@ -153,9 +181,12 @@ Minimum task operations:
 V1 task rules:
 
 - tasks execute inside the same Groot-managed workspace runtime as `exec`
+- task runs inherit the workspace env, cwd resolution, toolchain `PATH`, and `GROOT_*` vars from the strict runtime builder
 - ad hoc tasks may be started without a manifest declaration
 - declared tasks should be startable by name
 - finished tasks remain inspectable after completion
+- logs are per task run, so starting the same task twice creates separate stdout/stderr log files
+- tasks remain single execution units; they are not DAGs, workflows, or pipelines
 
 ## Service Resource
 
@@ -284,13 +315,16 @@ The important point is that CLI maps to structured runtime objects, not shell-on
 
 ## MCP Mapping
 
-Illustrative MCP tools:
+MCP task tools:
 
 - `task_start`
 - `task_stop`
 - `task_status`
 - `task_list`
 - `task_logs`
+
+Illustrative future MCP service/event tools:
+
 - `service_start`
 - `service_stop`
 - `service_restart`

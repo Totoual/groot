@@ -55,6 +55,7 @@ That runtime direction is defined in [docs/runtime-model-v1.md](/Users/aristotel
 - Garbage collect unreferenced toolchains from the shared store
 - Open a workspace shell with workspace-scoped `HOME` and XDG directories
 - Run one-off commands inside the workspace runtime
+- Start, inspect, list, stop, and read logs for workspace-owned tasks through a path-first CLI
 - Open a workspace in an IDE with a softer GUI runtime
 - Print shell exports for the resolved workspace runtime
 - Expose an initial MCP server on top of the same runtime core
@@ -195,6 +196,8 @@ groot open ~/Documents/crawlly --setup-detected
 ```bash
 groot enter ~/Documents/crawlly
 groot exec ~/Documents/crawlly git status
+groot task start ~/Documents/crawlly --name test go test ./...
+groot task list ~/Documents/crawlly
 groot export ~/Documents/crawlly
 groot import crawlly-export.json --project-path ~/Documents/crawlly
 groot import crawlly-export.json --project-path ~/Documents/crawlly-copy --workspace-name crawlly-copy
@@ -206,6 +209,7 @@ These commands resolve the workspace by `project_path` first and create/bind one
 
 - `open` is the main human GUI shortcut
 - `enter` and `exec` use the strict workspace runtime
+- `task ...` manages persisted workspace-owned task execution and logs for a project path
 - `export` writes the current workspace contract as portable JSON without bundling toolchain binaries or caches
 - `import` recreates that workspace contract around an existing local repo path without cloning the repo for you, and can rename the imported workspace if the original name already exists locally
 - if you import onto an empty local directory, Groot can still restore the attached and installed toolchains from the workspace contract even though no project runtimes are detected from files at that path yet
@@ -257,6 +261,11 @@ Current MCP tools:
 - `workspace_install`
 - `workspace_export`
 - `workspace_import`
+- `task_start`
+- `task_status`
+- `task_list`
+- `task_logs`
+- `task_stop`
 
 This MCP layer should be thought of as Phase 1.5:
 
@@ -276,6 +285,7 @@ These tools let an external MCP-capable agent:
 - attach and install explicit toolchains through Groot instead of improvising host-side installs
 - export the current workspace contract as portable structured data for later import/recreation
 - import that exported contract onto an existing local repo path
+- start, inspect, list, stop, and read logs for workspace-owned task runs
 
 The current MCP tool contract is documented in [docs/agent-contract.md](/Users/aristotelistriantafyllidis/Documents/groot/docs/agent-contract.md).
 
@@ -437,7 +447,7 @@ Example:
 
 - `ws attach` validates `name@version` specs, rejects unsupported toolchains, and updates existing package entries by name
 - `packages` are the active toolchain declarations used by runtime ownership, install, and exec flows
-- `tasks` now have a dedicated manifest slot but do not yet have runtime lifecycle support
+- `tasks` now have a dedicated manifest slot, app-layer lifecycle support, and a path-first human CLI surface
 - `services` now have a dedicated manifest slot but are not actively managed yet
 - `ws bind` stores the project location in `project_path`
 - `ws unbind` clears `project_path` without deleting the workspace runtime

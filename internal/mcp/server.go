@@ -142,6 +142,21 @@ type workspaceInstallResult struct {
 	Status    app.WorkspaceRuntimeSnapshot `json:"status"`
 }
 
+type taskRunResult struct {
+	Created bool              `json:"created"`
+	Task    app.WorkspaceTask `json:"task"`
+}
+
+type taskListResult struct {
+	Created bool                `json:"created"`
+	Tasks   []app.WorkspaceTask `json:"tasks"`
+}
+
+type taskLogsResult struct {
+	Created bool                  `json:"created"`
+	Logs    app.WorkspaceTaskLogs `json:"logs"`
+}
+
 type workspaceActivateResult struct {
 	ActiveProject string `json:"active_project"`
 	WorkspaceName string `json:"workspace_name,omitempty"`
@@ -641,6 +656,156 @@ func (s *Server) tools() []toolDefinition {
 				"required": []string{"created", "workspace_name", "project_path", "status"},
 			},
 		},
+		{
+			Name:        "task_start",
+			Description: "Resolve or create a workspace from a project path and start an ad hoc task run or declared manifest task inside the strict Groot runtime.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"path": map[string]any{
+						"type":        "string",
+						"description": "Absolute or ~/ project path.",
+					},
+					"name": map[string]any{
+						"type":        "string",
+						"description": "Optional display name for an ad hoc task run.",
+					},
+					"task": map[string]any{
+						"type":        "string",
+						"description": "Optional declared manifest task name to start. If set, command must be omitted.",
+					},
+					"command": map[string]any{
+						"type":        "string",
+						"description": "Executable for an ad hoc task run.",
+					},
+					"args": map[string]any{
+						"type":        "array",
+						"description": "Optional ad hoc task command arguments.",
+						"items": map[string]any{
+							"type": "string",
+						},
+					},
+					"cwd": map[string]any{
+						"type":        "string",
+						"description": "Optional relative or absolute task working directory.",
+					},
+				},
+				"required":             []string{"path"},
+				"additionalProperties": false,
+			},
+			OutputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"created": map[string]any{"type": "boolean"},
+					"task":    map[string]any{"type": "object"},
+				},
+				"required": []string{"created", "task"},
+			},
+		},
+		{
+			Name:        "task_status",
+			Description: "Resolve or create a workspace from a project path and return one task run status.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"path": map[string]any{
+						"type":        "string",
+						"description": "Absolute or ~/ project path.",
+					},
+					"task_id": map[string]any{
+						"type":        "string",
+						"description": "Task run id returned by task_start or task_list.",
+					},
+				},
+				"required":             []string{"path", "task_id"},
+				"additionalProperties": false,
+			},
+			OutputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"created": map[string]any{"type": "boolean"},
+					"task":    map[string]any{"type": "object"},
+				},
+				"required": []string{"created", "task"},
+			},
+		},
+		{
+			Name:        "task_list",
+			Description: "Resolve or create a workspace from a project path and list persisted task runs.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"path": map[string]any{
+						"type":        "string",
+						"description": "Absolute or ~/ project path.",
+					},
+				},
+				"required":             []string{"path"},
+				"additionalProperties": false,
+			},
+			OutputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"created": map[string]any{"type": "boolean"},
+					"tasks":   map[string]any{"type": "array"},
+				},
+				"required": []string{"created", "tasks"},
+			},
+		},
+		{
+			Name:        "task_logs",
+			Description: "Resolve or create a workspace from a project path and return captured stdout/stderr for a task run.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"path": map[string]any{
+						"type":        "string",
+						"description": "Absolute or ~/ project path.",
+					},
+					"task_id": map[string]any{
+						"type":        "string",
+						"description": "Task run id returned by task_start or task_list.",
+					},
+				},
+				"required":             []string{"path", "task_id"},
+				"additionalProperties": false,
+			},
+			OutputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"created": map[string]any{"type": "boolean"},
+					"logs":    map[string]any{"type": "object"},
+				},
+				"required": []string{"created", "logs"},
+			},
+		},
+		{
+			Name:        "task_stop",
+			Description: "Resolve or create a workspace from a project path and stop a running task run.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"path": map[string]any{
+						"type":        "string",
+						"description": "Absolute or ~/ project path.",
+					},
+					"task_id": map[string]any{
+						"type":        "string",
+						"description": "Task run id returned by task_start or task_list.",
+					},
+				},
+				"required":             []string{"path", "task_id"},
+				"additionalProperties": false,
+			},
+			OutputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"created": map[string]any{"type": "boolean"},
+					"task":    map[string]any{"type": "object"},
+				},
+				"required": []string{"created", "task"},
+			},
+		},
 	}
 }
 
@@ -696,6 +861,16 @@ func (s *Server) callTool(params toolCallParams) toolResult {
 		return s.workspaceExportTool(params.Arguments)
 	case "workspace_import":
 		return s.workspaceImportTool(params.Arguments)
+	case "task_start":
+		return s.taskStartTool(params.Arguments)
+	case "task_status":
+		return s.taskStatusTool(params.Arguments)
+	case "task_list":
+		return s.taskListTool(params.Arguments)
+	case "task_logs":
+		return s.taskLogsTool(params.Arguments)
+	case "task_stop":
+		return s.taskStopTool(params.Arguments)
 	default:
 		return errorToolResult(fmt.Sprintf("unknown tool %q", params.Name), nil)
 	}
@@ -1221,6 +1396,200 @@ func (s *Server) workspaceImportTool(args map[string]any) toolResult {
 	}
 	return successToolResult(
 		fmt.Sprintf("Workspace %q imported for %s.", imported.WorkspaceName, imported.ProjectPath),
+		result,
+	)
+}
+
+func (s *Server) taskStartTool(args map[string]any) toolResult {
+	projectPath, ok := stringArg(args, "path")
+	if !ok {
+		return errorToolResult(`tool "task_start" requires string argument "path"`, nil)
+	}
+	projectPath, err := s.scopedProjectPath(projectPath)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+
+	workspaceName, created, err := s.app.ResolveOrCreateWorkspaceByProjectPath(projectPath)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+
+	declaredTask := strings.TrimSpace(stringArgOrDefault(args, "task", ""))
+	command := strings.TrimSpace(stringArgOrDefault(args, "command", ""))
+	commandArgs, err := stringSliceArg(args, "args")
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	var task app.WorkspaceTask
+	switch {
+	case declaredTask != "" && command != "":
+		return errorToolResult(`tool "task_start" accepts either "task" or "command", not both`, nil)
+	case declaredTask != "":
+		task, err = s.app.StartDeclaredTask(workspaceName, declaredTask)
+	case command != "":
+		task, err = s.app.StartTask(workspaceName, app.TaskStartSpec{
+			Name:    strings.TrimSpace(stringArgOrDefault(args, "name", "")),
+			Command: command,
+			Args:    commandArgs,
+			Cwd:     strings.TrimSpace(stringArgOrDefault(args, "cwd", "")),
+		})
+	default:
+		return errorToolResult(`tool "task_start" requires either string argument "task" or "command"`, nil)
+	}
+	if err != nil {
+		return errorToolResult(err.Error(), map[string]any{
+			"workspace_name": workspaceName,
+			"created":        created,
+		})
+	}
+
+	result := taskRunResult{
+		Created: created,
+		Task:    task,
+	}
+	return successToolResult(
+		fmt.Sprintf("Started task %q in workspace %q.", task.ID, workspaceName),
+		result,
+	)
+}
+
+func (s *Server) taskStatusTool(args map[string]any) toolResult {
+	projectPath, ok := stringArg(args, "path")
+	if !ok {
+		return errorToolResult(`tool "task_status" requires string argument "path"`, nil)
+	}
+	projectPath, err := s.scopedProjectPath(projectPath)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	taskID, ok := stringArg(args, "task_id")
+	if !ok {
+		return errorToolResult(`tool "task_status" requires string argument "task_id"`, nil)
+	}
+
+	workspaceName, created, err := s.app.ResolveOrCreateWorkspaceByProjectPath(projectPath)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	task, err := s.app.TaskStatus(workspaceName, taskID)
+	if err != nil {
+		return errorToolResult(err.Error(), map[string]any{
+			"workspace_name": workspaceName,
+			"created":        created,
+		})
+	}
+
+	result := taskRunResult{
+		Created: created,
+		Task:    task,
+	}
+	return successToolResult(
+		fmt.Sprintf("Task %q is %s.", task.ID, task.State),
+		result,
+	)
+}
+
+func (s *Server) taskListTool(args map[string]any) toolResult {
+	projectPath, ok := stringArg(args, "path")
+	if !ok {
+		return errorToolResult(`tool "task_list" requires string argument "path"`, nil)
+	}
+	projectPath, err := s.scopedProjectPath(projectPath)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+
+	workspaceName, created, err := s.app.ResolveOrCreateWorkspaceByProjectPath(projectPath)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	tasks, err := s.app.TaskList(workspaceName)
+	if err != nil {
+		return errorToolResult(err.Error(), map[string]any{
+			"workspace_name": workspaceName,
+			"created":        created,
+		})
+	}
+
+	result := taskListResult{
+		Created: created,
+		Tasks:   tasks,
+	}
+	return successToolResult(
+		fmt.Sprintf("Loaded %d tasks for workspace %q.", len(tasks), workspaceName),
+		result,
+	)
+}
+
+func (s *Server) taskLogsTool(args map[string]any) toolResult {
+	projectPath, ok := stringArg(args, "path")
+	if !ok {
+		return errorToolResult(`tool "task_logs" requires string argument "path"`, nil)
+	}
+	projectPath, err := s.scopedProjectPath(projectPath)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	taskID, ok := stringArg(args, "task_id")
+	if !ok {
+		return errorToolResult(`tool "task_logs" requires string argument "task_id"`, nil)
+	}
+
+	workspaceName, created, err := s.app.ResolveOrCreateWorkspaceByProjectPath(projectPath)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	logs, err := s.app.TaskLogs(workspaceName, taskID)
+	if err != nil {
+		return errorToolResult(err.Error(), map[string]any{
+			"workspace_name": workspaceName,
+			"created":        created,
+		})
+	}
+
+	result := taskLogsResult{
+		Created: created,
+		Logs:    logs,
+	}
+	return successToolResult(
+		fmt.Sprintf("Loaded logs for task %q.", taskID),
+		result,
+	)
+}
+
+func (s *Server) taskStopTool(args map[string]any) toolResult {
+	projectPath, ok := stringArg(args, "path")
+	if !ok {
+		return errorToolResult(`tool "task_stop" requires string argument "path"`, nil)
+	}
+	projectPath, err := s.scopedProjectPath(projectPath)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	taskID, ok := stringArg(args, "task_id")
+	if !ok {
+		return errorToolResult(`tool "task_stop" requires string argument "task_id"`, nil)
+	}
+
+	workspaceName, created, err := s.app.ResolveOrCreateWorkspaceByProjectPath(projectPath)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	task, err := s.app.StopTask(workspaceName, taskID)
+	if err != nil {
+		return errorToolResult(err.Error(), map[string]any{
+			"workspace_name": workspaceName,
+			"created":        created,
+		})
+	}
+
+	result := taskRunResult{
+		Created: created,
+		Task:    task,
+	}
+	return successToolResult(
+		fmt.Sprintf("Stopped task %q in workspace %q.", task.ID, workspaceName),
 		result,
 	)
 }
