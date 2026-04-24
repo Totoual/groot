@@ -468,6 +468,9 @@ func taskEventPayload(task TaskRun) map[string]any {
 	if task.ExitCode != nil {
 		payload["exit_code"] = *task.ExitCode
 	}
+	if task.FinishedAt != nil {
+		payload["finished_at"] = task.FinishedAt.UTC().Format(time.RFC3339)
+	}
 	if task.CancelReason != "" {
 		payload["cancel_reason"] = task.CancelReason
 	}

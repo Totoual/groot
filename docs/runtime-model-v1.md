@@ -262,6 +262,11 @@ Minimum event fields:
 - `message`
 - `payload`
 
+Event time semantics:
+
+- `timestamp` = when Groot emitted the event record
+- `payload.finished_at` = when the task actually finished, if known
+
 Minimum event operations:
 
 - `list`
@@ -273,6 +278,7 @@ V1 event rules:
 - event streaming can come after event creation and listing are reliable
 - task start events are emitted when Groot starts the task run
 - task terminal events are emitted once when Groot observes the final state through status, list, or logs
+- `task.cancelled` is the explicit cancellation signal; no extra boolean cancellation flag is needed
 - this avoids adding a daemon or supervisor service before services exist
 
 ## App-Layer API Shape

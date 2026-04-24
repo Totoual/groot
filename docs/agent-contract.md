@@ -458,7 +458,13 @@ Current task event kinds:
 - `task.failed`
 - `task.cancelled`
 
+Event time semantics:
+
+- `timestamp` = when Groot emitted the event
+- `payload.finished_at` = when the task actually finished, if known
+
 Task terminal events are emitted once when Groot observes the final task state through `task_status`, `task_list`, or `task_logs`.
+`task.cancelled` is the explicit cancellation signal; no extra cancellation boolean is added to the payload.
 
 ## Available Resources
 

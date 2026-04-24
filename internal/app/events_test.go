@@ -32,6 +32,9 @@ func TestTaskLifecycleEventsArePersisted(t *testing.T) {
 	if events[0].Kind != EventKindTaskExited {
 		t.Fatalf("newest event kind = %q, want %q", events[0].Kind, EventKindTaskExited)
 	}
+	if _, ok := events[0].Payload["finished_at"].(string); !ok {
+		t.Fatalf("expected terminal event to include finished_at, got %#v", events[0].Payload)
+	}
 	if events[1].Kind != EventKindTaskStarted {
 		t.Fatalf("oldest event kind = %q, want %q", events[1].Kind, EventKindTaskStarted)
 	}
