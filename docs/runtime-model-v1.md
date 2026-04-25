@@ -246,6 +246,7 @@ Example event kinds:
 - `task.started`
 - `task.exited`
 - `task.failed`
+- `task.cancelled`
 - `service.started`
 - `service.stopped`
 - `service.unhealthy`
@@ -261,6 +262,11 @@ Minimum event fields:
 - `message`
 - `payload`
 
+Event time semantics:
+
+- `timestamp` = when Groot emitted the event record
+- `payload.finished_at` = when the task actually finished, if known
+
 Minimum event operations:
 
 - `list`
@@ -270,6 +276,10 @@ V1 event rules:
 
 - event persistence is more important than live streaming
 - event streaming can come after event creation and listing are reliable
+- task start events are emitted when Groot starts the task run
+- task terminal events are emitted once when Groot observes the final state through status, list, or logs
+- `task.cancelled` is the explicit cancellation signal; no extra boolean cancellation flag is needed
+- this avoids adding a daemon or supervisor service before services exist
 
 ## App-Layer API Shape
 
@@ -280,13 +290,13 @@ Illustrative app-layer surface:
 - `TaskStatus(workspace, taskID)`
 - `TaskList(workspace)`
 - `TaskLogs(workspace, taskID)`
+- `EventList(workspace, options)`
 - `ServiceStart(workspace, name)`
 - `ServiceStop(workspace, name)`
 - `ServiceRestart(workspace, name)`
 - `ServiceStatus(workspace, name)`
 - `ServiceList(workspace)`
 - `ServiceLogs(workspace, name)`
-- `EventList(workspace, cursor)`
 
 These are app-layer primitives first.
 
@@ -301,6 +311,7 @@ groot task start <path> <name-or-command>
 groot task status <path> <task-id>
 groot task list <path>
 groot task logs <path> <task-id>
+groot event list <path> [--limit n]
 
 groot service start <path> <name>
 groot service stop <path> <name>
@@ -322,8 +333,9 @@ MCP task tools:
 - `task_status`
 - `task_list`
 - `task_logs`
+- `event_list`
 
-Illustrative future MCP service/event tools:
+Illustrative future MCP service tools:
 
 - `service_start`
 - `service_stop`
@@ -331,7 +343,6 @@ Illustrative future MCP service/event tools:
 - `service_status`
 - `service_list`
 - `service_logs`
-- `event_list`
 
 Likely MCP resources:
 

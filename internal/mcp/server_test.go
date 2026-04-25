@@ -59,14 +59,14 @@ func TestServerHandleInitializeAndListTools(t *testing.T) {
 	if err := json.Unmarshal(response, &listResponse); err != nil {
 		t.Fatalf("Unmarshal tools/list response returned error: %v", err)
 	}
-	if len(listResponse.Result.Tools) != 15 {
-		t.Fatalf("len(tools) = %d, want %d", len(listResponse.Result.Tools), 15)
+	if len(listResponse.Result.Tools) != 16 {
+		t.Fatalf("len(tools) = %d, want %d", len(listResponse.Result.Tools), 16)
 	}
 	names := make([]string, 0, len(listResponse.Result.Tools))
 	for _, tool := range listResponse.Result.Tools {
 		names = append(names, tool.Name)
 	}
-	for _, want := range []string{"task_start", "task_status", "task_list", "task_logs", "task_stop"} {
+	for _, want := range []string{"task_start", "task_status", "task_list", "task_logs", "task_stop", "event_list"} {
 		if !slicesContainsString(names, want) {
 			t.Fatalf("missing tool %q in %#v", want, names)
 		}
@@ -1200,6 +1200,56 @@ func TestServerTaskStopCancelsRunningTask(t *testing.T) {
 	task := decodeTaskRunResult(t, response).Task
 	if task.State != app.TaskRunCancelled {
 		t.Fatalf("task state = %q, want %q", task.State, app.TaskRunCancelled)
+	}
+}
+
+func TestServerEventListReturnsTaskLifecycleEvents(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+	projectPath := filepath.Join(root, "repos", "crawlly")
+	if err := os.MkdirAll(projectPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := a.CreateNewWorkspace("crawlly"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+	if err := a.BindWorkspace("crawlly", projectPath); err != nil {
+		t.Fatalf("BindWorkspace returned error: %v", err)
+	}
+
+	server := NewServer(a)
+	start := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"task_start","arguments":{"path":"` + projectPath + `","name":"echo","command":"/bin/sh","args":["-c","printf ok"]}}}`
+	response, err := server.HandleMessage([]byte(start))
+	if err != nil {
+		t.Fatalf("HandleMessage task_start returned error: %v", err)
+	}
+	taskID := decodeTaskRunResult(t, response).Task.ID
+	waitForMCPTaskState(t, server, projectPath, taskID, app.TaskRunSucceeded)
+
+	list := `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"event_list","arguments":{"path":"` + projectPath + `"}}}`
+	response, err = server.HandleMessage([]byte(list))
+	if err != nil {
+		t.Fatalf("HandleMessage event_list returned error: %v", err)
+	}
+	var rpc struct {
+		Result struct {
+			IsError           bool `json:"isError"`
+			StructuredContent struct {
+				Events []app.RuntimeEvent `json:"events"`
+			} `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(response, &rpc); err != nil {
+		t.Fatalf("Unmarshal event_list returned error: %v", err)
+	}
+	if rpc.Result.IsError {
+		t.Fatal("expected event_list success result")
+	}
+	if len(rpc.Result.StructuredContent.Events) != 2 {
+		t.Fatalf("expected 2 events, got %#v", rpc.Result.StructuredContent.Events)
+	}
+	if rpc.Result.StructuredContent.Events[0].Kind != app.EventKindTaskExited {
+		t.Fatalf("newest event kind = %q, want %q", rpc.Result.StructuredContent.Events[0].Kind, app.EventKindTaskExited)
 	}
 }
 
