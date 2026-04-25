@@ -157,6 +157,21 @@ type taskLogsResult struct {
 	Logs    app.TaskRunLogs `json:"logs"`
 }
 
+type serviceStatusResult struct {
+	Created bool              `json:"created"`
+	Service app.ServiceStatus `json:"service"`
+}
+
+type serviceListResult struct {
+	Created  bool                `json:"created"`
+	Services []app.ServiceStatus `json:"services"`
+}
+
+type serviceLogsResult struct {
+	Created bool            `json:"created"`
+	Logs    app.ServiceLogs `json:"logs"`
+}
+
 type eventListResult struct {
 	Created bool               `json:"created"`
 	Events  []app.RuntimeEvent `json:"events"`
@@ -812,6 +827,137 @@ func (s *Server) tools() []toolDefinition {
 			},
 		},
 		{
+			Name:        "service_start",
+			Description: "Resolve or create a workspace from a project path and start one declared service inside the strict Groot runtime.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"path": map[string]any{
+						"type":        "string",
+						"description": "Absolute or ~/ project path.",
+					},
+					"name": map[string]any{
+						"type":        "string",
+						"description": "Declared service name from the manifest.",
+					},
+				},
+				"required":             []string{"path", "name"},
+				"additionalProperties": false,
+			},
+			OutputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"created": map[string]any{"type": "boolean"},
+					"service": map[string]any{"type": "object"},
+				},
+				"required": []string{"created", "service"},
+			},
+		},
+		{
+			Name:        "service_status",
+			Description: "Resolve or create a workspace from a project path and return one declared service status.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"path": map[string]any{
+						"type":        "string",
+						"description": "Absolute or ~/ project path.",
+					},
+					"name": map[string]any{
+						"type":        "string",
+						"description": "Declared service name from the manifest.",
+					},
+				},
+				"required":             []string{"path", "name"},
+				"additionalProperties": false,
+			},
+			OutputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"created": map[string]any{"type": "boolean"},
+					"service": map[string]any{"type": "object"},
+				},
+				"required": []string{"created", "service"},
+			},
+		},
+		{
+			Name:        "service_list",
+			Description: "Resolve or create a workspace from a project path and list declared services with their current state.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"path": map[string]any{
+						"type":        "string",
+						"description": "Absolute or ~/ project path.",
+					},
+				},
+				"required":             []string{"path"},
+				"additionalProperties": false,
+			},
+			OutputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"created":  map[string]any{"type": "boolean"},
+					"services": map[string]any{"type": "array"},
+				},
+				"required": []string{"created", "services"},
+			},
+		},
+		{
+			Name:        "service_logs",
+			Description: "Resolve or create a workspace from a project path and return captured stdout/stderr for one declared service.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"path": map[string]any{
+						"type":        "string",
+						"description": "Absolute or ~/ project path.",
+					},
+					"name": map[string]any{
+						"type":        "string",
+						"description": "Declared service name from the manifest.",
+					},
+				},
+				"required":             []string{"path", "name"},
+				"additionalProperties": false,
+			},
+			OutputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"created": map[string]any{"type": "boolean"},
+					"logs":    map[string]any{"type": "object"},
+				},
+				"required": []string{"created", "logs"},
+			},
+		},
+		{
+			Name:        "service_stop",
+			Description: "Resolve or create a workspace from a project path and stop one declared running service.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"path": map[string]any{
+						"type":        "string",
+						"description": "Absolute or ~/ project path.",
+					},
+					"name": map[string]any{
+						"type":        "string",
+						"description": "Declared service name from the manifest.",
+					},
+				},
+				"required":             []string{"path", "name"},
+				"additionalProperties": false,
+			},
+			OutputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"created": map[string]any{"type": "boolean"},
+					"service": map[string]any{"type": "object"},
+				},
+				"required": []string{"created", "service"},
+			},
+		},
+		{
 			Name:        "event_list",
 			Description: "Resolve or create a workspace from a project path and list persisted runtime events.",
 			InputSchema: map[string]any{
@@ -903,6 +1049,16 @@ func (s *Server) callTool(params toolCallParams) toolResult {
 		return s.taskLogsTool(params.Arguments)
 	case "task_stop":
 		return s.taskStopTool(params.Arguments)
+	case "service_start":
+		return s.serviceStartTool(params.Arguments)
+	case "service_status":
+		return s.serviceStatusTool(params.Arguments)
+	case "service_list":
+		return s.serviceListTool(params.Arguments)
+	case "service_logs":
+		return s.serviceLogsTool(params.Arguments)
+	case "service_stop":
+		return s.serviceStopTool(params.Arguments)
 	case "event_list":
 		return s.eventListTool(params.Arguments)
 	default:
@@ -1624,6 +1780,177 @@ func (s *Server) taskStopTool(args map[string]any) toolResult {
 	}
 	return successToolResult(
 		fmt.Sprintf("Stopped task %q in workspace %q.", task.ID, workspaceName),
+		result,
+	)
+}
+
+func (s *Server) serviceStartTool(args map[string]any) toolResult {
+	projectPath, ok := stringArg(args, "path")
+	if !ok {
+		return errorToolResult(`tool "service_start" requires string argument "path"`, nil)
+	}
+	projectPath, err := s.scopedProjectPath(projectPath)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	serviceName, ok := stringArg(args, "name")
+	if !ok {
+		return errorToolResult(`tool "service_start" requires string argument "name"`, nil)
+	}
+
+	workspaceName, created, err := s.app.ResolveOrCreateWorkspaceByProjectPath(projectPath)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	service, err := s.app.StartService(workspaceName, serviceName)
+	if err != nil {
+		return errorToolResult(err.Error(), map[string]any{
+			"workspace_name": workspaceName,
+			"created":        created,
+		})
+	}
+	result := serviceStatusResult{
+		Created: created,
+		Service: service,
+	}
+	return successToolResult(
+		fmt.Sprintf("Started service %q in workspace %q.", service.Name, workspaceName),
+		result,
+	)
+}
+
+func (s *Server) serviceStatusTool(args map[string]any) toolResult {
+	projectPath, ok := stringArg(args, "path")
+	if !ok {
+		return errorToolResult(`tool "service_status" requires string argument "path"`, nil)
+	}
+	projectPath, err := s.scopedProjectPath(projectPath)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	serviceName, ok := stringArg(args, "name")
+	if !ok {
+		return errorToolResult(`tool "service_status" requires string argument "name"`, nil)
+	}
+
+	workspaceName, created, err := s.app.ResolveOrCreateWorkspaceByProjectPath(projectPath)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	service, err := s.app.ServiceStatus(workspaceName, serviceName)
+	if err != nil {
+		return errorToolResult(err.Error(), map[string]any{
+			"workspace_name": workspaceName,
+			"created":        created,
+		})
+	}
+	result := serviceStatusResult{
+		Created: created,
+		Service: service,
+	}
+	return successToolResult(
+		fmt.Sprintf("Service %q is %s.", service.Name, service.State),
+		result,
+	)
+}
+
+func (s *Server) serviceListTool(args map[string]any) toolResult {
+	projectPath, ok := stringArg(args, "path")
+	if !ok {
+		return errorToolResult(`tool "service_list" requires string argument "path"`, nil)
+	}
+	projectPath, err := s.scopedProjectPath(projectPath)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+
+	workspaceName, created, err := s.app.ResolveOrCreateWorkspaceByProjectPath(projectPath)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	services, err := s.app.ServiceList(workspaceName)
+	if err != nil {
+		return errorToolResult(err.Error(), map[string]any{
+			"workspace_name": workspaceName,
+			"created":        created,
+		})
+	}
+	result := serviceListResult{
+		Created:  created,
+		Services: services,
+	}
+	return successToolResult(
+		fmt.Sprintf("Loaded %d services for workspace %q.", len(services), workspaceName),
+		result,
+	)
+}
+
+func (s *Server) serviceLogsTool(args map[string]any) toolResult {
+	projectPath, ok := stringArg(args, "path")
+	if !ok {
+		return errorToolResult(`tool "service_logs" requires string argument "path"`, nil)
+	}
+	projectPath, err := s.scopedProjectPath(projectPath)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	serviceName, ok := stringArg(args, "name")
+	if !ok {
+		return errorToolResult(`tool "service_logs" requires string argument "name"`, nil)
+	}
+
+	workspaceName, created, err := s.app.ResolveOrCreateWorkspaceByProjectPath(projectPath)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	logs, err := s.app.ServiceLogs(workspaceName, serviceName)
+	if err != nil {
+		return errorToolResult(err.Error(), map[string]any{
+			"workspace_name": workspaceName,
+			"created":        created,
+		})
+	}
+	result := serviceLogsResult{
+		Created: created,
+		Logs:    logs,
+	}
+	return successToolResult(
+		fmt.Sprintf("Loaded logs for service %q.", serviceName),
+		result,
+	)
+}
+
+func (s *Server) serviceStopTool(args map[string]any) toolResult {
+	projectPath, ok := stringArg(args, "path")
+	if !ok {
+		return errorToolResult(`tool "service_stop" requires string argument "path"`, nil)
+	}
+	projectPath, err := s.scopedProjectPath(projectPath)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	serviceName, ok := stringArg(args, "name")
+	if !ok {
+		return errorToolResult(`tool "service_stop" requires string argument "name"`, nil)
+	}
+
+	workspaceName, created, err := s.app.ResolveOrCreateWorkspaceByProjectPath(projectPath)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	service, err := s.app.StopService(workspaceName, serviceName)
+	if err != nil {
+		return errorToolResult(err.Error(), map[string]any{
+			"workspace_name": workspaceName,
+			"created":        created,
+		})
+	}
+	result := serviceStatusResult{
+		Created: created,
+		Service: service,
+	}
+	return successToolResult(
+		fmt.Sprintf("Stopped service %q in workspace %q.", service.Name, workspaceName),
 		result,
 	)
 }

@@ -249,7 +249,7 @@ Example event kinds:
 - `task.cancelled`
 - `service.started`
 - `service.stopped`
-- `service.unhealthy`
+- `service.failed`
 
 Minimum event fields:
 
@@ -265,7 +265,7 @@ Minimum event fields:
 Event time semantics:
 
 - `timestamp` = when Groot emitted the event record
-- `payload.finished_at` = when the task actually finished, if known
+- `payload.finished_at` = when the task or service actually finished, if known
 
 Minimum event operations:
 
@@ -279,6 +279,9 @@ V1 event rules:
 - task start events are emitted when Groot starts the task run
 - task terminal events are emitted once when Groot observes the final state through status, list, or logs
 - `task.cancelled` is the explicit cancellation signal; no extra boolean cancellation flag is needed
+- service start events are emitted when Groot starts the service process
+- service stop events are emitted when Groot stops the service explicitly
+- service failed events are emitted once when Groot observes an exited service through status, list, or logs
 - this avoids adding a daemon or supervisor service before services exist
 
 ## App-Layer API Shape
@@ -293,7 +296,6 @@ Illustrative app-layer surface:
 - `EventList(workspace, options)`
 - `ServiceStart(workspace, name)`
 - `ServiceStop(workspace, name)`
-- `ServiceRestart(workspace, name)`
 - `ServiceStatus(workspace, name)`
 - `ServiceList(workspace)`
 - `ServiceLogs(workspace, name)`
@@ -326,7 +328,7 @@ The important point is that CLI maps to structured runtime objects, not shell-on
 
 ## MCP Mapping
 
-MCP task tools:
+MCP task and event tools:
 
 - `task_start`
 - `task_stop`
@@ -335,11 +337,10 @@ MCP task tools:
 - `task_logs`
 - `event_list`
 
-Illustrative future MCP service tools:
+Current MCP service tools:
 
 - `service_start`
 - `service_stop`
-- `service_restart`
 - `service_status`
 - `service_list`
 - `service_logs`

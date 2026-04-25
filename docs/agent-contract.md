@@ -66,12 +66,13 @@ The current MCP surface is intentionally small:
 - export the current workspace contract as portable structured data
 - import that exported contract onto an existing local repo path
 - start, inspect, list, stop, and read logs for workspace-owned task runs
+- start, inspect, list, stop, and read logs for manifest-declared workspace-owned services
 - list persisted task lifecycle events
 
 It does not yet cover:
 
 - workspace creation by explicit name
-- services or streaming logs
+- streaming logs beyond point-in-time reads
 - manifest planning / preview / approval flows
 
 ## Available Tools
@@ -458,13 +459,111 @@ Current task event kinds:
 - `task.failed`
 - `task.cancelled`
 
+Current service event kinds:
+
+- `service.started`
+- `service.stopped`
+- `service.failed`
+
 Event time semantics:
 
 - `timestamp` = when Groot emitted the event
-- `payload.finished_at` = when the task actually finished, if known
+- `payload.finished_at` = when the task or service actually finished, if known
 
 Task terminal events are emitted once when Groot observes the final task state through `task_status`, `task_list`, or `task_logs`.
 `task.cancelled` is the explicit cancellation signal; no extra cancellation boolean is added to the payload.
+Service failed events are emitted once when Groot observes the final service state through `service_status`, `service_list`, or `service_logs`.
+
+### `service_start`
+
+Start one declared service for a project path.
+
+Input:
+
+```json
+{
+  "path": "/Users/example/Documents/the_grime_tcg",
+  "name": "api"
+}
+```
+
+Structured result:
+
+- `created`
+- `service`
+
+### `service_status`
+
+Return the current status for one declared service.
+
+Input:
+
+```json
+{
+  "path": "/Users/example/Documents/the_grime_tcg",
+  "name": "api"
+}
+```
+
+Structured result:
+
+- `created`
+- `service`
+
+### `service_list`
+
+List declared services for a project path.
+
+Input:
+
+```json
+{
+  "path": "/Users/example/Documents/the_grime_tcg"
+}
+```
+
+Structured result:
+
+- `created`
+- `services`
+
+### `service_logs`
+
+Return captured stdout and stderr for one declared service.
+
+Input:
+
+```json
+{
+  "path": "/Users/example/Documents/the_grime_tcg",
+  "name": "api"
+}
+```
+
+Structured result:
+
+- `created`
+- `logs.service`
+- `logs.stdout`
+- `logs.stderr`
+
+### `service_stop`
+
+Stop one declared running service.
+
+Input:
+
+```json
+{
+  "path": "/Users/example/Documents/the_grime_tcg",
+  "name": "api"
+}
+```
+
+Structured result:
+
+- `created`
+- `service`
 
 ## Available Resources
 

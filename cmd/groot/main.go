@@ -41,6 +41,7 @@ func main() {
 		&commands.InitCmd{},
 		&commands.MCPCmd{},
 		&commands.OpenCmd{},
+		&commands.ServiceCmd{},
 		&commands.ShellHookCmd{},
 		&commands.StatusCmd{},
 		&commands.TaskCmd{},
