@@ -130,6 +130,8 @@ Phase 1 is about proving that workspace-first local runtime is genuinely better 
 - [ ] Expose logs, state, and workspace metadata in a predictable way for debugging.
 - [ ] Define recovery behavior for partially configured or broken workspaces.
 - [ ] Keep validating Groot in day-to-day use across multiple real repos.
+- [x] Move runtime CLI operations to a workspace-first model for tasks, services, and events.
+- [x] Add human-friendly declaration commands so tasks and services do not require manual manifest editing.
 
 ## Phase 1.5: Groot MCP Control Plane
 
@@ -174,6 +176,8 @@ The goal is to make Groot usable by external agents through a stable, scoped, in
 - [ ] Ensure `ws exec` works cleanly for non-interactive commands and long-running processes.
 - [ ] Add deterministic workspace resolution from a repo path for agent use.
 - [ ] Keep CLI and MCP surfaces backed by the same runtime core and data model.
+- [x] Add MCP declaration tools for task/service manifest specs.
+- [x] Let MCP runtime tools use the active project scope by default when one project is selected.
 
 ## Phase 2: Intent Compiler And Planning Surface
 

@@ -43,6 +43,30 @@ groot ws unbind <name>
 
 Use `groot ws ...` when you want explicit workspace-by-name control instead of the normal path-first UX.
 
+Runtime commands are workspace-first:
+
+```bash
+groot task add <workspace> <name> [--cwd dir] -- <cmd> [args...]
+groot task remove <workspace> <name>
+groot task list-declared <workspace>
+groot task start <workspace> [--task name] [--name run-name] [--cwd dir] <cmd> [args...]
+groot task status <workspace> <task-id>
+groot task list <workspace>
+groot task logs <workspace> <task-id>
+groot task stop <workspace> <task-id>
+
+groot service add <workspace> <name> [--cwd dir] [--restart policy] -- <cmd> [args...]
+groot service remove <workspace> <name>
+groot service list-declared <workspace>
+groot service start <workspace> <name>
+groot service status <workspace> <name>
+groot service list <workspace>
+groot service logs <workspace> <name>
+groot service stop <workspace> <name>
+
+groot event list <workspace> [--limit n]
+```
+
 ## Shell Hook
 
 To make integrated terminals automatically re-enter the strict Groot runtime after `ws open`, install the shell hook into your shell rc file.
@@ -167,8 +191,8 @@ Current meaning:
 
 - `packages` are the active toolchain declarations used by runtime ownership, install, and exec flows
 - toolchains that support alias or series resolution are normalized to concrete versions before Groot writes them into the manifest
-- `tasks` are optional manifest declarations that can be started as tracked task runs
-- `services` are optional manifest declarations for long-running named runtime resources
+- `tasks` are optional manifest declarations; humans and agents should normally mutate them through `task add/remove` or MCP declaration tools instead of hand-editing JSON
+- `services` are optional manifest declarations; humans and agents should normally mutate them through `service add/remove` or MCP declaration tools instead of hand-editing JSON
 - live task/service execution state belongs under the workspace `state/` directory, not in the manifest
 
 ## Runtime Behavior Notes
@@ -202,12 +226,16 @@ Current behavior details:
 Tasks:
 
 - tasks are tracked execution records, not long-running named services
+- runtime task commands are workspace-first, not path-first
+- declared task specs can be added, removed, and listed without hand-editing the manifest
 - each task run gets its own stdout/stderr logs under the workspace logs directory
 - terminal task events are emitted when Groot observes final state through task status, list, or logs
 
 Services:
 
 - services are manifest-declared only in V1
+- runtime service commands are workspace-first, not path-first
+- declared service specs can be added, removed, and listed without hand-editing the manifest
 - services are current named runtime resources, not historical run records
 - each service has one current stdout/stderr log pair under the workspace logs directory
 - service events currently cover only `service.started`, `service.stopped`, and `service.failed`
@@ -216,6 +244,7 @@ Services:
 
 Events:
 
+- runtime event commands are workspace-first, not path-first
 - `timestamp` is when Groot emitted the event record
 - `payload.finished_at` is when the task or service actually finished, if known
 
