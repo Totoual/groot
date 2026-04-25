@@ -283,16 +283,16 @@ That bridge is defined in [docs/runtime-model-v1.md](/Users/aristotelistriantafy
   - `groot event list`
 - [x] Expose task event lifecycle through MCP from the same app-layer primitives with:
   - `event_list`
-- [ ] Add first-class service resources in the app layer with:
+- [x] Add first-class service resources in the app layer with:
   - start
   - stop
-  - restart
   - status
   - list
   - logs
+  - restart stays deferred
 - [x] Expose task lifecycle through MCP from the same app-layer primitives.
-- [ ] Add persisted event records for service lifecycle changes before adding streaming.
-- [ ] Expose service lifecycle through CLI and MCP from the same app-layer primitives.
+- [x] Add persisted event records for service lifecycle changes before adding streaming.
+- [x] Expose service lifecycle through CLI and MCP from the same app-layer primitives.
 - [ ] Keep workspace lifecycle separate from execution.
 - [ ] Keep execution separate from installation.
 - [ ] Keep installation separate from storage.

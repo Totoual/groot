@@ -100,6 +100,64 @@ func TestGoInstallerEnsureInstalledFromCachedArchive(t *testing.T) {
 	}
 }
 
+func TestLatestGoPatchVersion(t *testing.T) {
+	releases := []goRelease{
+		{Version: "go1.26.1", Stable: true},
+		{Version: "go1.26.2", Stable: true},
+		{Version: "go1.26rc1", Stable: false},
+		{Version: "go1.25.7", Stable: true},
+	}
+
+	got, err := latestGoPatchVersion(releases, "1.26")
+	if err != nil {
+		t.Fatalf("latestGoPatchVersion returned error: %v", err)
+	}
+	if got != "1.26.2" {
+		t.Fatalf("latestGoPatchVersion = %q, want %q", got, "1.26.2")
+	}
+}
+
+func TestLatestStableGoVersion(t *testing.T) {
+	releases := []goRelease{
+		{Version: "go1.25.7", Stable: true},
+		{Version: "go1.26.2", Stable: true},
+		{Version: "go1.27rc1", Stable: false},
+	}
+
+	got, err := latestStableGoVersion(releases)
+	if err != nil {
+		t.Fatalf("latestStableGoVersion returned error: %v", err)
+	}
+	if got != "1.26.2" {
+		t.Fatalf("latestStableGoVersion = %q, want %q", got, "1.26.2")
+	}
+}
+
+func TestGoInstallerResolveVersionFallsBackToInstalledSeries(t *testing.T) {
+	g := GoInstaller{}
+	root := t.TempDir()
+	ic := &itoolchain.InstallContext{ToolchainDir: filepath.Join(root, "toolchains")}
+
+	installedDir := filepath.Join(ic.ToolchainDir, "go", "1.26.1")
+	if err := os.MkdirAll(installedDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+
+	oldReadURL := goReadURL
+	goReadURL = func(string) ([]byte, error) {
+		return nil, os.ErrNotExist
+	}
+	defer func() { goReadURL = oldReadURL }()
+
+	got, err := g.ResolveVersion(ic, "1.26")
+	if err != nil {
+		t.Fatalf("ResolveVersion returned error: %v", err)
+	}
+	if got != "1.26.1" {
+		t.Fatalf("ResolveVersion = %q, want %q", got, "1.26.1")
+	}
+}
+
 func TestNodeInstallerMetadataAndErrors(t *testing.T) {
 	n := NodeInstaller{}
 	ic := &itoolchain.InstallContext{ToolchainDir: "/toolchains", GOOS: "darwin", GOARCH: "arm64"}

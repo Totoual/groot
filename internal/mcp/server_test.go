@@ -59,14 +59,14 @@ func TestServerHandleInitializeAndListTools(t *testing.T) {
 	if err := json.Unmarshal(response, &listResponse); err != nil {
 		t.Fatalf("Unmarshal tools/list response returned error: %v", err)
 	}
-	if len(listResponse.Result.Tools) != 16 {
-		t.Fatalf("len(tools) = %d, want %d", len(listResponse.Result.Tools), 16)
+	if len(listResponse.Result.Tools) != 21 {
+		t.Fatalf("len(tools) = %d, want %d", len(listResponse.Result.Tools), 21)
 	}
 	names := make([]string, 0, len(listResponse.Result.Tools))
 	for _, tool := range listResponse.Result.Tools {
 		names = append(names, tool.Name)
 	}
-	for _, want := range []string{"task_start", "task_status", "task_list", "task_logs", "task_stop", "event_list"} {
+	for _, want := range []string{"task_start", "task_status", "task_list", "task_logs", "task_stop", "service_start", "service_status", "service_list", "service_logs", "service_stop", "event_list"} {
 		if !slicesContainsString(names, want) {
 			t.Fatalf("missing tool %q in %#v", want, names)
 		}
@@ -1203,6 +1203,139 @@ func TestServerTaskStopCancelsRunningTask(t *testing.T) {
 	}
 }
 
+func TestServerServiceToolsStartStatusListLogsAndStop(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+	projectPath := filepath.Join(root, "repos", "crawlly")
+	if err := os.MkdirAll(projectPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := a.CreateNewWorkspace("crawlly"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+	if err := a.BindWorkspace("crawlly", projectPath); err != nil {
+		t.Fatalf("BindWorkspace returned error: %v", err)
+	}
+	writeServiceManifestForMCPTest(t, a, projectPath, []app.ServiceSpec{
+		{Name: "api", Command: []string{"/bin/sh", "-c", "printf out; printf err >&2; sleep 30"}},
+	})
+
+	server := NewServer(a)
+	start := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"service_start","arguments":{"path":"` + projectPath + `","name":"api"}}}`
+	response, err := server.HandleMessage([]byte(start))
+	if err != nil {
+		t.Fatalf("HandleMessage service_start returned error: %v", err)
+	}
+	service := decodeServiceStatusResult(t, response).Service
+	if service.State != app.ServiceRunning {
+		t.Fatalf("service state = %q, want %q", service.State, app.ServiceRunning)
+	}
+
+	status := `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"service_status","arguments":{"path":"` + projectPath + `","name":"api"}}}`
+	response, err = server.HandleMessage([]byte(status))
+	if err != nil {
+		t.Fatalf("HandleMessage service_status returned error: %v", err)
+	}
+	service = decodeServiceStatusResult(t, response).Service
+	if service.State != app.ServiceRunning {
+		t.Fatalf("service state = %q, want %q", service.State, app.ServiceRunning)
+	}
+
+	waitForMCPServiceLogs(t, server, projectPath, "api", "out", "err")
+	logs := `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"service_logs","arguments":{"path":"` + projectPath + `","name":"api"}}}`
+	response, err = server.HandleMessage([]byte(logs))
+	if err != nil {
+		t.Fatalf("HandleMessage service_logs returned error: %v", err)
+	}
+	var logsRPC struct {
+		Result struct {
+			IsError           bool `json:"isError"`
+			StructuredContent struct {
+				Logs app.ServiceLogs `json:"logs"`
+			} `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(response, &logsRPC); err != nil {
+		t.Fatalf("Unmarshal service_logs returned error: %v", err)
+	}
+	if logsRPC.Result.IsError {
+		t.Fatal("expected service_logs success result")
+	}
+	if logsRPC.Result.StructuredContent.Logs.Stdout != "out" || logsRPC.Result.StructuredContent.Logs.Stderr != "err" {
+		t.Fatalf("unexpected service logs: %#v", logsRPC.Result.StructuredContent.Logs)
+	}
+
+	list := `{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"service_list","arguments":{"path":"` + projectPath + `"}}}`
+	response, err = server.HandleMessage([]byte(list))
+	if err != nil {
+		t.Fatalf("HandleMessage service_list returned error: %v", err)
+	}
+	var listRPC struct {
+		Result struct {
+			IsError           bool `json:"isError"`
+			StructuredContent struct {
+				Services []app.ServiceStatus `json:"services"`
+			} `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(response, &listRPC); err != nil {
+		t.Fatalf("Unmarshal service_list returned error: %v", err)
+	}
+	if listRPC.Result.IsError {
+		t.Fatal("expected service_list success result")
+	}
+	if len(listRPC.Result.StructuredContent.Services) != 1 || listRPC.Result.StructuredContent.Services[0].Name != "api" {
+		t.Fatalf("unexpected service_list result: %#v", listRPC.Result.StructuredContent.Services)
+	}
+
+	stop := `{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"service_stop","arguments":{"path":"` + projectPath + `","name":"api"}}}`
+	response, err = server.HandleMessage([]byte(stop))
+	if err != nil {
+		t.Fatalf("HandleMessage service_stop returned error: %v", err)
+	}
+	service = decodeServiceStatusResult(t, response).Service
+	if service.State != app.ServiceStopped {
+		t.Fatalf("service state = %q, want %q", service.State, app.ServiceStopped)
+	}
+}
+
+func TestServerServiceToolsRespectScope(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+	allowedPath := filepath.Join(root, "repos", "allowed")
+	otherPath := filepath.Join(root, "repos", "other")
+	if err := os.MkdirAll(allowedPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll allowed returned error: %v", err)
+	}
+	if err := os.MkdirAll(otherPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll other returned error: %v", err)
+	}
+
+	server := NewScopedServer(a, []string{allowedPath})
+	request := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"service_list","arguments":{"path":"` + otherPath + `"}}}`
+	response, err := server.HandleMessage([]byte(request))
+	if err != nil {
+		t.Fatalf("HandleMessage returned error: %v", err)
+	}
+	var rpc struct {
+		Result struct {
+			IsError bool `json:"isError"`
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(response, &rpc); err != nil {
+		t.Fatalf("Unmarshal returned error: %v", err)
+	}
+	if !rpc.Result.IsError {
+		t.Fatal("expected service_list to fail outside scope")
+	}
+	if len(rpc.Result.Content) == 0 || !strings.Contains(rpc.Result.Content[0].Text, "outside the MCP scope") {
+		t.Fatalf("unexpected error content: %#v", rpc.Result.Content)
+	}
+}
+
 func TestServerEventListReturnsTaskLifecycleEvents(t *testing.T) {
 	root := t.TempDir()
 	a := app.NewApp(root)
@@ -1250,6 +1383,59 @@ func TestServerEventListReturnsTaskLifecycleEvents(t *testing.T) {
 	}
 	if rpc.Result.StructuredContent.Events[0].Kind != app.EventKindTaskExited {
 		t.Fatalf("newest event kind = %q, want %q", rpc.Result.StructuredContent.Events[0].Kind, app.EventKindTaskExited)
+	}
+}
+
+func TestServerEventListReturnsServiceLifecycleEvents(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+	projectPath := filepath.Join(root, "repos", "crawlly")
+	if err := os.MkdirAll(projectPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := a.CreateNewWorkspace("crawlly"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+	if err := a.BindWorkspace("crawlly", projectPath); err != nil {
+		t.Fatalf("BindWorkspace returned error: %v", err)
+	}
+	writeServiceManifestForMCPTest(t, a, projectPath, []app.ServiceSpec{
+		{Name: "api", Command: []string{"/bin/sh", "-c", "sleep 30"}},
+	})
+
+	server := NewServer(a)
+	start := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"service_start","arguments":{"path":"` + projectPath + `","name":"api"}}}`
+	if _, err := server.HandleMessage([]byte(start)); err != nil {
+		t.Fatalf("HandleMessage service_start returned error: %v", err)
+	}
+	stop := `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"service_stop","arguments":{"path":"` + projectPath + `","name":"api"}}}`
+	if _, err := server.HandleMessage([]byte(stop)); err != nil {
+		t.Fatalf("HandleMessage service_stop returned error: %v", err)
+	}
+	list := `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"event_list","arguments":{"path":"` + projectPath + `"}}}`
+	response, err := server.HandleMessage([]byte(list))
+	if err != nil {
+		t.Fatalf("HandleMessage event_list returned error: %v", err)
+	}
+	var rpc struct {
+		Result struct {
+			IsError           bool `json:"isError"`
+			StructuredContent struct {
+				Events []app.RuntimeEvent `json:"events"`
+			} `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(response, &rpc); err != nil {
+		t.Fatalf("Unmarshal event_list returned error: %v", err)
+	}
+	if rpc.Result.IsError {
+		t.Fatal("expected event_list success result")
+	}
+	if len(rpc.Result.StructuredContent.Events) < 2 {
+		t.Fatalf("expected at least 2 events, got %#v", rpc.Result.StructuredContent.Events)
+	}
+	if rpc.Result.StructuredContent.Events[0].Kind != app.EventKindServiceStopped {
+		t.Fatalf("newest event kind = %q, want %q", rpc.Result.StructuredContent.Events[0].Kind, app.EventKindServiceStopped)
 	}
 }
 
@@ -1326,6 +1512,23 @@ func decodeTaskRunResult(t *testing.T, response []byte) taskRunResult {
 	return rpc.Result.StructuredContent
 }
 
+func decodeServiceStatusResult(t *testing.T, response []byte) serviceStatusResult {
+	t.Helper()
+	var rpc struct {
+		Result struct {
+			IsError           bool                `json:"isError"`
+			StructuredContent serviceStatusResult `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(response, &rpc); err != nil {
+		t.Fatalf("Unmarshal service response returned error: %v", err)
+	}
+	if rpc.Result.IsError {
+		t.Fatalf("expected service tool success response: %s", response)
+	}
+	return rpc.Result.StructuredContent
+}
+
 func waitForMCPTaskState(t *testing.T, server *Server, projectPath, taskID string, want app.TaskRunState) app.TaskRun {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
@@ -1343,6 +1546,61 @@ func waitForMCPTaskState(t *testing.T, server *Server, projectPath, taskID strin
 	}
 	t.Fatalf("timed out waiting for task %q to reach %q", taskID, want)
 	return app.TaskRun{}
+}
+
+func waitForMCPServiceLogs(t *testing.T, server *Server, projectPath, serviceName, wantStdout, wantStderr string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		logs := `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"service_logs","arguments":{"path":"` + projectPath + `","name":"` + serviceName + `"}}}`
+		response, err := server.HandleMessage([]byte(logs))
+		if err != nil {
+			t.Fatalf("HandleMessage service_logs returned error: %v", err)
+		}
+		var rpc struct {
+			Result struct {
+				IsError           bool `json:"isError"`
+				StructuredContent struct {
+					Logs app.ServiceLogs `json:"logs"`
+				} `json:"structuredContent"`
+			} `json:"result"`
+		}
+		if err := json.Unmarshal(response, &rpc); err != nil {
+			t.Fatalf("Unmarshal service_logs returned error: %v", err)
+		}
+		if rpc.Result.IsError {
+			t.Fatalf("expected service_logs success response: %s", response)
+		}
+		if strings.Contains(rpc.Result.StructuredContent.Logs.Stdout, wantStdout) && strings.Contains(rpc.Result.StructuredContent.Logs.Stderr, wantStderr) {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for service %q logs", serviceName)
+}
+
+func writeServiceManifestForMCPTest(t *testing.T, a *app.App, projectPath string, services []app.ServiceSpec) {
+	t.Helper()
+	wsPath, err := a.EnsureWorkspace("crawlly")
+	if err != nil {
+		t.Fatalf("EnsureWorkspace returned error: %v", err)
+	}
+	manifest := app.Manifest{
+		SchemaVersion: 1,
+		Name:          "crawlly",
+		ProjectPath:   projectPath,
+		Packages:      []app.PackageSpec{},
+		Tasks:         []app.TaskSpec{},
+		Services:      services,
+		Env:           map[string]string{},
+	}
+	data, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		t.Fatalf("MarshalIndent returned error: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(wsPath, "manifest.json"), data, 0o600); err != nil {
+		t.Fatalf("WriteFile returned error: %v", err)
+	}
 }
 
 func slicesContainsString(items []string, want string) bool {

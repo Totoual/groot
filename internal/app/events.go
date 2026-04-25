@@ -12,10 +12,13 @@ import (
 )
 
 const (
-	EventKindTaskStarted   = "task.started"
-	EventKindTaskExited    = "task.exited"
-	EventKindTaskFailed    = "task.failed"
-	EventKindTaskCancelled = "task.cancelled"
+	EventKindTaskStarted    = "task.started"
+	EventKindTaskExited     = "task.exited"
+	EventKindTaskFailed     = "task.failed"
+	EventKindTaskCancelled  = "task.cancelled"
+	EventKindServiceStarted = "service.started"
+	EventKindServiceStopped = "service.stopped"
+	EventKindServiceFailed  = "service.failed"
 )
 
 type RuntimeEvent struct {

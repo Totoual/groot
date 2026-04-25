@@ -15,6 +15,7 @@ type stubInstaller struct {
 	binDir      string
 	env         map[string]string
 	ensureCalls []string
+	resolveFn   func(string) (string, error)
 }
 
 func (s *stubInstaller) Name() string { return s.name }
@@ -30,6 +31,13 @@ func (s *stubInstaller) BinDir(_ *itoolchain.InstallContext, _ string) (string, 
 
 func (s *stubInstaller) Env(_ *itoolchain.InstallContext, _ string) (map[string]string, error) {
 	return s.env, nil
+}
+
+func (s *stubInstaller) ResolveVersion(_ *itoolchain.InstallContext, version string) (string, error) {
+	if s.resolveFn == nil {
+		return version, nil
+	}
+	return s.resolveFn(version)
 }
 
 func TestCreateNewWorkspaceOmitsProjectsDirAndInitializesManifest(t *testing.T) {
@@ -538,6 +546,76 @@ func TestAttachToWorkspaceNormalizesAndUpdatesExistingPackage(t *testing.T) {
 	}
 	if manifest.Packages[0] != (Component{Name: "go", Version: "1.25.0"}) {
 		t.Fatalf("unexpected package after update: %#v", manifest.Packages[0])
+	}
+}
+
+func TestAttachToWorkspaceResolvesGoMinorSeriesToConcreteVersion(t *testing.T) {
+	root := t.TempDir()
+	app := NewApp(root)
+
+	if err := app.CreateNewWorkspace("crawlly"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+
+	app.toolchains["go"] = &stubInstaller{
+		name: "go",
+		resolveFn: func(version string) (string, error) {
+			if version != "1.26" {
+				t.Fatalf("ResolveVersion received %q, want %q", version, "1.26")
+			}
+			return "1.26.2", nil
+		},
+	}
+
+	if err := app.AttachToWorkspace("crawlly", []string{"go@1.26"}); err != nil {
+		t.Fatalf("AttachToWorkspace returned error: %v", err)
+	}
+
+	manifest, err := app.getManifest(filepath.Join(root, "workspaces", "crawlly"))
+	if err != nil {
+		t.Fatalf("getManifest returned error: %v", err)
+	}
+
+	if len(manifest.Packages) != 1 {
+		t.Fatalf("expected 1 package, got %d", len(manifest.Packages))
+	}
+	if manifest.Packages[0] != (Component{Name: "go", Version: "1.26.2"}) {
+		t.Fatalf("unexpected package after resolution: %#v", manifest.Packages[0])
+	}
+}
+
+func TestAttachToWorkspaceResolvesGoLatestToConcreteVersion(t *testing.T) {
+	root := t.TempDir()
+	app := NewApp(root)
+
+	if err := app.CreateNewWorkspace("crawlly"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+
+	app.toolchains["go"] = &stubInstaller{
+		name: "go",
+		resolveFn: func(version string) (string, error) {
+			if version != "latest" {
+				t.Fatalf("ResolveVersion received %q, want %q", version, "latest")
+			}
+			return "1.26.2", nil
+		},
+	}
+
+	if err := app.AttachToWorkspace("crawlly", []string{"go@latest"}); err != nil {
+		t.Fatalf("AttachToWorkspace returned error: %v", err)
+	}
+
+	manifest, err := app.getManifest(filepath.Join(root, "workspaces", "crawlly"))
+	if err != nil {
+		t.Fatalf("getManifest returned error: %v", err)
+	}
+
+	if len(manifest.Packages) != 1 {
+		t.Fatalf("expected 1 package, got %d", len(manifest.Packages))
+	}
+	if manifest.Packages[0] != (Component{Name: "go", Version: "1.26.2"}) {
+		t.Fatalf("unexpected package after latest resolution: %#v", manifest.Packages[0])
 	}
 }
 

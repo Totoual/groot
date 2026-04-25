@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/totoual/groot/internal/itoolchain"
 )
 
 type Manifest struct {
@@ -107,8 +109,16 @@ func (a *App) parsePackageSpecs(args []string) ([]PackageSpec, error) {
 		if version == "" {
 			return nil, fmt.Errorf("invalid tool spec %q: tool version required", arg)
 		}
-		if _, ok := a.toolchains[name]; !ok {
+		installer, ok := a.toolchains[name]
+		if !ok {
 			return nil, fmt.Errorf("unsupported toolchain %q", name)
+		}
+		if resolver, ok := installer.(itoolchain.VersionResolver); ok {
+			resolvedVersion, err := resolver.ResolveVersion(a.installContext(), version)
+			if err != nil {
+				return nil, fmt.Errorf("resolve %s version %q: %w", name, version, err)
+			}
+			version = resolvedVersion
 		}
 
 		pkg := PackageSpec{
