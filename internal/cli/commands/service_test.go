@@ -27,12 +27,13 @@ func TestServiceCmdZeroValueUsesDefaultSubcommands(t *testing.T) {
 func TestServiceStartAndStatusCmdRun(t *testing.T) {
 	root := t.TempDir()
 	a := app.NewApp(root)
-	projectPath := setupServiceProjectCmd(t, a, root, []app.ServiceSpec{
+	setupServiceProjectCmd(t, a, root, []app.ServiceSpec{
 		{Name: "api", Command: []string{"/bin/sh", "-c", "sleep 30"}},
 	})
+	workspaceName := "crawlly"
 
 	stdout, stderr, err := captureCommandOutput(func() error {
-		return (&serviceStartCmd{}).Run(a, []string{projectPath, "api"})
+		return (&serviceStartCmd{}).Run(a, []string{workspaceName, "api"})
 	})
 	if err != nil {
 		t.Fatalf("Run returned error: %v", err)
@@ -45,7 +46,7 @@ func TestServiceStartAndStatusCmdRun(t *testing.T) {
 	}
 
 	stdout, stderr, err = captureCommandOutput(func() error {
-		return (&serviceStatusCmd{}).Run(a, []string{projectPath, "api"})
+		return (&serviceStatusCmd{}).Run(a, []string{workspaceName, "api"})
 	})
 	if err != nil {
 		t.Fatalf("Run returned error: %v", err)
@@ -61,17 +62,18 @@ func TestServiceStartAndStatusCmdRun(t *testing.T) {
 func TestServiceListCmdRunPrintsServices(t *testing.T) {
 	root := t.TempDir()
 	a := app.NewApp(root)
-	projectPath := setupServiceProjectCmd(t, a, root, []app.ServiceSpec{
+	setupServiceProjectCmd(t, a, root, []app.ServiceSpec{
 		{Name: "api", Command: []string{"/bin/sh", "-c", "sleep 30"}},
 		{Name: "worker", Command: []string{"/bin/sh", "-c", "sleep 30"}},
 	})
+	workspaceName := "crawlly"
 
 	if _, err := a.StartService("crawlly", "api"); err != nil {
 		t.Fatalf("StartService returned error: %v", err)
 	}
 
 	stdout, stderr, err := captureCommandOutput(func() error {
-		return (&serviceListCmd{}).Run(a, []string{projectPath})
+		return (&serviceListCmd{}).Run(a, []string{workspaceName})
 	})
 	if err != nil {
 		t.Fatalf("Run returned error: %v", err)
@@ -87,17 +89,18 @@ func TestServiceListCmdRunPrintsServices(t *testing.T) {
 func TestServiceLogsCmdRunPrintsStdoutAndStderr(t *testing.T) {
 	root := t.TempDir()
 	a := app.NewApp(root)
-	projectPath := setupServiceProjectCmd(t, a, root, []app.ServiceSpec{
+	setupServiceProjectCmd(t, a, root, []app.ServiceSpec{
 		{Name: "api", Command: []string{"/bin/sh", "-c", "printf out; printf err >&2; sleep 30"}},
 	})
+	workspaceName := "crawlly"
 
 	if _, err := a.StartService("crawlly", "api"); err != nil {
 		t.Fatalf("StartService returned error: %v", err)
 	}
-	waitForServiceLogsCmd(t, a, projectPath, "api", "out", "err")
+	waitForServiceLogsCmd(t, a, workspaceName, "api", "out", "err")
 
 	stdout, stderr, err := captureCommandOutput(func() error {
-		return (&serviceLogsCmd{}).Run(a, []string{projectPath, "api"})
+		return (&serviceLogsCmd{}).Run(a, []string{workspaceName, "api"})
 	})
 	if err != nil {
 		t.Fatalf("Run returned error: %v", err)
@@ -113,16 +116,17 @@ func TestServiceLogsCmdRunPrintsStdoutAndStderr(t *testing.T) {
 func TestServiceStopCmdRunStopsService(t *testing.T) {
 	root := t.TempDir()
 	a := app.NewApp(root)
-	projectPath := setupServiceProjectCmd(t, a, root, []app.ServiceSpec{
+	setupServiceProjectCmd(t, a, root, []app.ServiceSpec{
 		{Name: "api", Command: []string{"/bin/sh", "-c", "sleep 30"}},
 	})
+	workspaceName := "crawlly"
 
 	if _, err := a.StartService("crawlly", "api"); err != nil {
 		t.Fatalf("StartService returned error: %v", err)
 	}
 
 	stdout, stderr, err := captureCommandOutput(func() error {
-		return (&serviceStopCmd{}).Run(a, []string{projectPath, "api"})
+		return (&serviceStopCmd{}).Run(a, []string{workspaceName, "api"})
 	})
 	if err != nil {
 		t.Fatalf("Run returned error: %v", err)
@@ -132,6 +136,53 @@ func TestServiceStopCmdRunStopsService(t *testing.T) {
 	}
 	if !strings.Contains(stdout, "State: stopped") {
 		t.Fatalf("expected stopped state in output, got %q", stdout)
+	}
+}
+
+func TestServiceAddRemoveAndListDeclaredCmds(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+
+	setupTaskProject(t, a, root)
+	workspaceName := "crawlly"
+
+	stdout, stderr, err := captureCommandOutput(func() error {
+		return (&serviceAddCmd{}).Run(a, []string{workspaceName, "api", "--cwd", ".", "--restart", "manual", "--", "go", "run", "./cmd/api"})
+	})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if strings.TrimSpace(stderr) != "" {
+		t.Fatalf("expected stderr to stay quiet, got %q", stderr)
+	}
+	if !strings.Contains(stdout, `Declared service "api"`) {
+		t.Fatalf("unexpected add output: %q", stdout)
+	}
+
+	stdout, stderr, err = captureCommandOutput(func() error {
+		return (&serviceListDeclaredCmd{}).Run(a, []string{workspaceName})
+	})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if strings.TrimSpace(stderr) != "" {
+		t.Fatalf("expected stderr to stay quiet, got %q", stderr)
+	}
+	if !strings.Contains(stdout, "api\tgo run ./cmd/api") {
+		t.Fatalf("unexpected list-declared output: %q", stdout)
+	}
+
+	stdout, stderr, err = captureCommandOutput(func() error {
+		return (&serviceRemoveCmd{}).Run(a, []string{workspaceName, "api"})
+	})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if strings.TrimSpace(stderr) != "" {
+		t.Fatalf("expected stderr to stay quiet, got %q", stderr)
+	}
+	if !strings.Contains(stdout, `Removed service "api"`) {
+		t.Fatalf("unexpected remove output: %q", stdout)
 	}
 }
 
@@ -161,14 +212,10 @@ func setupServiceProjectCmd(t *testing.T, a *app.App, root string, services []ap
 	return projectPath
 }
 
-func waitForServiceLogsCmd(t *testing.T, a *app.App, projectPath, serviceName, wantStdout, wantStderr string) {
+func waitForServiceLogsCmd(t *testing.T, a *app.App, workspaceName, serviceName, wantStdout, wantStderr string) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		workspaceName, _, err := a.ResolveOrCreateWorkspaceByProjectPath(projectPath)
-		if err != nil {
-			t.Fatalf("ResolveOrCreateWorkspaceByProjectPath returned error: %v", err)
-		}
 		logs, err := a.ServiceLogs(workspaceName, serviceName)
 		if err != nil {
 			t.Fatalf("ServiceLogs returned error: %v", err)

@@ -101,30 +101,43 @@ groot enter ~/Documents/crawlly
 groot exec ~/Documents/crawlly git status
 groot status ~/Documents/crawlly
 groot status ~/Documents/crawlly --json
-
-groot task start ~/Documents/crawlly --name tests go test ./...
-groot task list ~/Documents/crawlly
-groot task status ~/Documents/crawlly <task-id>
-groot task logs ~/Documents/crawlly <task-id>
-
-groot service start ~/Documents/crawlly api
-groot service list ~/Documents/crawlly
-groot service status ~/Documents/crawlly api
-groot service logs ~/Documents/crawlly api
-groot service stop ~/Documents/crawlly api
-
-groot event list ~/Documents/crawlly
-
 groot export ~/Documents/crawlly
 groot import crawlly-export.json --project-path ~/Documents/crawlly-copy --workspace-name crawlly-copy
+```
+
+Workspace-first runtime workflows:
+
+```bash
+groot task add crawlly test --cwd . -- go test ./...
+groot task list-declared crawlly
+groot task start crawlly --task test
+groot task list crawlly
+groot task status crawlly <task-id>
+groot task logs crawlly <task-id>
+groot task remove crawlly test
+
+groot service add crawlly api --cwd . --restart manual -- go run ./cmd/api
+groot service list-declared crawlly
+groot service start crawlly api
+groot service list crawlly
+groot service status crawlly api
+groot service logs crawlly api
+groot service stop crawlly api
+groot service remove crawlly api
+
+groot event list crawlly
 ```
 
 What these mean:
 
 - `open` is the main human GUI shortcut
 - `enter` and `exec` use the strict workspace runtime
-- `task ...` manages tracked execution records and per-run logs
-- `service ...` manages manifest-declared long-running workspace-owned services
+- path-first commands discover or resolve a workspace from a repo path
+- workspace-first runtime commands operate on an existing workspace identity
+- `task add/remove/list-declared` manages manifest task declarations without hand-editing `manifest.json`
+- `task start/status/list/logs/stop` manages tracked execution records and per-run logs
+- `service add/remove/list-declared` manages manifest service declarations without hand-editing `manifest.json`
+- `service start/status/list/logs/stop` manages long-running workspace-owned services
 - `event ...` lists persisted runtime lifecycle events such as `task.started`, `task.exited`, `service.started`, and `service.failed`
 - `status` shows detected, attached, installed, and host-fallback runtime state for the project path
 - `export` and `import` move the workspace contract, not the repository contents
@@ -166,11 +179,17 @@ Current MCP tools:
 - `workspace_export`
 - `workspace_import`
 - `task_start`
+- `task_declare`
+- `task_delete`
+- `task_list_declared`
 - `task_status`
 - `task_list`
 - `task_logs`
 - `task_stop`
 - `service_start`
+- `service_declare`
+- `service_delete`
+- `service_list_declared`
 - `service_status`
 - `service_list`
 - `service_logs`

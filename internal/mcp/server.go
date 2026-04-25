@@ -147,9 +147,19 @@ type taskRunResult struct {
 	Task    app.TaskRun `json:"task"`
 }
 
+type taskDeclarationResult struct {
+	Created bool         `json:"created"`
+	Task    app.TaskSpec `json:"task"`
+}
+
 type taskListResult struct {
 	Created bool          `json:"created"`
 	Tasks   []app.TaskRun `json:"tasks"`
+}
+
+type taskDeclaredListResult struct {
+	Created bool           `json:"created"`
+	Tasks   []app.TaskSpec `json:"tasks"`
 }
 
 type taskLogsResult struct {
@@ -162,9 +172,19 @@ type serviceStatusResult struct {
 	Service app.ServiceStatus `json:"service"`
 }
 
+type serviceDeclarationResult struct {
+	Created bool            `json:"created"`
+	Service app.ServiceSpec `json:"service"`
+}
+
 type serviceListResult struct {
 	Created  bool                `json:"created"`
 	Services []app.ServiceStatus `json:"services"`
+}
+
+type serviceDeclaredListResult struct {
+	Created  bool              `json:"created"`
+	Services []app.ServiceSpec `json:"services"`
 }
 
 type serviceLogsResult struct {
@@ -678,13 +698,13 @@ func (s *Server) tools() []toolDefinition {
 		},
 		{
 			Name:        "task_start",
-			Description: "Resolve or create a workspace from a project path and start an ad hoc task run or declared manifest task inside the strict Groot runtime.",
+			Description: "Resolve or create a workspace from a project path, or use the active project scope, and start an ad hoc task run or declared manifest task inside the strict Groot runtime.",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"path": map[string]any{
 						"type":        "string",
-						"description": "Absolute or ~/ project path.",
+						"description": "Optional absolute or ~/ project path. When omitted, the active project scope is used if exactly one project is active.",
 					},
 					"name": map[string]any{
 						"type":        "string",
@@ -710,7 +730,6 @@ func (s *Server) tools() []toolDefinition {
 						"description": "Optional relative or absolute task working directory.",
 					},
 				},
-				"required":             []string{"path"},
 				"additionalProperties": false,
 			},
 			OutputSchema: map[string]any{
@@ -723,21 +742,106 @@ func (s *Server) tools() []toolDefinition {
 			},
 		},
 		{
-			Name:        "task_status",
-			Description: "Resolve or create a workspace from a project path and return one task run status.",
+			Name:        "task_declare",
+			Description: "Resolve or create a workspace from a project path, or use the active project scope, and add or update one declared manifest task.",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"path": map[string]any{
 						"type":        "string",
-						"description": "Absolute or ~/ project path.",
+						"description": "Optional absolute or ~/ project path. When omitted, the active project scope is used if exactly one project is active.",
+					},
+					"name": map[string]any{
+						"type":        "string",
+						"description": "Declared task name.",
+					},
+					"command": map[string]any{
+						"type":        "array",
+						"description": "Full task command vector.",
+						"items":       map[string]any{"type": "string"},
+					},
+					"cwd": map[string]any{
+						"type":        "string",
+						"description": "Optional relative or absolute task working directory.",
+					},
+				},
+				"required":             []string{"name", "command"},
+				"additionalProperties": false,
+			},
+			OutputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"created": map[string]any{"type": "boolean"},
+					"task":    map[string]any{"type": "object"},
+				},
+				"required": []string{"created", "task"},
+			},
+		},
+		{
+			Name:        "task_delete",
+			Description: "Resolve or create a workspace from a project path, or use the active project scope, and delete one declared manifest task.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"path": map[string]any{
+						"type":        "string",
+						"description": "Optional absolute or ~/ project path. When omitted, the active project scope is used if exactly one project is active.",
+					},
+					"name": map[string]any{
+						"type":        "string",
+						"description": "Declared task name.",
+					},
+				},
+				"required":             []string{"name"},
+				"additionalProperties": false,
+			},
+			OutputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"created": map[string]any{"type": "boolean"},
+					"task":    map[string]any{"type": "object"},
+				},
+				"required": []string{"created", "task"},
+			},
+		},
+		{
+			Name:        "task_list_declared",
+			Description: "Resolve or create a workspace from a project path, or use the active project scope, and list declared manifest tasks.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"path": map[string]any{
+						"type":        "string",
+						"description": "Optional absolute or ~/ project path. When omitted, the active project scope is used if exactly one project is active.",
+					},
+				},
+				"additionalProperties": false,
+			},
+			OutputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"created": map[string]any{"type": "boolean"},
+					"tasks":   map[string]any{"type": "array"},
+				},
+				"required": []string{"created", "tasks"},
+			},
+		},
+		{
+			Name:        "task_status",
+			Description: "Resolve or create a workspace from a project path, or use the active project scope, and return one task run status.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"path": map[string]any{
+						"type":        "string",
+						"description": "Optional absolute or ~/ project path. When omitted, the active project scope is used if exactly one project is active.",
 					},
 					"task_id": map[string]any{
 						"type":        "string",
 						"description": "Task run id returned by task_start or task_list.",
 					},
 				},
-				"required":             []string{"path", "task_id"},
+				"required":             []string{"task_id"},
 				"additionalProperties": false,
 			},
 			OutputSchema: map[string]any{
@@ -751,16 +855,15 @@ func (s *Server) tools() []toolDefinition {
 		},
 		{
 			Name:        "task_list",
-			Description: "Resolve or create a workspace from a project path and list persisted task runs.",
+			Description: "Resolve or create a workspace from a project path, or use the active project scope, and list persisted task runs.",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"path": map[string]any{
 						"type":        "string",
-						"description": "Absolute or ~/ project path.",
+						"description": "Optional absolute or ~/ project path. When omitted, the active project scope is used if exactly one project is active.",
 					},
 				},
-				"required":             []string{"path"},
 				"additionalProperties": false,
 			},
 			OutputSchema: map[string]any{
@@ -774,20 +877,20 @@ func (s *Server) tools() []toolDefinition {
 		},
 		{
 			Name:        "task_logs",
-			Description: "Resolve or create a workspace from a project path and return captured stdout/stderr for a task run.",
+			Description: "Resolve or create a workspace from a project path, or use the active project scope, and return captured stdout/stderr for a task run.",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"path": map[string]any{
 						"type":        "string",
-						"description": "Absolute or ~/ project path.",
+						"description": "Optional absolute or ~/ project path. When omitted, the active project scope is used if exactly one project is active.",
 					},
 					"task_id": map[string]any{
 						"type":        "string",
 						"description": "Task run id returned by task_start or task_list.",
 					},
 				},
-				"required":             []string{"path", "task_id"},
+				"required":             []string{"task_id"},
 				"additionalProperties": false,
 			},
 			OutputSchema: map[string]any{
@@ -801,20 +904,20 @@ func (s *Server) tools() []toolDefinition {
 		},
 		{
 			Name:        "task_stop",
-			Description: "Resolve or create a workspace from a project path and stop a running task run.",
+			Description: "Resolve or create a workspace from a project path, or use the active project scope, and stop a running task run.",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"path": map[string]any{
 						"type":        "string",
-						"description": "Absolute or ~/ project path.",
+						"description": "Optional absolute or ~/ project path. When omitted, the active project scope is used if exactly one project is active.",
 					},
 					"task_id": map[string]any{
 						"type":        "string",
 						"description": "Task run id returned by task_start or task_list.",
 					},
 				},
-				"required":             []string{"path", "task_id"},
+				"required":             []string{"task_id"},
 				"additionalProperties": false,
 			},
 			OutputSchema: map[string]any{
@@ -828,20 +931,20 @@ func (s *Server) tools() []toolDefinition {
 		},
 		{
 			Name:        "service_start",
-			Description: "Resolve or create a workspace from a project path and start one declared service inside the strict Groot runtime.",
+			Description: "Resolve or create a workspace from a project path, or use the active project scope, and start one declared service inside the strict Groot runtime.",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"path": map[string]any{
 						"type":        "string",
-						"description": "Absolute or ~/ project path.",
+						"description": "Optional absolute or ~/ project path. When omitted, the active project scope is used if exactly one project is active.",
 					},
 					"name": map[string]any{
 						"type":        "string",
 						"description": "Declared service name from the manifest.",
 					},
 				},
-				"required":             []string{"path", "name"},
+				"required":             []string{"name"},
 				"additionalProperties": false,
 			},
 			OutputSchema: map[string]any{
@@ -854,21 +957,110 @@ func (s *Server) tools() []toolDefinition {
 			},
 		},
 		{
-			Name:        "service_status",
-			Description: "Resolve or create a workspace from a project path and return one declared service status.",
+			Name:        "service_declare",
+			Description: "Resolve or create a workspace from a project path, or use the active project scope, and add or update one declared manifest service.",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"path": map[string]any{
 						"type":        "string",
-						"description": "Absolute or ~/ project path.",
+						"description": "Optional absolute or ~/ project path. When omitted, the active project scope is used if exactly one project is active.",
+					},
+					"name": map[string]any{
+						"type":        "string",
+						"description": "Declared service name.",
+					},
+					"command": map[string]any{
+						"type":        "array",
+						"description": "Full service command vector.",
+						"items":       map[string]any{"type": "string"},
+					},
+					"cwd": map[string]any{
+						"type":        "string",
+						"description": "Optional relative or absolute service working directory.",
+					},
+					"restart": map[string]any{
+						"type":        "string",
+						"description": "Optional restart policy recorded in the manifest.",
+					},
+				},
+				"required":             []string{"name", "command"},
+				"additionalProperties": false,
+			},
+			OutputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"created": map[string]any{"type": "boolean"},
+					"service": map[string]any{"type": "object"},
+				},
+				"required": []string{"created", "service"},
+			},
+		},
+		{
+			Name:        "service_delete",
+			Description: "Resolve or create a workspace from a project path, or use the active project scope, and delete one declared manifest service.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"path": map[string]any{
+						"type":        "string",
+						"description": "Optional absolute or ~/ project path. When omitted, the active project scope is used if exactly one project is active.",
+					},
+					"name": map[string]any{
+						"type":        "string",
+						"description": "Declared service name.",
+					},
+				},
+				"required":             []string{"name"},
+				"additionalProperties": false,
+			},
+			OutputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"created": map[string]any{"type": "boolean"},
+					"service": map[string]any{"type": "object"},
+				},
+				"required": []string{"created", "service"},
+			},
+		},
+		{
+			Name:        "service_list_declared",
+			Description: "Resolve or create a workspace from a project path, or use the active project scope, and list declared manifest services.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"path": map[string]any{
+						"type":        "string",
+						"description": "Optional absolute or ~/ project path. When omitted, the active project scope is used if exactly one project is active.",
+					},
+				},
+				"additionalProperties": false,
+			},
+			OutputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"created":  map[string]any{"type": "boolean"},
+					"services": map[string]any{"type": "array"},
+				},
+				"required": []string{"created", "services"},
+			},
+		},
+		{
+			Name:        "service_status",
+			Description: "Resolve or create a workspace from a project path, or use the active project scope, and return one declared service status.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"path": map[string]any{
+						"type":        "string",
+						"description": "Optional absolute or ~/ project path. When omitted, the active project scope is used if exactly one project is active.",
 					},
 					"name": map[string]any{
 						"type":        "string",
 						"description": "Declared service name from the manifest.",
 					},
 				},
-				"required":             []string{"path", "name"},
+				"required":             []string{"name"},
 				"additionalProperties": false,
 			},
 			OutputSchema: map[string]any{
@@ -882,16 +1074,15 @@ func (s *Server) tools() []toolDefinition {
 		},
 		{
 			Name:        "service_list",
-			Description: "Resolve or create a workspace from a project path and list declared services with their current state.",
+			Description: "Resolve or create a workspace from a project path, or use the active project scope, and list declared services with their current state.",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"path": map[string]any{
 						"type":        "string",
-						"description": "Absolute or ~/ project path.",
+						"description": "Optional absolute or ~/ project path. When omitted, the active project scope is used if exactly one project is active.",
 					},
 				},
-				"required":             []string{"path"},
 				"additionalProperties": false,
 			},
 			OutputSchema: map[string]any{
@@ -905,20 +1096,20 @@ func (s *Server) tools() []toolDefinition {
 		},
 		{
 			Name:        "service_logs",
-			Description: "Resolve or create a workspace from a project path and return captured stdout/stderr for one declared service.",
+			Description: "Resolve or create a workspace from a project path, or use the active project scope, and return captured stdout/stderr for one declared service.",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"path": map[string]any{
 						"type":        "string",
-						"description": "Absolute or ~/ project path.",
+						"description": "Optional absolute or ~/ project path. When omitted, the active project scope is used if exactly one project is active.",
 					},
 					"name": map[string]any{
 						"type":        "string",
 						"description": "Declared service name from the manifest.",
 					},
 				},
-				"required":             []string{"path", "name"},
+				"required":             []string{"name"},
 				"additionalProperties": false,
 			},
 			OutputSchema: map[string]any{
@@ -932,20 +1123,20 @@ func (s *Server) tools() []toolDefinition {
 		},
 		{
 			Name:        "service_stop",
-			Description: "Resolve or create a workspace from a project path and stop one declared running service.",
+			Description: "Resolve or create a workspace from a project path, or use the active project scope, and stop one declared running service.",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"path": map[string]any{
 						"type":        "string",
-						"description": "Absolute or ~/ project path.",
+						"description": "Optional absolute or ~/ project path. When omitted, the active project scope is used if exactly one project is active.",
 					},
 					"name": map[string]any{
 						"type":        "string",
 						"description": "Declared service name from the manifest.",
 					},
 				},
-				"required":             []string{"path", "name"},
+				"required":             []string{"name"},
 				"additionalProperties": false,
 			},
 			OutputSchema: map[string]any{
@@ -959,20 +1150,19 @@ func (s *Server) tools() []toolDefinition {
 		},
 		{
 			Name:        "event_list",
-			Description: "Resolve or create a workspace from a project path and list persisted runtime events.",
+			Description: "Resolve or create a workspace from a project path, or use the active project scope, and list persisted runtime events.",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"path": map[string]any{
 						"type":        "string",
-						"description": "Absolute or ~/ project path.",
+						"description": "Optional absolute or ~/ project path. When omitted, the active project scope is used if exactly one project is active.",
 					},
 					"limit": map[string]any{
 						"type":        "integer",
 						"description": "Optional maximum number of events to return.",
 					},
 				},
-				"required":             []string{"path"},
 				"additionalProperties": false,
 			},
 			OutputSchema: map[string]any{
@@ -1041,6 +1231,12 @@ func (s *Server) callTool(params toolCallParams) toolResult {
 		return s.workspaceImportTool(params.Arguments)
 	case "task_start":
 		return s.taskStartTool(params.Arguments)
+	case "task_declare":
+		return s.taskDeclareTool(params.Arguments)
+	case "task_delete":
+		return s.taskDeleteTool(params.Arguments)
+	case "task_list_declared":
+		return s.taskListDeclaredTool(params.Arguments)
 	case "task_status":
 		return s.taskStatusTool(params.Arguments)
 	case "task_list":
@@ -1051,6 +1247,12 @@ func (s *Server) callTool(params toolCallParams) toolResult {
 		return s.taskStopTool(params.Arguments)
 	case "service_start":
 		return s.serviceStartTool(params.Arguments)
+	case "service_declare":
+		return s.serviceDeclareTool(params.Arguments)
+	case "service_delete":
+		return s.serviceDeleteTool(params.Arguments)
+	case "service_list_declared":
+		return s.serviceListDeclaredTool(params.Arguments)
 	case "service_status":
 		return s.serviceStatusTool(params.Arguments)
 	case "service_list":
@@ -1151,6 +1353,19 @@ func scopedProjectPathWithin(scopeProjects []string, projectPath string) (string
 
 func (s *Server) scopedProjectPath(projectPath string) (string, error) {
 	return scopedProjectPathWithin(s.currentScopeProjects(), projectPath)
+}
+
+func (s *Server) scopedProjectPathArgOrActive(args map[string]any, toolName string) (string, error) {
+	if projectPath, ok := stringArg(args, "path"); ok {
+		return s.scopedProjectPath(projectPath)
+	}
+
+	scopeProjects := s.currentScopeProjects()
+	if len(scopeProjects) == 1 {
+		return scopeProjects[0], nil
+	}
+
+	return "", fmt.Errorf(`tool %q requires string argument "path" when no single active project is selected`, toolName)
 }
 
 func (s *Server) setActiveProjects(projects []string) error {
@@ -1591,11 +1806,7 @@ func (s *Server) workspaceImportTool(args map[string]any) toolResult {
 }
 
 func (s *Server) taskStartTool(args map[string]any) toolResult {
-	projectPath, ok := stringArg(args, "path")
-	if !ok {
-		return errorToolResult(`tool "task_start" requires string argument "path"`, nil)
-	}
-	projectPath, err := s.scopedProjectPath(projectPath)
+	projectPath, err := s.scopedProjectPathArgOrActive(args, "task_start")
 	if err != nil {
 		return errorToolResult(err.Error(), nil)
 	}
@@ -1644,12 +1855,112 @@ func (s *Server) taskStartTool(args map[string]any) toolResult {
 	)
 }
 
-func (s *Server) taskStatusTool(args map[string]any) toolResult {
-	projectPath, ok := stringArg(args, "path")
-	if !ok {
-		return errorToolResult(`tool "task_status" requires string argument "path"`, nil)
+func (s *Server) taskDeclareTool(args map[string]any) toolResult {
+	projectPath, err := s.scopedProjectPathArgOrActive(args, "task_declare")
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
 	}
-	projectPath, err := s.scopedProjectPath(projectPath)
+	taskName, ok := stringArg(args, "name")
+	if !ok {
+		return errorToolResult(`tool "task_declare" requires string argument "name"`, nil)
+	}
+	command, err := stringSliceArg(args, "command")
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	if len(command) == 0 {
+		return errorToolResult(`tool "task_declare" requires non-empty "command"`, nil)
+	}
+
+	workspaceName, created, err := s.app.ResolveOrCreateWorkspaceByProjectPath(projectPath)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	spec := app.TaskSpec{
+		Name:    strings.TrimSpace(taskName),
+		Command: append([]string{}, command...),
+		Cwd:     strings.TrimSpace(stringArgOrDefault(args, "cwd", "")),
+	}
+	if err := s.app.DeclareTask(workspaceName, spec); err != nil {
+		return errorToolResult(err.Error(), map[string]any{
+			"workspace_name": workspaceName,
+			"created":        created,
+		})
+	}
+
+	return successToolResult(
+		fmt.Sprintf("Declared task %q in workspace %q.", spec.Name, workspaceName),
+		taskDeclarationResult{Created: created, Task: spec},
+	)
+}
+
+func (s *Server) taskDeleteTool(args map[string]any) toolResult {
+	projectPath, err := s.scopedProjectPathArgOrActive(args, "task_delete")
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	taskName, ok := stringArg(args, "name")
+	if !ok {
+		return errorToolResult(`tool "task_delete" requires string argument "name"`, nil)
+	}
+
+	workspaceName, created, err := s.app.ResolveOrCreateWorkspaceByProjectPath(projectPath)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	spec, err := s.app.DeclaredTasks(workspaceName)
+	if err != nil {
+		return errorToolResult(err.Error(), map[string]any{
+			"workspace_name": workspaceName,
+			"created":        created,
+		})
+	}
+	var deleted app.TaskSpec
+	for _, task := range spec {
+		if task.Name == strings.TrimSpace(taskName) {
+			deleted = task
+			break
+		}
+	}
+	if err := s.app.DeleteTask(workspaceName, taskName); err != nil {
+		return errorToolResult(err.Error(), map[string]any{
+			"workspace_name": workspaceName,
+			"created":        created,
+		})
+	}
+
+	return successToolResult(
+		fmt.Sprintf("Deleted task %q from workspace %q.", strings.TrimSpace(taskName), workspaceName),
+		taskDeclarationResult{Created: created, Task: deleted},
+	)
+}
+
+func (s *Server) taskListDeclaredTool(args map[string]any) toolResult {
+	projectPath, err := s.scopedProjectPathArgOrActive(args, "task_list_declared")
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+
+	workspaceName, created, err := s.app.ResolveOrCreateWorkspaceByProjectPath(projectPath)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	tasks, err := s.app.DeclaredTasks(workspaceName)
+	if err != nil {
+		return errorToolResult(err.Error(), map[string]any{
+			"workspace_name": workspaceName,
+			"created":        created,
+		})
+	}
+
+	return successToolResult(
+		fmt.Sprintf("Loaded %d declared tasks for workspace %q.", len(tasks), workspaceName),
+		taskDeclaredListResult{Created: created, Tasks: tasks},
+	)
+}
+
+func (s *Server) taskStatusTool(args map[string]any) toolResult {
+	projectPath, err := s.scopedProjectPathArgOrActive(args, "task_status")
 	if err != nil {
 		return errorToolResult(err.Error(), nil)
 	}
@@ -1681,11 +1992,7 @@ func (s *Server) taskStatusTool(args map[string]any) toolResult {
 }
 
 func (s *Server) taskListTool(args map[string]any) toolResult {
-	projectPath, ok := stringArg(args, "path")
-	if !ok {
-		return errorToolResult(`tool "task_list" requires string argument "path"`, nil)
-	}
-	projectPath, err := s.scopedProjectPath(projectPath)
+	projectPath, err := s.scopedProjectPathArgOrActive(args, "task_list")
 	if err != nil {
 		return errorToolResult(err.Error(), nil)
 	}
@@ -1713,11 +2020,7 @@ func (s *Server) taskListTool(args map[string]any) toolResult {
 }
 
 func (s *Server) taskLogsTool(args map[string]any) toolResult {
-	projectPath, ok := stringArg(args, "path")
-	if !ok {
-		return errorToolResult(`tool "task_logs" requires string argument "path"`, nil)
-	}
-	projectPath, err := s.scopedProjectPath(projectPath)
+	projectPath, err := s.scopedProjectPathArgOrActive(args, "task_logs")
 	if err != nil {
 		return errorToolResult(err.Error(), nil)
 	}
@@ -1749,11 +2052,7 @@ func (s *Server) taskLogsTool(args map[string]any) toolResult {
 }
 
 func (s *Server) taskStopTool(args map[string]any) toolResult {
-	projectPath, ok := stringArg(args, "path")
-	if !ok {
-		return errorToolResult(`tool "task_stop" requires string argument "path"`, nil)
-	}
-	projectPath, err := s.scopedProjectPath(projectPath)
+	projectPath, err := s.scopedProjectPathArgOrActive(args, "task_stop")
 	if err != nil {
 		return errorToolResult(err.Error(), nil)
 	}
@@ -1785,11 +2084,7 @@ func (s *Server) taskStopTool(args map[string]any) toolResult {
 }
 
 func (s *Server) serviceStartTool(args map[string]any) toolResult {
-	projectPath, ok := stringArg(args, "path")
-	if !ok {
-		return errorToolResult(`tool "service_start" requires string argument "path"`, nil)
-	}
-	projectPath, err := s.scopedProjectPath(projectPath)
+	projectPath, err := s.scopedProjectPathArgOrActive(args, "service_start")
 	if err != nil {
 		return errorToolResult(err.Error(), nil)
 	}
@@ -1819,12 +2114,113 @@ func (s *Server) serviceStartTool(args map[string]any) toolResult {
 	)
 }
 
-func (s *Server) serviceStatusTool(args map[string]any) toolResult {
-	projectPath, ok := stringArg(args, "path")
-	if !ok {
-		return errorToolResult(`tool "service_status" requires string argument "path"`, nil)
+func (s *Server) serviceDeclareTool(args map[string]any) toolResult {
+	projectPath, err := s.scopedProjectPathArgOrActive(args, "service_declare")
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
 	}
-	projectPath, err := s.scopedProjectPath(projectPath)
+	serviceName, ok := stringArg(args, "name")
+	if !ok {
+		return errorToolResult(`tool "service_declare" requires string argument "name"`, nil)
+	}
+	command, err := stringSliceArg(args, "command")
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	if len(command) == 0 {
+		return errorToolResult(`tool "service_declare" requires non-empty "command"`, nil)
+	}
+
+	workspaceName, created, err := s.app.ResolveOrCreateWorkspaceByProjectPath(projectPath)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	spec := app.ServiceSpec{
+		Name:    strings.TrimSpace(serviceName),
+		Command: append([]string{}, command...),
+		Cwd:     strings.TrimSpace(stringArgOrDefault(args, "cwd", "")),
+		Restart: strings.TrimSpace(stringArgOrDefault(args, "restart", "")),
+	}
+	if err := s.app.DeclareService(workspaceName, spec); err != nil {
+		return errorToolResult(err.Error(), map[string]any{
+			"workspace_name": workspaceName,
+			"created":        created,
+		})
+	}
+
+	return successToolResult(
+		fmt.Sprintf("Declared service %q in workspace %q.", spec.Name, workspaceName),
+		serviceDeclarationResult{Created: created, Service: spec},
+	)
+}
+
+func (s *Server) serviceDeleteTool(args map[string]any) toolResult {
+	projectPath, err := s.scopedProjectPathArgOrActive(args, "service_delete")
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	serviceName, ok := stringArg(args, "name")
+	if !ok {
+		return errorToolResult(`tool "service_delete" requires string argument "name"`, nil)
+	}
+
+	workspaceName, created, err := s.app.ResolveOrCreateWorkspaceByProjectPath(projectPath)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	specs, err := s.app.DeclaredServices(workspaceName)
+	if err != nil {
+		return errorToolResult(err.Error(), map[string]any{
+			"workspace_name": workspaceName,
+			"created":        created,
+		})
+	}
+	var deleted app.ServiceSpec
+	for _, spec := range specs {
+		if spec.Name == strings.TrimSpace(serviceName) {
+			deleted = spec
+			break
+		}
+	}
+	if err := s.app.DeleteService(workspaceName, serviceName); err != nil {
+		return errorToolResult(err.Error(), map[string]any{
+			"workspace_name": workspaceName,
+			"created":        created,
+		})
+	}
+
+	return successToolResult(
+		fmt.Sprintf("Deleted service %q from workspace %q.", strings.TrimSpace(serviceName), workspaceName),
+		serviceDeclarationResult{Created: created, Service: deleted},
+	)
+}
+
+func (s *Server) serviceListDeclaredTool(args map[string]any) toolResult {
+	projectPath, err := s.scopedProjectPathArgOrActive(args, "service_list_declared")
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+
+	workspaceName, created, err := s.app.ResolveOrCreateWorkspaceByProjectPath(projectPath)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	services, err := s.app.DeclaredServices(workspaceName)
+	if err != nil {
+		return errorToolResult(err.Error(), map[string]any{
+			"workspace_name": workspaceName,
+			"created":        created,
+		})
+	}
+
+	return successToolResult(
+		fmt.Sprintf("Loaded %d declared services for workspace %q.", len(services), workspaceName),
+		serviceDeclaredListResult{Created: created, Services: services},
+	)
+}
+
+func (s *Server) serviceStatusTool(args map[string]any) toolResult {
+	projectPath, err := s.scopedProjectPathArgOrActive(args, "service_status")
 	if err != nil {
 		return errorToolResult(err.Error(), nil)
 	}
@@ -1855,11 +2251,7 @@ func (s *Server) serviceStatusTool(args map[string]any) toolResult {
 }
 
 func (s *Server) serviceListTool(args map[string]any) toolResult {
-	projectPath, ok := stringArg(args, "path")
-	if !ok {
-		return errorToolResult(`tool "service_list" requires string argument "path"`, nil)
-	}
-	projectPath, err := s.scopedProjectPath(projectPath)
+	projectPath, err := s.scopedProjectPathArgOrActive(args, "service_list")
 	if err != nil {
 		return errorToolResult(err.Error(), nil)
 	}
@@ -1886,11 +2278,7 @@ func (s *Server) serviceListTool(args map[string]any) toolResult {
 }
 
 func (s *Server) serviceLogsTool(args map[string]any) toolResult {
-	projectPath, ok := stringArg(args, "path")
-	if !ok {
-		return errorToolResult(`tool "service_logs" requires string argument "path"`, nil)
-	}
-	projectPath, err := s.scopedProjectPath(projectPath)
+	projectPath, err := s.scopedProjectPathArgOrActive(args, "service_logs")
 	if err != nil {
 		return errorToolResult(err.Error(), nil)
 	}
@@ -1921,11 +2309,7 @@ func (s *Server) serviceLogsTool(args map[string]any) toolResult {
 }
 
 func (s *Server) serviceStopTool(args map[string]any) toolResult {
-	projectPath, ok := stringArg(args, "path")
-	if !ok {
-		return errorToolResult(`tool "service_stop" requires string argument "path"`, nil)
-	}
-	projectPath, err := s.scopedProjectPath(projectPath)
+	projectPath, err := s.scopedProjectPathArgOrActive(args, "service_stop")
 	if err != nil {
 		return errorToolResult(err.Error(), nil)
 	}
@@ -1956,11 +2340,7 @@ func (s *Server) serviceStopTool(args map[string]any) toolResult {
 }
 
 func (s *Server) eventListTool(args map[string]any) toolResult {
-	projectPath, ok := stringArg(args, "path")
-	if !ok {
-		return errorToolResult(`tool "event_list" requires string argument "path"`, nil)
-	}
-	projectPath, err := s.scopedProjectPath(projectPath)
+	projectPath, err := s.scopedProjectPathArgOrActive(args, "event_list")
 	if err != nil {
 		return errorToolResult(err.Error(), nil)
 	}

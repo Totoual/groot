@@ -53,6 +53,10 @@ func (c *EventCmd) Run(a *app.App, args []string) error {
 		c.PrintHelp(os.Stdout)
 		return nil
 	}
+	if len(args) == 0 {
+		c.PrintHelp(os.Stdout)
+		return fmt.Errorf("event command required")
+	}
 
 	subcmd, ok := c.commands()[args[0]]
 	if !ok {
@@ -81,14 +85,14 @@ func (c *EventCmd) PrintHelp(w io.Writer) {
 type eventListCmd struct{}
 
 func (c *eventListCmd) Name() string { return "list" }
-func (c *eventListCmd) Help() string { return "List runtime events for a project path" }
+func (c *eventListCmd) Help() string { return "List runtime events for a workspace" }
 
 func (c *eventListCmd) Run(a *app.App, args []string) error {
 	fs := flag.NewFlagSet("event list", flag.ContinueOnError)
 	fs.SetOutput(os.Stdout)
 	limit := fs.Int("limit", 0, "maximum number of events to print")
 	fs.Usage = func() {
-		fmt.Fprintln(fs.Output(), "usage: groot event list <path> [--limit n]")
+		fmt.Fprintln(fs.Output(), "usage: groot event list <workspace> [--limit n]")
 		fmt.Fprintln(fs.Output())
 		fmt.Fprintln(fs.Output(), c.Help())
 	}
@@ -100,17 +104,17 @@ func (c *eventListCmd) Run(a *app.App, args []string) error {
 	}
 	if fs.NArg() != 1 {
 		fs.Usage()
-		return fmt.Errorf("project path required")
+		return fmt.Errorf("workspace name required")
 	}
 	if *limit < 0 {
 		return fmt.Errorf("limit must be >= 0")
 	}
 
-	resolved, err := resolveProjectWorkspace(a, fs.Arg(0))
+	workspaceName, err := requireWorkspaceArg(a, fs.Arg(0))
 	if err != nil {
 		return err
 	}
-	events, err := a.EventList(resolved.Name, app.EventListOptions{Limit: *limit})
+	events, err := a.EventList(workspaceName, app.EventListOptions{Limit: *limit})
 	if err != nil {
 		return err
 	}

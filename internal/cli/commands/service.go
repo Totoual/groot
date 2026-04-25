@@ -35,6 +35,9 @@ func serviceCommandMap(cmds ...interfaces.Cmd) map[string]interfaces.Cmd {
 
 func defaultServiceCommands() []interfaces.Cmd {
 	return []interfaces.Cmd{
+		&serviceAddCmd{},
+		&serviceRemoveCmd{},
+		&serviceListDeclaredCmd{},
 		&serviceStartCmd{},
 		&serviceStatusCmd{},
 		&serviceListCmd{},
@@ -52,13 +55,17 @@ func (c *ServiceCmd) commands() map[string]interfaces.Cmd {
 
 func (c *ServiceCmd) Name() string { return "service" }
 func (c *ServiceCmd) Help() string {
-	return "Run and inspect workspace-owned services for a project path"
+	return "Run and inspect workspace-owned services for a workspace"
 }
 
 func (c *ServiceCmd) Run(a *app.App, args []string) error {
 	if cliutil.IsHelpRequest(args) {
 		c.PrintHelp(os.Stdout)
 		return nil
+	}
+	if len(args) == 0 {
+		c.PrintHelp(os.Stdout)
+		return fmt.Errorf("service command required")
 	}
 	subcmd, ok := c.commands()[args[0]]
 	if !ok {
@@ -87,13 +94,59 @@ func (c *ServiceCmd) PrintHelp(w io.Writer) {
 type serviceStartCmd struct{}
 
 func (c *serviceStartCmd) Name() string { return "start" }
-func (c *serviceStartCmd) Help() string { return "Start a declared service for a project path" }
+func (c *serviceStartCmd) Help() string { return "Start a declared service for a workspace" }
 
-func (c *serviceStartCmd) Run(a *app.App, args []string) error {
-	fs := flag.NewFlagSet("service start", flag.ContinueOnError)
+type serviceAddCmd struct{}
+
+func (c *serviceAddCmd) Name() string { return "add" }
+func (c *serviceAddCmd) Help() string { return "Add or update a declared service for a workspace" }
+
+func (c *serviceAddCmd) Run(a *app.App, args []string) error {
+	fs := flag.NewFlagSet("service add", flag.ContinueOnError)
+	fs.SetOutput(os.Stdout)
+	cwd := fs.String("cwd", "", "relative or absolute working directory for the service")
+	restart := fs.String("restart", "", "restart policy recorded in the manifest")
+	fs.Usage = func() {
+		fmt.Fprintln(fs.Output(), "usage: groot service add <workspace> <name> [--cwd dir] [--restart policy] -- <cmd> [args...]")
+		fmt.Fprintln(fs.Output())
+		fmt.Fprintln(fs.Output(), c.Help())
+	}
+
+	workspaceName, serviceName, command, err := parseServiceDeclarationArgs(fs, args)
+	if err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
+		return err
+	}
+	workspaceName, err = requireWorkspaceArg(a, workspaceName)
+	if err != nil {
+		return err
+	}
+
+	if err := a.DeclareService(workspaceName, app.ServiceSpec{
+		Name:    serviceName,
+		Command: append([]string{}, command...),
+		Cwd:     strings.TrimSpace(*cwd),
+		Restart: strings.TrimSpace(*restart),
+	}); err != nil {
+		return err
+	}
+
+	fmt.Fprintf(os.Stdout, "Declared service %q in workspace %q.\n", serviceName, workspaceName)
+	return nil
+}
+
+type serviceRemoveCmd struct{}
+
+func (c *serviceRemoveCmd) Name() string { return "remove" }
+func (c *serviceRemoveCmd) Help() string { return "Remove a declared service from a workspace" }
+
+func (c *serviceRemoveCmd) Run(a *app.App, args []string) error {
+	fs := flag.NewFlagSet("service remove", flag.ContinueOnError)
 	fs.SetOutput(os.Stdout)
 	fs.Usage = func() {
-		fmt.Fprintln(fs.Output(), "usage: groot service start <path> <name>")
+		fmt.Fprintln(fs.Output(), "usage: groot service remove <workspace> <name>")
 		fmt.Fprintln(fs.Output())
 		fmt.Fprintln(fs.Output(), c.Help())
 	}
@@ -105,70 +158,32 @@ func (c *serviceStartCmd) Run(a *app.App, args []string) error {
 	}
 	if fs.NArg() != 2 {
 		fs.Usage()
-		return fmt.Errorf("project path and service name required")
+		return fmt.Errorf("workspace name and service name required")
 	}
-	resolved, err := resolveProjectWorkspace(a, fs.Arg(0))
+
+	workspaceName, err := requireWorkspaceArg(a, fs.Arg(0))
 	if err != nil {
 		return err
 	}
-	if err := enforceWorkspaceOwnership(a, resolved.Name); err != nil {
+	serviceName := strings.TrimSpace(fs.Arg(1))
+	if err := a.DeleteService(workspaceName, serviceName); err != nil {
 		return err
 	}
-	service, err := a.StartService(resolved.Name, fs.Arg(1))
-	if err != nil {
-		return err
-	}
-	writeServiceStatus(service)
+
+	fmt.Fprintf(os.Stdout, "Removed service %q from workspace %q.\n", serviceName, workspaceName)
 	return nil
 }
 
-type serviceStatusCmd struct{}
+type serviceListDeclaredCmd struct{}
 
-func (c *serviceStatusCmd) Name() string { return "status" }
-func (c *serviceStatusCmd) Help() string {
-	return "Print service status for a project path and service name"
-}
+func (c *serviceListDeclaredCmd) Name() string { return "list-declared" }
+func (c *serviceListDeclaredCmd) Help() string { return "List declared services for a workspace" }
 
-func (c *serviceStatusCmd) Run(a *app.App, args []string) error {
-	fs := flag.NewFlagSet("service status", flag.ContinueOnError)
+func (c *serviceListDeclaredCmd) Run(a *app.App, args []string) error {
+	fs := flag.NewFlagSet("service list-declared", flag.ContinueOnError)
 	fs.SetOutput(os.Stdout)
 	fs.Usage = func() {
-		fmt.Fprintln(fs.Output(), "usage: groot service status <path> <name>")
-		fmt.Fprintln(fs.Output())
-		fmt.Fprintln(fs.Output(), c.Help())
-	}
-	if err := fs.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return nil
-		}
-		return err
-	}
-	if fs.NArg() != 2 {
-		fs.Usage()
-		return fmt.Errorf("project path and service name required")
-	}
-	resolved, err := resolveProjectWorkspace(a, fs.Arg(0))
-	if err != nil {
-		return err
-	}
-	service, err := a.ServiceStatus(resolved.Name, fs.Arg(1))
-	if err != nil {
-		return err
-	}
-	writeServiceStatus(service)
-	return nil
-}
-
-type serviceListCmd struct{}
-
-func (c *serviceListCmd) Name() string { return "list" }
-func (c *serviceListCmd) Help() string { return "List declared services for a project path" }
-
-func (c *serviceListCmd) Run(a *app.App, args []string) error {
-	fs := flag.NewFlagSet("service list", flag.ContinueOnError)
-	fs.SetOutput(os.Stdout)
-	fs.Usage = func() {
-		fmt.Fprintln(fs.Output(), "usage: groot service list <path>")
+		fmt.Fprintln(fs.Output(), "usage: groot service list-declared <workspace>")
 		fmt.Fprintln(fs.Output())
 		fmt.Fprintln(fs.Output(), c.Help())
 	}
@@ -180,13 +195,125 @@ func (c *serviceListCmd) Run(a *app.App, args []string) error {
 	}
 	if fs.NArg() != 1 {
 		fs.Usage()
-		return fmt.Errorf("project path required")
+		return fmt.Errorf("workspace name required")
 	}
-	resolved, err := resolveProjectWorkspace(a, fs.Arg(0))
+
+	workspaceName, err := requireWorkspaceArg(a, fs.Arg(0))
 	if err != nil {
 		return err
 	}
-	services, err := a.ServiceList(resolved.Name)
+	services, err := a.DeclaredServices(workspaceName)
+	if err != nil {
+		return err
+	}
+	if len(services) == 0 {
+		fmt.Fprintln(os.Stdout, "No declared services.")
+		return nil
+	}
+	for _, service := range services {
+		fmt.Fprintf(os.Stdout, "%s\t%s\n", service.Name, strings.Join(service.Command, " "))
+	}
+	return nil
+}
+
+func (c *serviceStartCmd) Run(a *app.App, args []string) error {
+	fs := flag.NewFlagSet("service start", flag.ContinueOnError)
+	fs.SetOutput(os.Stdout)
+	fs.Usage = func() {
+		fmt.Fprintln(fs.Output(), "usage: groot service start <workspace> <name>")
+		fmt.Fprintln(fs.Output())
+		fmt.Fprintln(fs.Output(), c.Help())
+	}
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
+		return err
+	}
+	if fs.NArg() != 2 {
+		fs.Usage()
+		return fmt.Errorf("workspace name and service name required")
+	}
+	workspaceName, err := requireWorkspaceArg(a, fs.Arg(0))
+	if err != nil {
+		return err
+	}
+	if err := enforceWorkspaceOwnership(a, workspaceName); err != nil {
+		return err
+	}
+	service, err := a.StartService(workspaceName, fs.Arg(1))
+	if err != nil {
+		return err
+	}
+	writeServiceStatus(service)
+	return nil
+}
+
+type serviceStatusCmd struct{}
+
+func (c *serviceStatusCmd) Name() string { return "status" }
+func (c *serviceStatusCmd) Help() string {
+	return "Print service status for a workspace and service name"
+}
+
+func (c *serviceStatusCmd) Run(a *app.App, args []string) error {
+	fs := flag.NewFlagSet("service status", flag.ContinueOnError)
+	fs.SetOutput(os.Stdout)
+	fs.Usage = func() {
+		fmt.Fprintln(fs.Output(), "usage: groot service status <workspace> <name>")
+		fmt.Fprintln(fs.Output())
+		fmt.Fprintln(fs.Output(), c.Help())
+	}
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
+		return err
+	}
+	if fs.NArg() != 2 {
+		fs.Usage()
+		return fmt.Errorf("workspace name and service name required")
+	}
+	workspaceName, err := requireWorkspaceArg(a, fs.Arg(0))
+	if err != nil {
+		return err
+	}
+	service, err := a.ServiceStatus(workspaceName, fs.Arg(1))
+	if err != nil {
+		return err
+	}
+	writeServiceStatus(service)
+	return nil
+}
+
+type serviceListCmd struct{}
+
+func (c *serviceListCmd) Name() string { return "list" }
+func (c *serviceListCmd) Help() string { return "List service runtime status for a workspace" }
+
+func (c *serviceListCmd) Run(a *app.App, args []string) error {
+	fs := flag.NewFlagSet("service list", flag.ContinueOnError)
+	fs.SetOutput(os.Stdout)
+	fs.Usage = func() {
+		fmt.Fprintln(fs.Output(), "usage: groot service list <workspace>")
+		fmt.Fprintln(fs.Output())
+		fmt.Fprintln(fs.Output(), c.Help())
+	}
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
+		return err
+	}
+	if fs.NArg() != 1 {
+		fs.Usage()
+		return fmt.Errorf("workspace name required")
+	}
+	workspaceName, err := requireWorkspaceArg(a, fs.Arg(0))
+	if err != nil {
+		return err
+	}
+	services, err := a.ServiceList(workspaceName)
 	if err != nil {
 		return err
 	}
@@ -209,7 +336,7 @@ func (c *serviceLogsCmd) Run(a *app.App, args []string) error {
 	fs := flag.NewFlagSet("service logs", flag.ContinueOnError)
 	fs.SetOutput(os.Stdout)
 	fs.Usage = func() {
-		fmt.Fprintln(fs.Output(), "usage: groot service logs <path> <name>")
+		fmt.Fprintln(fs.Output(), "usage: groot service logs <workspace> <name>")
 		fmt.Fprintln(fs.Output())
 		fmt.Fprintln(fs.Output(), c.Help())
 	}
@@ -221,13 +348,13 @@ func (c *serviceLogsCmd) Run(a *app.App, args []string) error {
 	}
 	if fs.NArg() != 2 {
 		fs.Usage()
-		return fmt.Errorf("project path and service name required")
+		return fmt.Errorf("workspace name and service name required")
 	}
-	resolved, err := resolveProjectWorkspace(a, fs.Arg(0))
+	workspaceName, err := requireWorkspaceArg(a, fs.Arg(0))
 	if err != nil {
 		return err
 	}
-	logs, err := a.ServiceLogs(resolved.Name, fs.Arg(1))
+	logs, err := a.ServiceLogs(workspaceName, fs.Arg(1))
 	if err != nil {
 		return err
 	}
@@ -243,13 +370,13 @@ func (c *serviceLogsCmd) Run(a *app.App, args []string) error {
 type serviceStopCmd struct{}
 
 func (c *serviceStopCmd) Name() string { return "stop" }
-func (c *serviceStopCmd) Help() string { return "Stop a running service for a project path" }
+func (c *serviceStopCmd) Help() string { return "Stop a running service for a workspace" }
 
 func (c *serviceStopCmd) Run(a *app.App, args []string) error {
 	fs := flag.NewFlagSet("service stop", flag.ContinueOnError)
 	fs.SetOutput(os.Stdout)
 	fs.Usage = func() {
-		fmt.Fprintln(fs.Output(), "usage: groot service stop <path> <name>")
+		fmt.Fprintln(fs.Output(), "usage: groot service stop <workspace> <name>")
 		fmt.Fprintln(fs.Output())
 		fmt.Fprintln(fs.Output(), c.Help())
 	}
@@ -261,13 +388,13 @@ func (c *serviceStopCmd) Run(a *app.App, args []string) error {
 	}
 	if fs.NArg() != 2 {
 		fs.Usage()
-		return fmt.Errorf("project path and service name required")
+		return fmt.Errorf("workspace name and service name required")
 	}
-	resolved, err := resolveProjectWorkspace(a, fs.Arg(0))
+	workspaceName, err := requireWorkspaceArg(a, fs.Arg(0))
 	if err != nil {
 		return err
 	}
-	service, err := a.StopService(resolved.Name, fs.Arg(1))
+	service, err := a.StopService(workspaceName, fs.Arg(1))
 	if err != nil {
 		return err
 	}

@@ -309,27 +309,39 @@ CLI and MCP should be adapters over the same methods.
 Illustrative CLI shape:
 
 ```bash
-groot task start <path> <name-or-command>
-groot task status <path> <task-id>
-groot task list <path>
-groot task logs <path> <task-id>
-groot event list <path> [--limit n]
+groot task add <workspace> <name> -- <cmd> [args...]
+groot task list-declared <workspace>
+groot task start <workspace> [--task name] <cmd-or-flags>
+groot task status <workspace> <task-id>
+groot task list <workspace>
+groot task logs <workspace> <task-id>
+groot event list <workspace> [--limit n]
 
-groot service start <path> <name>
-groot service stop <path> <name>
-groot service status <path> <name>
-groot service list <path>
-groot service logs <path> <name>
+groot service add <workspace> <name> -- <cmd> [args...]
+groot service list-declared <workspace>
+groot service start <workspace> <name>
+groot service stop <workspace> <name>
+groot service status <workspace> <name>
+groot service list <workspace>
+groot service logs <workspace> <name>
 ```
 
 This is illustrative, not final.
 
 The important point is that CLI maps to structured runtime objects, not shell-only flows.
 
+Design rule:
+
+- path-first commands handle discovery, bind, open, inspect, and activation
+- workspace-first commands handle runtime resources such as tasks, services, and events
+
 ## MCP Mapping
 
 MCP task and event tools:
 
+- `task_declare`
+- `task_delete`
+- `task_list_declared`
 - `task_start`
 - `task_stop`
 - `task_status`
@@ -339,6 +351,9 @@ MCP task and event tools:
 
 Current MCP service tools:
 
+- `service_declare`
+- `service_delete`
+- `service_list_declared`
 - `service_start`
 - `service_stop`
 - `service_status`
@@ -351,6 +366,11 @@ Likely MCP resources:
 - service metadata
 - event history
 - log resources
+
+Current MCP ergonomics should also follow the same rule:
+
+- `workspace_activate` selects one active project scope
+- runtime tools may use that active scope by default instead of always requiring an explicit path
 
 ## Non-Goals
 

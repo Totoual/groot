@@ -325,12 +325,12 @@ Import restores the Groot workspace contract, not the source repository contents
 ### `task_start`
 
 Resolve or create a workspace from a project path and start a task run inside the strict Groot runtime.
+If one project is already active through `workspace_activate`, `path` may be omitted.
 
 Ad hoc input:
 
 ```json
 {
-  "path": "/Users/example/Documents/the_grime_tcg",
   "name": "tests",
   "command": "go",
   "args": ["test", "./..."],
@@ -339,6 +339,14 @@ Ad hoc input:
 ```
 
 Declared task input:
+
+```json
+{
+  "task": "tests"
+}
+```
+
+Optional explicit path form:
 
 ```json
 {
@@ -361,6 +369,57 @@ Structured result:
 - `task.stdout_log`
 - `task.stderr_log`
 
+### `task_declare`
+
+Add or update one declared manifest task.
+
+Input:
+
+```json
+{
+  "name": "tests",
+  "command": ["go", "test", "./..."],
+  "cwd": "."
+}
+```
+
+Structured result:
+
+- `created`
+- `task`
+
+### `task_delete`
+
+Delete one declared manifest task.
+
+Input:
+
+```json
+{
+  "name": "tests"
+}
+```
+
+Structured result:
+
+- `created`
+- `task`
+
+### `task_list_declared`
+
+List declared manifest tasks.
+
+Input:
+
+```json
+{}
+```
+
+Structured result:
+
+- `created`
+- `tasks`
+
 ### `task_status`
 
 Return the current status for a task run.
@@ -369,7 +428,6 @@ Input:
 
 ```json
 {
-  "path": "/Users/example/Documents/the_grime_tcg",
   "task_id": "1776629605797-a5b69c7a5c5c"
 }
 ```
@@ -381,7 +439,7 @@ Structured result:
 
 ### `task_list`
 
-List persisted task runs for a project path.
+List persisted task runs for the active project or an explicit `path`.
 
 Input:
 
@@ -404,7 +462,6 @@ Input:
 
 ```json
 {
-  "path": "/Users/example/Documents/the_grime_tcg",
   "task_id": "1776629605797-a5b69c7a5c5c"
 }
 ```
@@ -424,7 +481,6 @@ Input:
 
 ```json
 {
-  "path": "/Users/example/Documents/the_grime_tcg",
   "task_id": "1776629605797-a5b69c7a5c5c"
 }
 ```
@@ -436,13 +492,12 @@ Structured result:
 
 ### `event_list`
 
-List persisted runtime events for a project path.
+List persisted runtime events for the active project or an explicit `path`.
 
 Input:
 
 ```json
 {
-  "path": "/Users/example/Documents/the_grime_tcg",
   "limit": 20
 }
 ```
@@ -476,13 +531,12 @@ Service failed events are emitted once when Groot observes the final service sta
 
 ### `service_start`
 
-Start one declared service for a project path.
+Start one declared service for the active project or an explicit `path`.
 
 Input:
 
 ```json
 {
-  "path": "/Users/example/Documents/the_grime_tcg",
   "name": "api"
 }
 ```
@@ -492,6 +546,58 @@ Structured result:
 - `created`
 - `service`
 
+### `service_declare`
+
+Add or update one declared manifest service.
+
+Input:
+
+```json
+{
+  "name": "api",
+  "command": ["go", "run", "./cmd/api"],
+  "cwd": ".",
+  "restart": "manual"
+}
+```
+
+Structured result:
+
+- `created`
+- `service`
+
+### `service_delete`
+
+Delete one declared manifest service.
+
+Input:
+
+```json
+{
+  "name": "api"
+}
+```
+
+Structured result:
+
+- `created`
+- `service`
+
+### `service_list_declared`
+
+List declared manifest services.
+
+Input:
+
+```json
+{}
+```
+
+Structured result:
+
+- `created`
+- `services`
+
 ### `service_status`
 
 Return the current status for one declared service.
@@ -500,7 +606,6 @@ Input:
 
 ```json
 {
-  "path": "/Users/example/Documents/the_grime_tcg",
   "name": "api"
 }
 ```
@@ -512,7 +617,7 @@ Structured result:
 
 ### `service_list`
 
-List declared services for a project path.
+List declared services with their current runtime state for the active project or an explicit `path`.
 
 Input:
 
@@ -535,7 +640,6 @@ Input:
 
 ```json
 {
-  "path": "/Users/example/Documents/the_grime_tcg",
   "name": "api"
 }
 ```
@@ -555,7 +659,6 @@ Input:
 
 ```json
 {
-  "path": "/Users/example/Documents/the_grime_tcg",
   "name": "api"
 }
 ```

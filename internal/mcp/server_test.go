@@ -59,14 +59,14 @@ func TestServerHandleInitializeAndListTools(t *testing.T) {
 	if err := json.Unmarshal(response, &listResponse); err != nil {
 		t.Fatalf("Unmarshal tools/list response returned error: %v", err)
 	}
-	if len(listResponse.Result.Tools) != 21 {
-		t.Fatalf("len(tools) = %d, want %d", len(listResponse.Result.Tools), 21)
+	if len(listResponse.Result.Tools) != 27 {
+		t.Fatalf("len(tools) = %d, want %d", len(listResponse.Result.Tools), 27)
 	}
 	names := make([]string, 0, len(listResponse.Result.Tools))
 	for _, tool := range listResponse.Result.Tools {
 		names = append(names, tool.Name)
 	}
-	for _, want := range []string{"task_start", "task_status", "task_list", "task_logs", "task_stop", "service_start", "service_status", "service_list", "service_logs", "service_stop", "event_list"} {
+	for _, want := range []string{"task_start", "task_declare", "task_delete", "task_list_declared", "task_status", "task_list", "task_logs", "task_stop", "service_start", "service_declare", "service_delete", "service_list_declared", "service_status", "service_list", "service_logs", "service_stop", "event_list"} {
 		if !slicesContainsString(names, want) {
 			t.Fatalf("missing tool %q in %#v", want, names)
 		}
@@ -1170,6 +1170,92 @@ func TestServerTaskToolsStartStatusListAndLogs(t *testing.T) {
 	}
 }
 
+func TestServerTaskToolsUseActiveProjectScopeWhenPathOmitted(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+	projectPath := filepath.Join(root, "repos", "crawlly")
+	if err := os.MkdirAll(projectPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := a.CreateNewWorkspace("crawlly"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+	if err := a.BindWorkspace("crawlly", projectPath); err != nil {
+		t.Fatalf("BindWorkspace returned error: %v", err)
+	}
+
+	server := NewServer(a)
+	activate := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"workspace_activate","arguments":{"workspace":"crawlly"}}}`
+	if _, err := server.HandleMessage([]byte(activate)); err != nil {
+		t.Fatalf("HandleMessage workspace_activate returned error: %v", err)
+	}
+
+	start := `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"task_start","arguments":{"name":"echo","command":"/bin/sh","args":["-c","printf ok"]}}}`
+	response, err := server.HandleMessage([]byte(start))
+	if err != nil {
+		t.Fatalf("HandleMessage task_start returned error: %v", err)
+	}
+	taskID := decodeTaskRunResult(t, response).Task.ID
+	task := waitForMCPTaskState(t, server, projectPath, taskID, app.TaskRunSucceeded)
+	if task.State != app.TaskRunSucceeded {
+		t.Fatalf("task state = %q, want %q", task.State, app.TaskRunSucceeded)
+	}
+}
+
+func TestServerTaskDeclarationTools(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+	projectPath := filepath.Join(root, "repos", "crawlly")
+	if err := os.MkdirAll(projectPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := a.CreateNewWorkspace("crawlly"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+	if err := a.BindWorkspace("crawlly", projectPath); err != nil {
+		t.Fatalf("BindWorkspace returned error: %v", err)
+	}
+
+	server := NewServer(a)
+	activate := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"workspace_activate","arguments":{"workspace":"crawlly"}}}`
+	if _, err := server.HandleMessage([]byte(activate)); err != nil {
+		t.Fatalf("HandleMessage workspace_activate returned error: %v", err)
+	}
+
+	declare := `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"task_declare","arguments":{"name":"test","command":["go","test","./..."],"cwd":"."}}}`
+	if _, err := server.HandleMessage([]byte(declare)); err != nil {
+		t.Fatalf("HandleMessage task_declare returned error: %v", err)
+	}
+
+	list := `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"task_list_declared","arguments":{}}}`
+	response, err := server.HandleMessage([]byte(list))
+	if err != nil {
+		t.Fatalf("HandleMessage task_list_declared returned error: %v", err)
+	}
+	var listRPC struct {
+		Result struct {
+			IsError           bool `json:"isError"`
+			StructuredContent struct {
+				Tasks []app.TaskSpec `json:"tasks"`
+			} `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(response, &listRPC); err != nil {
+		t.Fatalf("Unmarshal task_list_declared returned error: %v", err)
+	}
+	if listRPC.Result.IsError {
+		t.Fatal("expected task_list_declared success result")
+	}
+	if len(listRPC.Result.StructuredContent.Tasks) != 1 || listRPC.Result.StructuredContent.Tasks[0].Name != "test" {
+		t.Fatalf("unexpected declared tasks: %#v", listRPC.Result.StructuredContent.Tasks)
+	}
+
+	deleteReq := `{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"task_delete","arguments":{"name":"test"}}}`
+	if _, err := server.HandleMessage([]byte(deleteReq)); err != nil {
+		t.Fatalf("HandleMessage task_delete returned error: %v", err)
+	}
+}
+
 func TestServerTaskStopCancelsRunningTask(t *testing.T) {
 	root := t.TempDir()
 	a := app.NewApp(root)
@@ -1296,6 +1382,60 @@ func TestServerServiceToolsStartStatusListLogsAndStop(t *testing.T) {
 	service = decodeServiceStatusResult(t, response).Service
 	if service.State != app.ServiceStopped {
 		t.Fatalf("service state = %q, want %q", service.State, app.ServiceStopped)
+	}
+}
+
+func TestServerServiceDeclarationTools(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+	projectPath := filepath.Join(root, "repos", "crawlly")
+	if err := os.MkdirAll(projectPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := a.CreateNewWorkspace("crawlly"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+	if err := a.BindWorkspace("crawlly", projectPath); err != nil {
+		t.Fatalf("BindWorkspace returned error: %v", err)
+	}
+
+	server := NewServer(a)
+	activate := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"workspace_activate","arguments":{"workspace":"crawlly"}}}`
+	if _, err := server.HandleMessage([]byte(activate)); err != nil {
+		t.Fatalf("HandleMessage workspace_activate returned error: %v", err)
+	}
+
+	declare := `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"service_declare","arguments":{"name":"api","command":["go","run","./cmd/api"],"cwd":".","restart":"manual"}}}`
+	if _, err := server.HandleMessage([]byte(declare)); err != nil {
+		t.Fatalf("HandleMessage service_declare returned error: %v", err)
+	}
+
+	list := `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"service_list_declared","arguments":{}}}`
+	response, err := server.HandleMessage([]byte(list))
+	if err != nil {
+		t.Fatalf("HandleMessage service_list_declared returned error: %v", err)
+	}
+	var listRPC struct {
+		Result struct {
+			IsError           bool `json:"isError"`
+			StructuredContent struct {
+				Services []app.ServiceSpec `json:"services"`
+			} `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(response, &listRPC); err != nil {
+		t.Fatalf("Unmarshal service_list_declared returned error: %v", err)
+	}
+	if listRPC.Result.IsError {
+		t.Fatal("expected service_list_declared success result")
+	}
+	if len(listRPC.Result.StructuredContent.Services) != 1 || listRPC.Result.StructuredContent.Services[0].Name != "api" {
+		t.Fatalf("unexpected declared services: %#v", listRPC.Result.StructuredContent.Services)
+	}
+
+	deleteReq := `{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"service_delete","arguments":{"name":"api"}}}`
+	if _, err := server.HandleMessage([]byte(deleteReq)); err != nil {
+		t.Fatalf("HandleMessage service_delete returned error: %v", err)
 	}
 }
 

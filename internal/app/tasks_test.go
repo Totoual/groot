@@ -112,6 +112,77 @@ func TestStartDeclaredTaskRunsManifestTask(t *testing.T) {
 	}
 }
 
+func TestDeclareTaskUpdatesManifest(t *testing.T) {
+	root := t.TempDir()
+	app := NewApp(root)
+
+	if err := app.CreateNewWorkspace("crawlly"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+
+	if err := app.DeclareTask("crawlly", TaskSpec{
+		Name:    "test",
+		Command: []string{"go", "test", "./..."},
+		Cwd:     ".",
+	}); err != nil {
+		t.Fatalf("DeclareTask returned error: %v", err)
+	}
+
+	tasks, err := app.DeclaredTasks("crawlly")
+	if err != nil {
+		t.Fatalf("DeclaredTasks returned error: %v", err)
+	}
+	if len(tasks) != 1 {
+		t.Fatalf("expected 1 task, got %d", len(tasks))
+	}
+	if tasks[0].Name != "test" || strings.Join(tasks[0].Command, " ") != "go test ./..." || tasks[0].Cwd != "." {
+		t.Fatalf("unexpected declared task: %#v", tasks[0])
+	}
+
+	if err := app.DeclareTask("crawlly", TaskSpec{
+		Name:    "test",
+		Command: []string{"go", "test", "./internal/app"},
+		Cwd:     "subdir",
+	}); err != nil {
+		t.Fatalf("DeclareTask update returned error: %v", err)
+	}
+
+	tasks, err = app.DeclaredTasks("crawlly")
+	if err != nil {
+		t.Fatalf("DeclaredTasks returned error: %v", err)
+	}
+	if len(tasks) != 1 {
+		t.Fatalf("expected 1 task after update, got %d", len(tasks))
+	}
+	if strings.Join(tasks[0].Command, " ") != "go test ./internal/app" || tasks[0].Cwd != "subdir" {
+		t.Fatalf("unexpected updated task: %#v", tasks[0])
+	}
+}
+
+func TestDeleteTaskRemovesDeclaration(t *testing.T) {
+	root := t.TempDir()
+	app := NewApp(root)
+
+	if err := app.CreateNewWorkspace("crawlly"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+	if err := app.DeclareTask("crawlly", TaskSpec{Name: "test", Command: []string{"go", "test", "./..."}}); err != nil {
+		t.Fatalf("DeclareTask returned error: %v", err)
+	}
+
+	if err := app.DeleteTask("crawlly", "test"); err != nil {
+		t.Fatalf("DeleteTask returned error: %v", err)
+	}
+
+	tasks, err := app.DeclaredTasks("crawlly")
+	if err != nil {
+		t.Fatalf("DeclaredTasks returned error: %v", err)
+	}
+	if len(tasks) != 0 {
+		t.Fatalf("expected no tasks, got %#v", tasks)
+	}
+}
+
 func TestTaskListReturnsNewestFirst(t *testing.T) {
 	root := t.TempDir()
 	app := NewApp(root)

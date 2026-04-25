@@ -119,6 +119,79 @@ func TestServiceFailureEmitsFailedEventOnObservation(t *testing.T) {
 	}
 }
 
+func TestDeclareServiceUpdatesManifest(t *testing.T) {
+	root := t.TempDir()
+	app := NewApp(root)
+
+	if err := app.CreateNewWorkspace("crawlly"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+
+	if err := app.DeclareService("crawlly", ServiceSpec{
+		Name:    "api",
+		Command: []string{"go", "run", "./cmd/api"},
+		Cwd:     ".",
+		Restart: "manual",
+	}); err != nil {
+		t.Fatalf("DeclareService returned error: %v", err)
+	}
+
+	services, err := app.DeclaredServices("crawlly")
+	if err != nil {
+		t.Fatalf("DeclaredServices returned error: %v", err)
+	}
+	if len(services) != 1 {
+		t.Fatalf("expected 1 service, got %d", len(services))
+	}
+	if services[0].Name != "api" || strings.Join(services[0].Command, " ") != "go run ./cmd/api" || services[0].Restart != "manual" {
+		t.Fatalf("unexpected declared service: %#v", services[0])
+	}
+
+	if err := app.DeclareService("crawlly", ServiceSpec{
+		Name:    "api",
+		Command: []string{"go", "run", "./cmd/server"},
+		Cwd:     "backend",
+		Restart: "on-failure",
+	}); err != nil {
+		t.Fatalf("DeclareService update returned error: %v", err)
+	}
+
+	services, err = app.DeclaredServices("crawlly")
+	if err != nil {
+		t.Fatalf("DeclaredServices returned error: %v", err)
+	}
+	if len(services) != 1 {
+		t.Fatalf("expected 1 service after update, got %d", len(services))
+	}
+	if strings.Join(services[0].Command, " ") != "go run ./cmd/server" || services[0].Cwd != "backend" || services[0].Restart != "on-failure" {
+		t.Fatalf("unexpected updated service: %#v", services[0])
+	}
+}
+
+func TestDeleteServiceRemovesDeclaration(t *testing.T) {
+	root := t.TempDir()
+	app := NewApp(root)
+
+	if err := app.CreateNewWorkspace("crawlly"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+	if err := app.DeclareService("crawlly", ServiceSpec{Name: "api", Command: []string{"go", "run", "./cmd/api"}}); err != nil {
+		t.Fatalf("DeclareService returned error: %v", err)
+	}
+
+	if err := app.DeleteService("crawlly", "api"); err != nil {
+		t.Fatalf("DeleteService returned error: %v", err)
+	}
+
+	services, err := app.DeclaredServices("crawlly")
+	if err != nil {
+		t.Fatalf("DeclaredServices returned error: %v", err)
+	}
+	if len(services) != 0 {
+		t.Fatalf("expected no services, got %#v", services)
+	}
+}
+
 func setupServiceProject(t *testing.T, app *App, root string, services []ServiceSpec) string {
 	t.Helper()
 

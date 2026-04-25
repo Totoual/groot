@@ -23,15 +23,16 @@ func TestEventListCmdRunPrintsEvents(t *testing.T) {
 	root := t.TempDir()
 	a := app.NewApp(root)
 
-	projectPath := setupEventProject(t, a, root)
+	setupEventProject(t, a, root)
+	workspaceName := "crawlly"
 	task, err := a.StartTask("crawlly", app.TaskStartSpec{Name: "echo", Command: "/bin/sh", Args: []string{"-c", "printf ok"}})
 	if err != nil {
 		t.Fatalf("StartTask returned error: %v", err)
 	}
-	waitForTaskStateCmd(t, a, projectPath, task.ID, app.TaskRunSucceeded)
+	waitForTaskStateCmd(t, a, workspaceName, task.ID, app.TaskRunSucceeded)
 
 	stdout, stderr, err := captureCommandOutput(func() error {
-		return (&eventListCmd{}).Run(a, []string{projectPath})
+		return (&eventListCmd{}).Run(a, []string{workspaceName})
 	})
 	if err != nil {
 		t.Fatalf("Run returned error: %v", err)
@@ -48,9 +49,10 @@ func TestEventListCmdRunPrintsEmptyState(t *testing.T) {
 	root := t.TempDir()
 	a := app.NewApp(root)
 
-	projectPath := setupEventProject(t, a, root)
+	setupEventProject(t, a, root)
+	workspaceName := "crawlly"
 	stdout, stderr, err := captureCommandOutput(func() error {
-		return (&eventListCmd{}).Run(a, []string{projectPath})
+		return (&eventListCmd{}).Run(a, []string{workspaceName})
 	})
 	if err != nil {
 		t.Fatalf("Run returned error: %v", err)

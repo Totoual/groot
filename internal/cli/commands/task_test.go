@@ -28,10 +28,11 @@ func TestTaskStartAndStatusCmdRun(t *testing.T) {
 	root := t.TempDir()
 	a := app.NewApp(root)
 
-	projectPath := setupTaskProject(t, a, root)
+	setupTaskProject(t, a, root)
+	workspaceName := "crawlly"
 
 	stdout, stderr, err := captureCommandOutput(func() error {
-		return (&taskStartCmd{}).Run(a, []string{projectPath, "--name", "echo", "/bin/sh", "-c", "printf hello"})
+		return (&taskStartCmd{}).Run(a, []string{workspaceName, "--name", "echo", "/bin/sh", "-c", "printf hello"})
 	})
 	if err != nil {
 		t.Fatalf("Run returned error: %v", err)
@@ -40,10 +41,10 @@ func TestTaskStartAndStatusCmdRun(t *testing.T) {
 		t.Fatalf("expected stderr to stay quiet, got %q", stderr)
 	}
 	taskID := extractTaskID(t, stdout)
-	waitForTaskStateCmd(t, a, projectPath, taskID, app.TaskRunSucceeded)
+	waitForTaskStateCmd(t, a, workspaceName, taskID, app.TaskRunSucceeded)
 
 	stdout, stderr, err = captureCommandOutput(func() error {
-		return (&taskStatusCmd{}).Run(a, []string{projectPath, taskID})
+		return (&taskStatusCmd{}).Run(a, []string{workspaceName, taskID})
 	})
 	if err != nil {
 		t.Fatalf("Run returned error: %v", err)
@@ -61,6 +62,7 @@ func TestTaskStartCmdRunStartsDeclaredTask(t *testing.T) {
 	a := app.NewApp(root)
 
 	projectPath := setupTaskProject(t, a, root)
+	workspaceName := "crawlly"
 	wsPath, err := a.EnsureWorkspace("crawlly")
 	if err != nil {
 		t.Fatalf("EnsureWorkspace returned error: %v", err)
@@ -85,7 +87,7 @@ func TestTaskStartCmdRunStartsDeclaredTask(t *testing.T) {
 	}
 
 	stdout, stderr, err := captureCommandOutput(func() error {
-		return (&taskStartCmd{}).Run(a, []string{projectPath, "--task", "print"})
+		return (&taskStartCmd{}).Run(a, []string{workspaceName, "--task", "print"})
 	})
 	if err != nil {
 		t.Fatalf("Run returned error: %v", err)
@@ -94,7 +96,7 @@ func TestTaskStartCmdRunStartsDeclaredTask(t *testing.T) {
 		t.Fatalf("expected stderr to stay quiet, got %q", stderr)
 	}
 	taskID := extractTaskID(t, stdout)
-	waitForTaskStateCmd(t, a, projectPath, taskID, app.TaskRunSucceeded)
+	waitForTaskStateCmd(t, a, workspaceName, taskID, app.TaskRunSucceeded)
 	if !strings.Contains(stdout, "Declared: yes") {
 		t.Fatalf("expected declared task output, got %q", stdout)
 	}
@@ -104,15 +106,16 @@ func TestTaskListCmdRunPrintsTasks(t *testing.T) {
 	root := t.TempDir()
 	a := app.NewApp(root)
 
-	projectPath := setupTaskProject(t, a, root)
+	setupTaskProject(t, a, root)
+	workspaceName := "crawlly"
 	task, err := a.StartTask("crawlly", app.TaskStartSpec{Name: "echo", Command: "/bin/sh", Args: []string{"-c", "printf hello"}})
 	if err != nil {
 		t.Fatalf("StartTask returned error: %v", err)
 	}
-	waitForTaskStateCmd(t, a, projectPath, task.ID, app.TaskRunSucceeded)
+	waitForTaskStateCmd(t, a, workspaceName, task.ID, app.TaskRunSucceeded)
 
 	stdout, stderr, err := captureCommandOutput(func() error {
-		return (&taskListCmd{}).Run(a, []string{projectPath})
+		return (&taskListCmd{}).Run(a, []string{workspaceName})
 	})
 	if err != nil {
 		t.Fatalf("Run returned error: %v", err)
@@ -129,15 +132,16 @@ func TestTaskLogsCmdRunPrintsStdoutAndStderr(t *testing.T) {
 	root := t.TempDir()
 	a := app.NewApp(root)
 
-	projectPath := setupTaskProject(t, a, root)
+	setupTaskProject(t, a, root)
+	workspaceName := "crawlly"
 	task, err := a.StartTask("crawlly", app.TaskStartSpec{Name: "logs", Command: "/bin/sh", Args: []string{"-c", "printf out; printf err >&2"}})
 	if err != nil {
 		t.Fatalf("StartTask returned error: %v", err)
 	}
-	waitForTaskStateCmd(t, a, projectPath, task.ID, app.TaskRunSucceeded)
+	waitForTaskStateCmd(t, a, workspaceName, task.ID, app.TaskRunSucceeded)
 
 	stdout, stderr, err := captureCommandOutput(func() error {
-		return (&taskLogsCmd{}).Run(a, []string{projectPath, task.ID})
+		return (&taskLogsCmd{}).Run(a, []string{workspaceName, task.ID})
 	})
 	if err != nil {
 		t.Fatalf("Run returned error: %v", err)
@@ -154,14 +158,15 @@ func TestTaskStopCmdRunCancelsTask(t *testing.T) {
 	root := t.TempDir()
 	a := app.NewApp(root)
 
-	projectPath := setupTaskProject(t, a, root)
+	setupTaskProject(t, a, root)
+	workspaceName := "crawlly"
 	task, err := a.StartTask("crawlly", app.TaskStartSpec{Name: "sleep", Command: "/bin/sh", Args: []string{"-c", "sleep 30"}})
 	if err != nil {
 		t.Fatalf("StartTask returned error: %v", err)
 	}
 
 	stdout, stderr, err := captureCommandOutput(func() error {
-		return (&taskStopCmd{}).Run(a, []string{projectPath, task.ID})
+		return (&taskStopCmd{}).Run(a, []string{workspaceName, task.ID})
 	})
 	if err != nil {
 		t.Fatalf("Run returned error: %v", err)
@@ -171,6 +176,53 @@ func TestTaskStopCmdRunCancelsTask(t *testing.T) {
 	}
 	if !strings.Contains(stdout, "State: cancelled") {
 		t.Fatalf("expected cancelled state in output, got %q", stdout)
+	}
+}
+
+func TestTaskAddRemoveAndListDeclaredCmds(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+
+	setupTaskProject(t, a, root)
+	workspaceName := "crawlly"
+
+	stdout, stderr, err := captureCommandOutput(func() error {
+		return (&taskAddCmd{}).Run(a, []string{workspaceName, "test", "--cwd", ".", "--", "go", "test", "./..."})
+	})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if strings.TrimSpace(stderr) != "" {
+		t.Fatalf("expected stderr to stay quiet, got %q", stderr)
+	}
+	if !strings.Contains(stdout, `Declared task "test"`) {
+		t.Fatalf("unexpected add output: %q", stdout)
+	}
+
+	stdout, stderr, err = captureCommandOutput(func() error {
+		return (&taskListDeclaredCmd{}).Run(a, []string{workspaceName})
+	})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if strings.TrimSpace(stderr) != "" {
+		t.Fatalf("expected stderr to stay quiet, got %q", stderr)
+	}
+	if !strings.Contains(stdout, "test\tgo test ./...") {
+		t.Fatalf("unexpected list-declared output: %q", stdout)
+	}
+
+	stdout, stderr, err = captureCommandOutput(func() error {
+		return (&taskRemoveCmd{}).Run(a, []string{workspaceName, "test"})
+	})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if strings.TrimSpace(stderr) != "" {
+		t.Fatalf("expected stderr to stay quiet, got %q", stderr)
+	}
+	if !strings.Contains(stdout, `Removed task "test"`) {
+		t.Fatalf("unexpected remove output: %q", stdout)
 	}
 }
 
@@ -201,14 +253,10 @@ func extractTaskID(t *testing.T, output string) string {
 	return ""
 }
 
-func waitForTaskStateCmd(t *testing.T, a *app.App, projectPath, taskID string, want app.TaskRunState) {
+func waitForTaskStateCmd(t *testing.T, a *app.App, workspaceName, taskID string, want app.TaskRunState) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		workspaceName, _, err := a.ResolveOrCreateWorkspaceByProjectPath(projectPath)
-		if err != nil {
-			t.Fatalf("ResolveOrCreateWorkspaceByProjectPath returned error: %v", err)
-		}
 		task, err := a.TaskStatus(workspaceName, taskID)
 		if err != nil {
 			t.Fatalf("TaskStatus returned error: %v", err)
