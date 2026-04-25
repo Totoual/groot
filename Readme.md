@@ -197,6 +197,14 @@ groot ws open crawlly --ide code
 groot ws shell crawlly
 ```
 
+Go version input supports exact and resolved forms:
+
+- `go@1.26.2` pins an exact release
+- `go@1.26` resolves to the latest stable `1.26.x` patch release
+- `go@latest` resolves to the latest stable Go release
+
+Resolved toolchain versions are written into the workspace manifest as concrete versions.
+
 Available subcommands:
 
 - `attach`

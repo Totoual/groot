@@ -99,6 +99,8 @@ Version values are stored in the manifest and interpreted per toolchain.
 - `bun@1.3.10` means an exact Bun release
 - `deno@2.7.5` means an exact Deno release
 - `go@1.26.1` means an exact Go release
+- `go@1.26` means the latest available stable Go `1.26.x` release
+- `go@latest` means the latest available stable Go release
 - `java@21` means the latest available Temurin JDK for feature version `21`
 - `node@25.8.1` means an exact Node release
 - `php@8.5.4` means an exact PHP source release
@@ -111,6 +113,8 @@ Examples:
 ```bash
 groot ws attach frontend bun@1.3.10 deno@2.7.5
 groot ws attach backend go@1.26.1 node@25.8.1
+groot ws attach backend go@1.26
+groot ws attach backend go@latest
 groot ws attach api java@21
 groot ws attach legacy php@8.5.4
 groot ws attach scripts python@3.14
@@ -162,6 +166,7 @@ Example:
 Current meaning:
 
 - `packages` are the active toolchain declarations used by runtime ownership, install, and exec flows
+- toolchains that support alias or series resolution are normalized to concrete versions before Groot writes them into the manifest
 - `tasks` are optional manifest declarations that can be started as tracked task runs
 - `services` are optional manifest declarations for long-running named runtime resources
 - live task/service execution state belongs under the workspace `state/` directory, not in the manifest

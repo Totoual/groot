@@ -18,3 +18,10 @@ type ToolchainInstaller interface {
 	BinDir(ic *InstallContext, version string) (string, error)
 	Env(ic *InstallContext, version string) (map[string]string, error)
 }
+
+// VersionResolver is an optional installer capability for normalizing
+// user-facing version input into a concrete installable version before Groot
+// persists it into the workspace manifest.
+type VersionResolver interface {
+	ResolveVersion(ic *InstallContext, version string) (string, error)
+}
