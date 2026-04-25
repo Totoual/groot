@@ -45,6 +45,7 @@ func main() {
 		&commands.ShellHookCmd{},
 		&commands.StatusCmd{},
 		&commands.TaskCmd{},
+		&commands.VersionCmd{},
 		wscmd,
 	)
 
