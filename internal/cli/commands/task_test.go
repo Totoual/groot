@@ -102,6 +102,51 @@ func TestTaskStartCmdRunStartsDeclaredTask(t *testing.T) {
 	}
 }
 
+func TestTaskStartCmdRunStartsDeclaredTaskFromPositionalShorthand(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+
+	projectPath := setupTaskProject(t, a, root)
+	workspaceName := "crawlly"
+	wsPath, err := a.EnsureWorkspace("crawlly")
+	if err != nil {
+		t.Fatalf("EnsureWorkspace returned error: %v", err)
+	}
+	manifest := app.Manifest{
+		SchemaVersion: 1,
+		Name:          "crawlly",
+		ProjectPath:   projectPath,
+		Packages:      []app.PackageSpec{},
+		Tasks: []app.TaskSpec{
+			{Name: "test", Command: []string{"/bin/sh", "-c", "printf shorthand"}},
+		},
+		Services: []app.ServiceSpec{},
+		Env:      map[string]string{},
+	}
+	data, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		t.Fatalf("MarshalIndent returned error: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(wsPath, "manifest.json"), data, 0o600); err != nil {
+		t.Fatalf("WriteFile returned error: %v", err)
+	}
+
+	stdout, stderr, err := captureCommandOutput(func() error {
+		return (&taskStartCmd{}).Run(a, []string{workspaceName, "test"})
+	})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if strings.TrimSpace(stderr) != "" {
+		t.Fatalf("expected stderr to stay quiet, got %q", stderr)
+	}
+	taskID := extractTaskID(t, stdout)
+	waitForTaskStateCmd(t, a, workspaceName, taskID, app.TaskRunSucceeded)
+	if !strings.Contains(stdout, "Declared: yes") {
+		t.Fatalf("expected declared task output, got %q", stdout)
+	}
+}
+
 func TestTaskListCmdRunPrintsTasks(t *testing.T) {
 	root := t.TempDir()
 	a := app.NewApp(root)

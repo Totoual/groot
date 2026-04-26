@@ -94,7 +94,7 @@ func (c *ServiceCmd) PrintHelp(w io.Writer) {
 type serviceStartCmd struct{}
 
 func (c *serviceStartCmd) Name() string { return "start" }
-func (c *serviceStartCmd) Help() string { return "Start a declared service for a workspace" }
+func (c *serviceStartCmd) Help() string { return "Start a declared service by name for a workspace" }
 
 type serviceAddCmd struct{}
 

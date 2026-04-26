@@ -222,6 +222,7 @@ func (c *taskStartCmd) Run(a *app.App, args []string) error {
 		fs.SetOutput(os.Stdout)
 		fs.Usage = func() {
 			fmt.Fprintln(fs.Output(), "usage: groot task start <workspace> [--name task-name] [--cwd dir] <cmd> [args...]")
+			fmt.Fprintln(fs.Output(), "   or: groot task start <workspace> <declared-task-name>")
 			fmt.Fprintln(fs.Output(), "   or: groot task start <workspace> --task <declared-task-name>")
 			fmt.Fprintln(fs.Output())
 			fmt.Fprintln(fs.Output(), c.Help())
@@ -237,7 +238,9 @@ func (c *taskStartCmd) Run(a *app.App, args []string) error {
 	declaredTask := fs.String("task", "", "start a declared task from the manifest by name")
 	fs.Usage = func() {
 		fmt.Fprintln(fs.Output(), "usage: groot task start <workspace> [--name task-name] [--cwd dir] <cmd> [args...]")
+		fmt.Fprintln(fs.Output(), "   or: groot task start <workspace> <declared-task-name>")
 		fmt.Fprintln(fs.Output(), "   or: groot task start <workspace> --task <declared-task-name>")
+		fmt.Fprintln(fs.Output(), "Use `--` before an ad hoc command if it would otherwise look like a declared task name.")
 		fmt.Fprintln(fs.Output())
 		fmt.Fprintln(fs.Output(), c.Help())
 	}
@@ -256,12 +259,23 @@ func (c *taskStartCmd) Run(a *app.App, args []string) error {
 	}
 
 	var task app.TaskRun
-	if strings.TrimSpace(*declaredTask) != "" {
+	impliedDeclaredTask := ""
+	if strings.TrimSpace(*declaredTask) == "" && fs.NArg() == 1 && strings.TrimSpace(*displayName) == "" && strings.TrimSpace(*cwd) == "" {
+		impliedDeclaredTask = strings.TrimSpace(fs.Arg(0))
+	}
+
+	if strings.TrimSpace(*declaredTask) != "" || impliedDeclaredTask != "" {
 		if fs.NArg() != 0 {
-			fs.Usage()
-			return fmt.Errorf("declared task start does not accept an ad hoc command")
+			if impliedDeclaredTask == "" {
+				fs.Usage()
+				return fmt.Errorf("declared task start does not accept an ad hoc command")
+			}
 		}
-		task, err = a.StartDeclaredTask(workspaceName, strings.TrimSpace(*declaredTask))
+		taskName := strings.TrimSpace(*declaredTask)
+		if impliedDeclaredTask != "" {
+			taskName = impliedDeclaredTask
+		}
+		task, err = a.StartDeclaredTask(workspaceName, taskName)
 	} else {
 		if fs.NArg() < 1 {
 			fs.Usage()
