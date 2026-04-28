@@ -110,7 +110,7 @@ Workspace-first runtime workflows:
 ```bash
 groot task add crawlly test --cwd . -- go test ./...
 groot task list-declared crawlly
-groot task start crawlly --task test
+groot task start crawlly test
 groot task list crawlly
 groot task status crawlly <task-id>
 groot task logs crawlly <task-id>
@@ -127,6 +127,11 @@ groot service remove crawlly api
 
 groot event list crawlly
 ```
+
+Service restart policy:
+
+- `--restart manual` means Groot will leave the service stopped or failed until you act explicitly.
+- `--restart on-failure` means Groot will restart the service when it observes the failed state through `service status`, `service list`, or `service start`.
 
 What these mean:
 

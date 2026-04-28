@@ -282,6 +282,7 @@ V1 event rules:
 - service start events are emitted when Groot starts the service process
 - service stop events are emitted when Groot stops the service explicitly
 - service failed events are emitted once when Groot observes an exited service through status, list, or logs
+- `restart: on-failure` restarts a failed service when Groot reconciles it through status, list, or start
 - this avoids adding a daemon or supervisor service before services exist
 
 ## App-Layer API Shape
