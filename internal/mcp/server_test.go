@@ -59,14 +59,14 @@ func TestServerHandleInitializeAndListTools(t *testing.T) {
 	if err := json.Unmarshal(response, &listResponse); err != nil {
 		t.Fatalf("Unmarshal tools/list response returned error: %v", err)
 	}
-	if len(listResponse.Result.Tools) != 27 {
-		t.Fatalf("len(tools) = %d, want %d", len(listResponse.Result.Tools), 27)
+	if len(listResponse.Result.Tools) != 28 {
+		t.Fatalf("len(tools) = %d, want %d", len(listResponse.Result.Tools), 28)
 	}
 	names := make([]string, 0, len(listResponse.Result.Tools))
 	for _, tool := range listResponse.Result.Tools {
 		names = append(names, tool.Name)
 	}
-	for _, want := range []string{"task_start", "task_declare", "task_delete", "task_list_declared", "task_status", "task_list", "task_logs", "task_stop", "service_start", "service_declare", "service_delete", "service_list_declared", "service_status", "service_list", "service_logs", "service_stop", "event_list"} {
+	for _, want := range []string{"task_start", "task_declare", "task_delete", "task_list_declared", "task_status", "task_list", "task_logs", "task_stop", "service_start", "service_restart", "service_declare", "service_delete", "service_list_declared", "service_status", "service_list", "service_logs", "service_stop", "event_list"} {
 		if !slicesContainsString(names, want) {
 			t.Fatalf("missing tool %q in %#v", want, names)
 		}
@@ -1325,6 +1325,20 @@ func TestServerServiceToolsStartStatusListLogsAndStop(t *testing.T) {
 	service = decodeServiceStatusResult(t, response).Service
 	if service.State != app.ServiceRunning {
 		t.Fatalf("service state = %q, want %q", service.State, app.ServiceRunning)
+	}
+	initialPID := service.PID
+
+	restart := `{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"service_restart","arguments":{"path":"` + projectPath + `","name":"api"}}}`
+	response, err = server.HandleMessage([]byte(restart))
+	if err != nil {
+		t.Fatalf("HandleMessage service_restart returned error: %v", err)
+	}
+	service = decodeServiceStatusResult(t, response).Service
+	if service.State != app.ServiceRunning {
+		t.Fatalf("service state after restart = %q, want %q", service.State, app.ServiceRunning)
+	}
+	if service.PID == initialPID {
+		t.Fatalf("expected restart to replace pid %d, got %d", initialPID, service.PID)
 	}
 
 	waitForMCPServiceLogs(t, server, projectPath, "api", "out", "err")

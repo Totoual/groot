@@ -546,6 +546,23 @@ Structured result:
 - `created`
 - `service`
 
+### `service_restart`
+
+Restart one declared service.
+
+Input:
+
+```json
+{
+  "name": "api"
+}
+```
+
+Structured result:
+
+- `created`
+- `service`
+
 ### `service_declare`
 
 Add or update one declared manifest service.

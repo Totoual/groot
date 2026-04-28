@@ -321,6 +321,7 @@ groot event list <workspace> [--limit n]
 groot service add <workspace> <name> -- <cmd> [args...]
 groot service list-declared <workspace>
 groot service start <workspace> <name>
+groot service restart <workspace> <name>
 groot service stop <workspace> <name>
 groot service status <workspace> <name>
 groot service list <workspace>
@@ -356,6 +357,7 @@ Current MCP service tools:
 - `service_delete`
 - `service_list_declared`
 - `service_start`
+- `service_restart`
 - `service_stop`
 - `service_status`
 - `service_list`

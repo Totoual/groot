@@ -8,6 +8,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/totoual/groot/internal/app"
 	"github.com/totoual/groot/internal/cli/cliutil"
@@ -39,6 +40,7 @@ func defaultServiceCommands() []interfaces.Cmd {
 		&serviceRemoveCmd{},
 		&serviceListDeclaredCmd{},
 		&serviceStartCmd{},
+		&serviceRestartCmd{},
 		&serviceStatusCmd{},
 		&serviceListCmd{},
 		&serviceLogsCmd{},
@@ -95,6 +97,11 @@ type serviceStartCmd struct{}
 
 func (c *serviceStartCmd) Name() string { return "start" }
 func (c *serviceStartCmd) Help() string { return "Start a declared service by name for a workspace" }
+
+type serviceRestartCmd struct{}
+
+func (c *serviceRestartCmd) Name() string { return "restart" }
+func (c *serviceRestartCmd) Help() string { return "Restart a declared service for a workspace" }
 
 type serviceAddCmd struct{}
 
@@ -242,6 +249,39 @@ func (c *serviceStartCmd) Run(a *app.App, args []string) error {
 		return err
 	}
 	service, err := a.StartService(workspaceName, fs.Arg(1))
+	if err != nil {
+		return err
+	}
+	writeServiceStatus(service)
+	return nil
+}
+
+func (c *serviceRestartCmd) Run(a *app.App, args []string) error {
+	fs := flag.NewFlagSet("service restart", flag.ContinueOnError)
+	fs.SetOutput(os.Stdout)
+	fs.Usage = func() {
+		fmt.Fprintln(fs.Output(), "usage: groot service restart <workspace> <name>")
+		fmt.Fprintln(fs.Output())
+		fmt.Fprintln(fs.Output(), c.Help())
+	}
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
+		return err
+	}
+	if fs.NArg() != 2 {
+		fs.Usage()
+		return fmt.Errorf("workspace name and service name required")
+	}
+	workspaceName, err := requireWorkspaceArg(a, fs.Arg(0))
+	if err != nil {
+		return err
+	}
+	if err := enforceWorkspaceOwnership(a, workspaceName); err != nil {
+		return err
+	}
+	service, err := a.RestartService(workspaceName, fs.Arg(1))
 	if err != nil {
 		return err
 	}
@@ -413,6 +453,12 @@ func writeServiceStatus(service app.ServiceStatus) {
 	fmt.Fprintf(os.Stdout, "Workdir: %s\n", service.Cwd)
 	if service.RestartPolicy != "" {
 		fmt.Fprintf(os.Stdout, "Restart Policy: %s\n", service.RestartPolicy)
+	}
+	if service.StartedAt != nil {
+		fmt.Fprintf(os.Stdout, "Started At: %s\n", service.StartedAt.UTC().Format(time.RFC3339))
+	}
+	if service.StoppedAt != nil {
+		fmt.Fprintf(os.Stdout, "Finished At: %s\n", service.StoppedAt.UTC().Format(time.RFC3339))
 	}
 	if service.PID != 0 {
 		fmt.Fprintf(os.Stdout, "PID: %d\n", service.PID)

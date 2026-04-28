@@ -59,6 +59,7 @@ groot service add <workspace> <name> [--cwd dir] [--restart policy] -- <cmd> [ar
 groot service remove <workspace> <name>
 groot service list-declared <workspace>
 groot service start <workspace> <name>
+groot service restart <workspace> <name>
 groot service status <workspace> <name>
 groot service list <workspace>
 groot service logs <workspace> <name>

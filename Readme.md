@@ -119,6 +119,7 @@ groot task remove crawlly test
 groot service add crawlly api --cwd . --restart manual -- go run ./cmd/api
 groot service list-declared crawlly
 groot service start crawlly api
+groot service restart crawlly api
 groot service list crawlly
 groot service status crawlly api
 groot service logs crawlly api
@@ -142,7 +143,7 @@ What these mean:
 - `task add/remove/list-declared` manages manifest task declarations without hand-editing `manifest.json`
 - `task start/status/list/logs/stop` manages tracked execution records and per-run logs
 - `service add/remove/list-declared` manages manifest service declarations without hand-editing `manifest.json`
-- `service start/status/list/logs/stop` manages long-running workspace-owned services
+- `service start/restart/status/list/logs/stop` manages long-running workspace-owned services
 - `event ...` lists persisted runtime lifecycle events such as `task.started`, `task.exited`, `service.started`, and `service.failed`
 - `status` shows detected, attached, installed, and host-fallback runtime state for the project path
 - `export` and `import` move the workspace contract, not the repository contents
@@ -192,6 +193,7 @@ Current MCP tools:
 - `task_logs`
 - `task_stop`
 - `service_start`
+- `service_restart`
 - `service_declare`
 - `service_delete`
 - `service_list_declared`

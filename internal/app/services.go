@@ -212,6 +212,19 @@ func (a *App) StopService(workspaceName, serviceName string) (ServiceStatus, err
 	return service, nil
 }
 
+func (a *App) RestartService(workspaceName, serviceName string) (ServiceStatus, error) {
+	service, err := a.serviceStatus(workspaceName, serviceName, serviceStatusOptions{})
+	if err != nil {
+		return ServiceStatus{}, err
+	}
+	if service.State == ServiceRunning || service.State == ServiceStarting || service.State == ServiceFailed {
+		if _, err := a.StopService(workspaceName, serviceName); err != nil {
+			return ServiceStatus{}, err
+		}
+	}
+	return a.StartService(workspaceName, serviceName)
+}
+
 func (a *App) ServiceStatus(workspaceName, serviceName string) (ServiceStatus, error) {
 	return a.serviceStatus(workspaceName, serviceName, serviceStatusOptions{AutoRestart: true})
 }

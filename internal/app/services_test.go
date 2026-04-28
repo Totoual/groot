@@ -246,6 +246,31 @@ func TestStopServiceDisablesOnFailureRestartAfterFailure(t *testing.T) {
 	}
 }
 
+func TestRestartServiceReplacesRunningProcess(t *testing.T) {
+	root := t.TempDir()
+	app := NewApp(root)
+	setupServiceProject(t, app, root, []ServiceSpec{
+		{Name: "api", Command: []string{"/bin/sh", "-c", "sleep 30"}, Restart: "manual"},
+	})
+
+	service, err := app.StartService("crawlly", "api")
+	if err != nil {
+		t.Fatalf("StartService returned error: %v", err)
+	}
+	initialPID := service.PID
+
+	service, err = app.RestartService("crawlly", "api")
+	if err != nil {
+		t.Fatalf("RestartService returned error: %v", err)
+	}
+	if service.State != ServiceRunning {
+		t.Fatalf("service state = %q, want %q", service.State, ServiceRunning)
+	}
+	if service.PID == initialPID {
+		t.Fatalf("expected restart to replace pid %d, got %d", initialPID, service.PID)
+	}
+}
+
 func TestDeclareServiceUpdatesManifest(t *testing.T) {
 	root := t.TempDir()
 	app := NewApp(root)
