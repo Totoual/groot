@@ -282,6 +282,7 @@ V1 event rules:
 - service start events are emitted when Groot starts the service process
 - service stop events are emitted when Groot stops the service explicitly
 - service failed events are emitted once when Groot observes an exited service through status, list, or logs
+- `restart: on-failure` restarts a failed service when Groot reconciles it through status, list, or start
 - this avoids adding a daemon or supervisor service before services exist
 
 ## App-Layer API Shape
@@ -320,6 +321,7 @@ groot event list <workspace> [--limit n]
 groot service add <workspace> <name> -- <cmd> [args...]
 groot service list-declared <workspace>
 groot service start <workspace> <name>
+groot service restart <workspace> <name>
 groot service stop <workspace> <name>
 groot service status <workspace> <name>
 groot service list <workspace>
@@ -355,6 +357,7 @@ Current MCP service tools:
 - `service_delete`
 - `service_list_declared`
 - `service_start`
+- `service_restart`
 - `service_stop`
 - `service_status`
 - `service_list`

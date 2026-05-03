@@ -59,6 +59,10 @@ type serviceRecord struct {
 	StderrLog     string     `json:"stderr_log"`
 }
 
+type serviceStatusOptions struct {
+	AutoRestart bool
+}
+
 func (a *App) StartService(workspaceName, serviceName string) (ServiceStatus, error) {
 	wsPath, err := a.EnsureWorkspace(workspaceName)
 	if err != nil {
@@ -69,11 +73,15 @@ func (a *App) StartService(workspaceName, serviceName string) (ServiceStatus, er
 		return ServiceStatus{}, err
 	}
 
-	current, err := a.ServiceStatus(workspaceName, serviceName)
+	current, err := a.serviceStatus(workspaceName, serviceName, serviceStatusOptions{})
 	if err == nil && current.State == ServiceRunning {
 		return current, nil
 	}
 
+	return a.startServiceSpec(wsPath, workspaceName, spec)
+}
+
+func (a *App) startServiceSpec(wsPath, workspaceName string, spec ServiceSpec) (ServiceStatus, error) {
 	env, workDir, err := a.workspaceRuntime(workspaceName)
 	if err != nil {
 		return ServiceStatus{}, err
@@ -83,18 +91,18 @@ func (a *App) StartService(workspaceName, serviceName string) (ServiceStatus, er
 		return ServiceStatus{}, err
 	}
 	if len(spec.Command) == 0 {
-		return ServiceStatus{}, fmt.Errorf("service %q has no command", serviceName)
+		return ServiceStatus{}, fmt.Errorf("service %q has no command", spec.Name)
 	}
 	command := strings.TrimSpace(spec.Command[0])
 	if command == "" {
-		return ServiceStatus{}, fmt.Errorf("service %q has no command", serviceName)
+		return ServiceStatus{}, fmt.Errorf("service %q has no command", spec.Name)
 	}
 	resolvedCommand, err := resolveCommandForEnv(command, env)
 	if err != nil {
 		return ServiceStatus{}, err
 	}
 
-	serviceDir, stdoutLog, stderrLog, err := a.ensureServicePaths(wsPath, serviceName)
+	serviceDir, stdoutLog, stderrLog, err := a.ensureServicePaths(wsPath, spec.Name)
 	if err != nil {
 		return ServiceStatus{}, err
 	}
@@ -149,7 +157,7 @@ func (a *App) StartService(workspaceName, serviceName string) (ServiceStatus, er
 	if err := a.emitServiceStartedEvent(service); err != nil {
 		return ServiceStatus{}, err
 	}
-	return a.ServiceStatus(workspaceName, serviceName)
+	return a.serviceStatus(workspaceName, spec.Name, serviceStatusOptions{})
 }
 
 func (a *App) StopService(workspaceName, serviceName string) (ServiceStatus, error) {
@@ -157,9 +165,23 @@ func (a *App) StopService(workspaceName, serviceName string) (ServiceStatus, err
 	if err != nil {
 		return ServiceStatus{}, err
 	}
-	service, err := a.ServiceStatus(workspaceName, serviceName)
+	service, err := a.serviceStatus(workspaceName, serviceName, serviceStatusOptions{})
 	if err != nil {
 		return ServiceStatus{}, err
+	}
+	serviceDir := serviceStateDir(wsPath, serviceName)
+	if service.State == ServiceFailed && service.StopReason == "" {
+		service, err = a.markServiceStopped(serviceDir, service, false)
+		if err != nil {
+			return ServiceStatus{}, err
+		}
+		if err := a.emitServiceStoppedEvent(service); err != nil {
+			return ServiceStatus{}, err
+		}
+		if err := writeServiceTerminalMarker(serviceDir, EventKindServiceStopped); err != nil {
+			return ServiceStatus{}, err
+		}
+		return service, nil
 	}
 	if service.State != ServiceRunning && service.State != ServiceStarting {
 		return service, nil
@@ -172,20 +194,12 @@ func (a *App) StopService(workspaceName, serviceName string) (ServiceStatus, err
 		return ServiceStatus{}, fmt.Errorf("stop service: %w", err)
 	}
 
-	serviceDir := serviceStateDir(wsPath, serviceName)
-	finishedAt := time.Now().UTC()
-	exitCode := 143
-	if err := writeStringMarker(filepath.Join(serviceDir, "stop_reason"), "requested stop"); err != nil {
-		return ServiceStatus{}, err
-	}
-	if err := writeIntMarker(filepath.Join(serviceDir, "exit_code"), exitCode); err != nil {
-		return ServiceStatus{}, err
-	}
-	if err := writeTimeMarker(filepath.Join(serviceDir, "finished_at"), finishedAt); err != nil {
+	service, err = a.markServiceStopped(serviceDir, service, true)
+	if err != nil {
 		return ServiceStatus{}, err
 	}
 
-	service, err = a.ServiceStatus(workspaceName, serviceName)
+	service, err = a.serviceStatus(workspaceName, serviceName, serviceStatusOptions{})
 	if err != nil {
 		return ServiceStatus{}, err
 	}
@@ -198,7 +212,24 @@ func (a *App) StopService(workspaceName, serviceName string) (ServiceStatus, err
 	return service, nil
 }
 
+func (a *App) RestartService(workspaceName, serviceName string) (ServiceStatus, error) {
+	service, err := a.serviceStatus(workspaceName, serviceName, serviceStatusOptions{})
+	if err != nil {
+		return ServiceStatus{}, err
+	}
+	if service.State == ServiceRunning || service.State == ServiceStarting || service.State == ServiceFailed {
+		if _, err := a.StopService(workspaceName, serviceName); err != nil {
+			return ServiceStatus{}, err
+		}
+	}
+	return a.StartService(workspaceName, serviceName)
+}
+
 func (a *App) ServiceStatus(workspaceName, serviceName string) (ServiceStatus, error) {
+	return a.serviceStatus(workspaceName, serviceName, serviceStatusOptions{AutoRestart: true})
+}
+
+func (a *App) serviceStatus(workspaceName, serviceName string, opts serviceStatusOptions) (ServiceStatus, error) {
 	wsPath, err := a.EnsureWorkspace(workspaceName)
 	if err != nil {
 		return ServiceStatus{}, err
@@ -223,6 +254,9 @@ func (a *App) ServiceStatus(workspaceName, serviceName string) (ServiceStatus, e
 	service, err := a.serviceStatusFromRecord(serviceDir, record, spec)
 	if err != nil {
 		return ServiceStatus{}, err
+	}
+	if opts.AutoRestart && shouldAutoRestartService(service) {
+		return a.startServiceSpec(wsPath, workspaceName, spec)
 	}
 	return service, nil
 }
@@ -251,7 +285,7 @@ func (a *App) ServiceList(workspaceName string) ([]ServiceStatus, error) {
 }
 
 func (a *App) ServiceLogs(workspaceName, serviceName string) (ServiceLogs, error) {
-	service, err := a.ServiceStatus(workspaceName, serviceName)
+	service, err := a.serviceStatus(workspaceName, serviceName, serviceStatusOptions{})
 	if err != nil {
 		return ServiceLogs{}, err
 	}
@@ -362,6 +396,9 @@ func (a *App) serviceStatusFromRecord(serviceDir string, record serviceRecord, s
 	} else if ok {
 		service.StopReason = stopReason
 	}
+	if err := reconcileServiceLiveness(serviceDir, record.PID, &service); err != nil {
+		return ServiceStatus{}, err
+	}
 
 	switch {
 	case service.StoppedAt != nil && service.StopReason != "":
@@ -443,6 +480,92 @@ func validateServiceName(name string) error {
 		return fmt.Errorf("invalid service name %q", name)
 	}
 	return nil
+}
+
+func reconcileServiceLiveness(serviceDir string, pid int, service *ServiceStatus) error {
+	if pid == 0 || service.StoppedAt != nil {
+		return nil
+	}
+	alive, err := processGroupAlive(pid)
+	if err != nil {
+		return err
+	}
+	if alive {
+		return nil
+	}
+
+	finishedAt := time.Now().UTC()
+	if service.StoppedAt == nil {
+		if err := writeTimeMarker(filepath.Join(serviceDir, "finished_at"), finishedAt); err != nil {
+			return err
+		}
+		service.StoppedAt = &finishedAt
+	}
+	if service.ExitCode == nil {
+		exitCode := 1
+		if service.StopReason != "" {
+			exitCode = 143
+		}
+		if err := writeIntMarker(filepath.Join(serviceDir, "exit_code"), exitCode); err != nil {
+			return err
+		}
+		service.ExitCode = &exitCode
+	}
+	return nil
+}
+
+func processGroupAlive(pid int) (bool, error) {
+	if pid <= 0 {
+		return false, nil
+	}
+	var status syscall.WaitStatus
+	waitedPID, err := syscall.Wait4(pid, &status, syscall.WNOHANG, nil)
+	if err == nil && waitedPID == pid {
+		return false, nil
+	}
+	if err != nil && err != syscall.ECHILD {
+		return false, err
+	}
+	err = syscall.Kill(-pid, 0)
+	switch err {
+	case nil, syscall.EPERM:
+		return true, nil
+	case syscall.ESRCH:
+		return false, nil
+	default:
+		return false, err
+	}
+}
+
+func shouldAutoRestartService(service ServiceStatus) bool {
+	return normalizeRestartPolicy(service.RestartPolicy) == "on-failure" && service.State == ServiceFailed && service.StopReason == ""
+}
+
+func normalizeRestartPolicy(policy string) string {
+	return strings.ToLower(strings.TrimSpace(policy))
+}
+
+func (a *App) markServiceStopped(serviceDir string, service ServiceStatus, forceFinishedAt bool) (ServiceStatus, error) {
+	if err := writeStringMarker(filepath.Join(serviceDir, "stop_reason"), "requested stop"); err != nil {
+		return ServiceStatus{}, err
+	}
+	finishedAt := time.Now().UTC()
+	if forceFinishedAt || service.StoppedAt == nil {
+		if err := writeTimeMarker(filepath.Join(serviceDir, "finished_at"), finishedAt); err != nil {
+			return ServiceStatus{}, err
+		}
+		service.StoppedAt = &finishedAt
+	}
+	if service.ExitCode == nil {
+		exitCode := 143
+		if err := writeIntMarker(filepath.Join(serviceDir, "exit_code"), exitCode); err != nil {
+			return ServiceStatus{}, err
+		}
+		service.ExitCode = &exitCode
+	}
+	service.StopReason = "requested stop"
+	service.State = ServiceStopped
+	return service, nil
 }
 
 func (a *App) emitServiceStartedEvent(service ServiceStatus) error {

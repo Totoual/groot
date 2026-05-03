@@ -59,6 +59,7 @@ groot service add <workspace> <name> [--cwd dir] [--restart policy] -- <cmd> [ar
 groot service remove <workspace> <name>
 groot service list-declared <workspace>
 groot service start <workspace> <name>
+groot service restart <workspace> <name>
 groot service status <workspace> <name>
 groot service list <workspace>
 groot service logs <workspace> <name>
@@ -240,7 +241,8 @@ Services:
 - each service has one current stdout/stderr log pair under the workspace logs directory
 - service events currently cover only `service.started`, `service.stopped`, and `service.failed`
 - service failure events are emitted when Groot observes an exited service through service status, list, or logs
-- restart policy is stored in the manifest but there is no restart engine yet
+- `restart: on-failure` restarts the service when Groot observes the failed state through service status, list, or start
+- `restart: manual` leaves the service failed until you start or stop it explicitly
 
 Events:
 

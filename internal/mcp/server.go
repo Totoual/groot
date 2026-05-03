@@ -957,6 +957,33 @@ func (s *Server) tools() []toolDefinition {
 			},
 		},
 		{
+			Name:        "service_restart",
+			Description: "Resolve or create a workspace from a project path, or use the active project scope, and restart one declared service inside the strict Groot runtime.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"path": map[string]any{
+						"type":        "string",
+						"description": "Optional absolute or ~/ project path. When omitted, the active project scope is used if exactly one project is active.",
+					},
+					"name": map[string]any{
+						"type":        "string",
+						"description": "Declared service name from the manifest.",
+					},
+				},
+				"required":             []string{"name"},
+				"additionalProperties": false,
+			},
+			OutputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"created": map[string]any{"type": "boolean"},
+					"service": map[string]any{"type": "object"},
+				},
+				"required": []string{"created", "service"},
+			},
+		},
+		{
 			Name:        "service_declare",
 			Description: "Resolve or create a workspace from a project path, or use the active project scope, and add or update one declared manifest service.",
 			InputSchema: map[string]any{
@@ -1247,6 +1274,8 @@ func (s *Server) callTool(params toolCallParams) toolResult {
 		return s.taskStopTool(params.Arguments)
 	case "service_start":
 		return s.serviceStartTool(params.Arguments)
+	case "service_restart":
+		return s.serviceRestartTool(params.Arguments)
 	case "service_declare":
 		return s.serviceDeclareTool(params.Arguments)
 	case "service_delete":
@@ -2110,6 +2139,37 @@ func (s *Server) serviceStartTool(args map[string]any) toolResult {
 	}
 	return successToolResult(
 		fmt.Sprintf("Started service %q in workspace %q.", service.Name, workspaceName),
+		result,
+	)
+}
+
+func (s *Server) serviceRestartTool(args map[string]any) toolResult {
+	projectPath, err := s.scopedProjectPathArgOrActive(args, "service_restart")
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	serviceName, ok := stringArg(args, "name")
+	if !ok {
+		return errorToolResult(`tool "service_restart" requires string argument "name"`, nil)
+	}
+
+	workspaceName, created, err := s.app.ResolveOrCreateWorkspaceByProjectPath(projectPath)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	service, err := s.app.RestartService(workspaceName, serviceName)
+	if err != nil {
+		return errorToolResult(err.Error(), map[string]any{
+			"workspace_name": workspaceName,
+			"created":        created,
+		})
+	}
+	result := serviceStatusResult{
+		Created: created,
+		Service: service,
+	}
+	return successToolResult(
+		fmt.Sprintf("Restarted service %q in workspace %q.", service.Name, workspaceName),
 		result,
 	)
 }

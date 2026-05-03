@@ -17,7 +17,7 @@ func TestServiceCmdZeroValueUsesDefaultSubcommands(t *testing.T) {
 	(&ServiceCmd{}).PrintHelp(&buf)
 
 	output := buf.String()
-	for _, want := range []string{"start", "status", "list", "logs", "stop"} {
+	for _, want := range []string{"start", "restart", "status", "list", "logs", "stop"} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("expected help to include %q, got %q", want, output)
 		}
@@ -136,6 +136,42 @@ func TestServiceStopCmdRunStopsService(t *testing.T) {
 	}
 	if !strings.Contains(stdout, "State: stopped") {
 		t.Fatalf("expected stopped state in output, got %q", stdout)
+	}
+}
+
+func TestServiceRestartCmdRunRestartsService(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+	setupServiceProjectCmd(t, a, root, []app.ServiceSpec{
+		{Name: "api", Command: []string{"/bin/sh", "-c", "sleep 30"}, Restart: "manual"},
+	})
+	workspaceName := "crawlly"
+
+	service, err := a.StartService("crawlly", "api")
+	if err != nil {
+		t.Fatalf("StartService returned error: %v", err)
+	}
+	initialPID := service.PID
+
+	stdout, stderr, err := captureCommandOutput(func() error {
+		return (&serviceRestartCmd{}).Run(a, []string{workspaceName, "api"})
+	})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if strings.TrimSpace(stderr) != "" {
+		t.Fatalf("expected stderr to stay quiet, got %q", stderr)
+	}
+	if !strings.Contains(stdout, "State: running") {
+		t.Fatalf("expected running state in output, got %q", stdout)
+	}
+
+	service, err = a.ServiceStatus("crawlly", "api")
+	if err != nil {
+		t.Fatalf("ServiceStatus returned error: %v", err)
+	}
+	if service.PID == initialPID {
+		t.Fatalf("expected restart to replace pid %d, got %d", initialPID, service.PID)
 	}
 }
 
