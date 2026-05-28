@@ -59,17 +59,55 @@ func TestServerHandleInitializeAndListTools(t *testing.T) {
 	if err := json.Unmarshal(response, &listResponse); err != nil {
 		t.Fatalf("Unmarshal tools/list response returned error: %v", err)
 	}
-	if len(listResponse.Result.Tools) != 33 {
-		t.Fatalf("len(tools) = %d, want %d", len(listResponse.Result.Tools), 33)
+	if len(listResponse.Result.Tools) != 35 {
+		t.Fatalf("len(tools) = %d, want %d", len(listResponse.Result.Tools), 35)
 	}
 	names := make([]string, 0, len(listResponse.Result.Tools))
 	for _, tool := range listResponse.Result.Tools {
 		names = append(names, tool.Name)
 	}
-	for _, want := range []string{"task_start", "task_declare", "task_delete", "task_list_declared", "task_status", "task_list", "task_logs", "task_stop", "service_start", "service_restart", "service_declare", "service_delete", "service_list_declared", "service_status", "service_list", "service_logs", "service_stop", "event_list", "index_search", "index_symbols", "vault_search", "vault_append", "context_build"} {
+	for _, want := range []string{"task_start", "task_declare", "task_delete", "task_list_declared", "task_status", "task_list", "task_logs", "task_stop", "service_start", "service_restart", "service_declare", "service_delete", "service_list_declared", "service_status", "service_list", "service_logs", "service_stop", "event_list", "index_update", "index_search", "index_symbols", "vault_init", "vault_search", "vault_append", "context_build"} {
 		if !slicesContainsString(names, want) {
 			t.Fatalf("missing tool %q in %#v", want, names)
 		}
+	}
+}
+
+func TestServerIndexUpdateToolReturnsStructuredContent(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+	projectPath := setupMCPIndexedWorkspace(t, a, root)
+
+	server := NewServer(a)
+	request := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"index_update","arguments":{"path":"` + projectPath + `"}}}`
+	response, err := server.HandleMessage([]byte(request))
+	if err != nil {
+		t.Fatalf("HandleMessage index_update returned error: %v", err)
+	}
+
+	var rpc struct {
+		Result struct {
+			IsError           bool `json:"isError"`
+			StructuredContent struct {
+				Created bool `json:"created"`
+				Stats   struct {
+					FileCount   int `json:"file_count"`
+					SymbolCount int `json:"symbol_count"`
+				} `json:"stats"`
+			} `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(response, &rpc); err != nil {
+		t.Fatalf("Unmarshal index_update returned error: %v", err)
+	}
+	if rpc.Result.IsError {
+		t.Fatal("expected index_update success result")
+	}
+	if rpc.Result.StructuredContent.Stats.FileCount == 0 {
+		t.Fatal("expected index_update to return indexed files")
+	}
+	if rpc.Result.StructuredContent.Stats.SymbolCount == 0 {
+		t.Fatal("expected index_update to return extracted symbols")
 	}
 }
 
@@ -207,6 +245,48 @@ func TestServerVaultSearchAndAppendToolsReturnStructuredContent(t *testing.T) {
 	}
 	if len(searchRPC.Result.StructuredContent.Nodes) == 0 || searchRPC.Result.StructuredContent.Nodes[0].Node.Title != "Vault is workspace-scoped" {
 		t.Fatalf("unexpected vault_search nodes: %#v", searchRPC.Result.StructuredContent.Nodes)
+	}
+}
+
+func TestServerVaultInitToolReturnsStructuredContent(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+	projectPath := filepath.Join(root, "project")
+	if err := os.MkdirAll(projectPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll project returned error: %v", err)
+	}
+
+	server := NewServer(a)
+	request := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"vault_init","arguments":{"path":"` + projectPath + `"}}}`
+	response, err := server.HandleMessage([]byte(request))
+	if err != nil {
+		t.Fatalf("HandleMessage vault_init returned error: %v", err)
+	}
+
+	var rpc struct {
+		Result struct {
+			IsError           bool `json:"isError"`
+			StructuredContent struct {
+				Created bool `json:"created"`
+			} `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(response, &rpc); err != nil {
+		t.Fatalf("Unmarshal vault_init returned error: %v", err)
+	}
+	if rpc.Result.IsError {
+		t.Fatal("expected vault_init success result")
+	}
+
+	workspaceName, _, err := a.ResolveOrCreateWorkspaceByProjectPath(projectPath)
+	if err != nil {
+		t.Fatalf("ResolveOrCreateWorkspaceByProjectPath returned error: %v", err)
+	}
+	for _, name := range []string{"nodes.jsonl", "edges.jsonl", "changes.jsonl"} {
+		path := filepath.Join(root, "workspaces", workspaceName, "vault", name)
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("Stat %s returned error: %v", path, err)
+		}
 	}
 }
 
