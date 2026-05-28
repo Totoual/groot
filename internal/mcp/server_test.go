@@ -59,16 +59,280 @@ func TestServerHandleInitializeAndListTools(t *testing.T) {
 	if err := json.Unmarshal(response, &listResponse); err != nil {
 		t.Fatalf("Unmarshal tools/list response returned error: %v", err)
 	}
-	if len(listResponse.Result.Tools) != 28 {
-		t.Fatalf("len(tools) = %d, want %d", len(listResponse.Result.Tools), 28)
+	if len(listResponse.Result.Tools) != 35 {
+		t.Fatalf("len(tools) = %d, want %d", len(listResponse.Result.Tools), 35)
 	}
 	names := make([]string, 0, len(listResponse.Result.Tools))
 	for _, tool := range listResponse.Result.Tools {
 		names = append(names, tool.Name)
 	}
-	for _, want := range []string{"task_start", "task_declare", "task_delete", "task_list_declared", "task_status", "task_list", "task_logs", "task_stop", "service_start", "service_restart", "service_declare", "service_delete", "service_list_declared", "service_status", "service_list", "service_logs", "service_stop", "event_list"} {
+	for _, want := range []string{"task_start", "task_declare", "task_delete", "task_list_declared", "task_status", "task_list", "task_logs", "task_stop", "service_start", "service_restart", "service_declare", "service_delete", "service_list_declared", "service_status", "service_list", "service_logs", "service_stop", "event_list", "index_update", "index_search", "index_symbols", "vault_init", "vault_search", "vault_append", "context_build"} {
 		if !slicesContainsString(names, want) {
 			t.Fatalf("missing tool %q in %#v", want, names)
+		}
+	}
+}
+
+func TestServerIndexUpdateToolReturnsStructuredContent(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+	projectPath := setupMCPIndexedWorkspace(t, a, root)
+
+	server := NewServer(a)
+	request := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"index_update","arguments":{"path":"` + projectPath + `"}}}`
+	response, err := server.HandleMessage([]byte(request))
+	if err != nil {
+		t.Fatalf("HandleMessage index_update returned error: %v", err)
+	}
+
+	var rpc struct {
+		Result struct {
+			IsError           bool `json:"isError"`
+			StructuredContent struct {
+				Created bool `json:"created"`
+				Stats   struct {
+					FileCount   int `json:"file_count"`
+					SymbolCount int `json:"symbol_count"`
+				} `json:"stats"`
+			} `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(response, &rpc); err != nil {
+		t.Fatalf("Unmarshal index_update returned error: %v", err)
+	}
+	if rpc.Result.IsError {
+		t.Fatal("expected index_update success result")
+	}
+	if rpc.Result.StructuredContent.Stats.FileCount == 0 {
+		t.Fatal("expected index_update to return indexed files")
+	}
+	if rpc.Result.StructuredContent.Stats.SymbolCount == 0 {
+		t.Fatal("expected index_update to return extracted symbols")
+	}
+}
+
+func TestServerIndexSearchAndSymbolsToolsReturnStructuredContent(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+	projectPath := setupMCPIndexedWorkspace(t, a, root)
+
+	server := NewServer(a)
+	searchRequest := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"index_search","arguments":{"path":"` + projectPath + `","query":"vault"}}}`
+	response, err := server.HandleMessage([]byte(searchRequest))
+	if err != nil {
+		t.Fatalf("HandleMessage index_search returned error: %v", err)
+	}
+
+	var searchRPC struct {
+		Result struct {
+			IsError           bool `json:"isError"`
+			StructuredContent struct {
+				Created bool `json:"created"`
+				Files   []struct {
+					File struct {
+						Path string `json:"path"`
+					} `json:"file"`
+				} `json:"files"`
+			} `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(response, &searchRPC); err != nil {
+		t.Fatalf("Unmarshal index_search returned error: %v", err)
+	}
+	if searchRPC.Result.IsError {
+		t.Fatal("expected index_search success result")
+	}
+	if len(searchRPC.Result.StructuredContent.Files) == 0 {
+		t.Fatal("expected index_search to return files")
+	}
+	foundNotes := false
+	for _, file := range searchRPC.Result.StructuredContent.Files {
+		if file.File.Path == "notes.txt" {
+			foundNotes = true
+			break
+		}
+	}
+	if !foundNotes {
+		t.Fatalf("unexpected index_search files: %#v", searchRPC.Result.StructuredContent.Files)
+	}
+
+	symbolsRequest := `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"index_symbols","arguments":{"path":"` + projectPath + `","query":"DamagePerHeat"}}}`
+	response, err = server.HandleMessage([]byte(symbolsRequest))
+	if err != nil {
+		t.Fatalf("HandleMessage index_symbols returned error: %v", err)
+	}
+
+	var symbolsRPC struct {
+		Result struct {
+			IsError           bool `json:"isError"`
+			StructuredContent struct {
+				Symbols []struct {
+					Symbol struct {
+						QualifiedName string `json:"qualified_name"`
+					} `json:"symbol"`
+				} `json:"symbols"`
+			} `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(response, &symbolsRPC); err != nil {
+		t.Fatalf("Unmarshal index_symbols returned error: %v", err)
+	}
+	if symbolsRPC.Result.IsError {
+		t.Fatal("expected index_symbols success result")
+	}
+	if len(symbolsRPC.Result.StructuredContent.Symbols) == 0 || symbolsRPC.Result.StructuredContent.Symbols[0].Symbol.QualifiedName != "Engine.DamagePerHeat" {
+		t.Fatalf("unexpected index_symbols result: %#v", symbolsRPC.Result.StructuredContent.Symbols)
+	}
+}
+
+func TestServerVaultSearchAndAppendToolsReturnStructuredContent(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+	projectPath := setupMCPIndexedWorkspace(t, a, root)
+
+	server := NewServer(a)
+	appendRequest := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"vault_append","arguments":{"path":"` + projectPath + `","type":"decision","title":"Vault is workspace-scoped","body":"Each workspace owns its own vault.","tags":["vault","design"]}}}`
+	response, err := server.HandleMessage([]byte(appendRequest))
+	if err != nil {
+		t.Fatalf("HandleMessage vault_append returned error: %v", err)
+	}
+
+	var appendRPC struct {
+		Result struct {
+			IsError           bool `json:"isError"`
+			StructuredContent struct {
+				Node struct {
+					Type  string   `json:"type"`
+					Title string   `json:"title"`
+					Tags  []string `json:"tags"`
+				} `json:"node"`
+			} `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(response, &appendRPC); err != nil {
+		t.Fatalf("Unmarshal vault_append returned error: %v", err)
+	}
+	if appendRPC.Result.IsError {
+		t.Fatal("expected vault_append success result")
+	}
+	if appendRPC.Result.StructuredContent.Node.Type != "decision" || appendRPC.Result.StructuredContent.Node.Title != "Vault is workspace-scoped" {
+		t.Fatalf("unexpected appended node: %#v", appendRPC.Result.StructuredContent.Node)
+	}
+
+	searchRequest := `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"vault_search","arguments":{"path":"` + projectPath + `","query":"vault"}}}`
+	response, err = server.HandleMessage([]byte(searchRequest))
+	if err != nil {
+		t.Fatalf("HandleMessage vault_search returned error: %v", err)
+	}
+
+	var searchRPC struct {
+		Result struct {
+			IsError           bool `json:"isError"`
+			StructuredContent struct {
+				Nodes []struct {
+					Node struct {
+						Title string `json:"title"`
+					} `json:"node"`
+				} `json:"nodes"`
+			} `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(response, &searchRPC); err != nil {
+		t.Fatalf("Unmarshal vault_search returned error: %v", err)
+	}
+	if searchRPC.Result.IsError {
+		t.Fatal("expected vault_search success result")
+	}
+	if len(searchRPC.Result.StructuredContent.Nodes) == 0 || searchRPC.Result.StructuredContent.Nodes[0].Node.Title != "Vault is workspace-scoped" {
+		t.Fatalf("unexpected vault_search nodes: %#v", searchRPC.Result.StructuredContent.Nodes)
+	}
+}
+
+func TestServerVaultInitToolReturnsStructuredContent(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+	projectPath := filepath.Join(root, "project")
+	if err := os.MkdirAll(projectPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll project returned error: %v", err)
+	}
+
+	server := NewServer(a)
+	request := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"vault_init","arguments":{"path":"` + projectPath + `"}}}`
+	response, err := server.HandleMessage([]byte(request))
+	if err != nil {
+		t.Fatalf("HandleMessage vault_init returned error: %v", err)
+	}
+
+	var rpc struct {
+		Result struct {
+			IsError           bool `json:"isError"`
+			StructuredContent struct {
+				Created bool `json:"created"`
+			} `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(response, &rpc); err != nil {
+		t.Fatalf("Unmarshal vault_init returned error: %v", err)
+	}
+	if rpc.Result.IsError {
+		t.Fatal("expected vault_init success result")
+	}
+
+	workspaceName, _, err := a.ResolveOrCreateWorkspaceByProjectPath(projectPath)
+	if err != nil {
+		t.Fatalf("ResolveOrCreateWorkspaceByProjectPath returned error: %v", err)
+	}
+	for _, name := range []string{"nodes.jsonl", "edges.jsonl", "changes.jsonl"} {
+		path := filepath.Join(root, "workspaces", workspaceName, "vault", name)
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("Stat %s returned error: %v", path, err)
+		}
+	}
+}
+
+func TestServerContextBuildToolReturnsMarkdownWithoutChangingOutput(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+	projectPath := setupMCPIndexedWorkspace(t, a, root)
+	if _, err := a.VaultAppend("crawlly", app.VaultAppendSpec{
+		Type:  app.VaultNodeTypeDecision,
+		Title: "Engine logic remains deterministic",
+		Body:  "Round resolution stays deterministic.",
+		Tags:  []string{"engine"},
+	}); err != nil {
+		t.Fatalf("VaultAppend returned error: %v", err)
+	}
+
+	server := NewServer(a)
+	request := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"context_build","arguments":{"path":"` + projectPath + `","task":"vault damage"}}}`
+	response, err := server.HandleMessage([]byte(request))
+	if err != nil {
+		t.Fatalf("HandleMessage context_build returned error: %v", err)
+	}
+
+	var rpc struct {
+		Result struct {
+			IsError           bool `json:"isError"`
+			StructuredContent struct {
+				Markdown string `json:"markdown"`
+				Context  struct {
+					Task string `json:"task"`
+				} `json:"context"`
+			} `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(response, &rpc); err != nil {
+		t.Fatalf("Unmarshal context_build returned error: %v", err)
+	}
+	if rpc.Result.IsError {
+		t.Fatal("expected context_build success result")
+	}
+	if rpc.Result.StructuredContent.Context.Task != "vault damage" {
+		t.Fatalf("task = %q, want %q", rpc.Result.StructuredContent.Context.Task, "vault damage")
+	}
+	for _, want := range []string{"# Groot Context Pack", "Relevant Vault Entries:", "Relevant Files:", "Relevant Symbols:"} {
+		if !strings.Contains(rpc.Result.StructuredContent.Markdown, want) {
+			t.Fatalf("expected markdown to contain %q, got:\n%s", want, rpc.Result.StructuredContent.Markdown)
 		}
 	}
 }
@@ -1764,4 +2028,29 @@ func slicesContainsString(items []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func setupMCPIndexedWorkspace(t *testing.T, a *app.App, root string) string {
+	t.Helper()
+
+	projectPath := filepath.Join(root, "repos", "crawlly")
+	if err := os.MkdirAll(projectPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := a.CreateNewWorkspace("crawlly"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+	if err := a.BindWorkspace("crawlly", projectPath); err != nil {
+		t.Fatalf("BindWorkspace returned error: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(projectPath, "engine.go"), []byte("package demo\n\n// vault damage\n type Engine struct{}\n\nfunc (e *Engine) DamagePerHeat() {}\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile engine.go returned error: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(projectPath, "notes.txt"), []byte("vault context workspace\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile notes.txt returned error: %v", err)
+	}
+	if _, err := a.UpdateIndex("crawlly"); err != nil {
+		t.Fatalf("UpdateIndex returned error: %v", err)
+	}
+	return projectPath
 }

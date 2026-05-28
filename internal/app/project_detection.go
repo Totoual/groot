@@ -66,19 +66,6 @@ func (a *App) AttachDetectedToolchains(name string, detected []DetectedToolchain
 	return attached, skipped, nil
 }
 
-var ignoredProjectScanDirs = map[string]struct{}{
-	".git":         {},
-	".groot":       {},
-	".next":        {},
-	".venv":        {},
-	"bin":          {},
-	"build":        {},
-	"dist":         {},
-	"node_modules": {},
-	"target":       {},
-	"vendor":       {},
-}
-
 func (a *App) DetectProjectToolchains(projectPath string) ([]DetectedToolchain, error) {
 	normalizedPath, err := normalizeProjectPath(projectPath)
 	if err != nil {
@@ -112,7 +99,7 @@ func (a *App) DetectProjectToolchains(projectPath string) ([]DetectedToolchain, 
 
 		depth := strings.Count(rel, string(os.PathSeparator))
 		if d.IsDir() {
-			if _, ignored := ignoredProjectScanDirs[d.Name()]; ignored {
+			if shouldSkipWorkspaceProjectDir(d.Name()) {
 				return filepath.SkipDir
 			}
 			if depth >= 3 {

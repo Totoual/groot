@@ -31,6 +31,9 @@ func TestServiceStartAndStatusCmdRun(t *testing.T) {
 		{Name: "api", Command: []string{"/bin/sh", "-c", "sleep 30"}},
 	})
 	workspaceName := "crawlly"
+	t.Cleanup(func() {
+		stopServiceIfRunningCmd(t, a, workspaceName, "api")
+	})
 
 	stdout, stderr, err := captureCommandOutput(func() error {
 		return (&serviceStartCmd{}).Run(a, []string{workspaceName, "api"})
@@ -67,6 +70,9 @@ func TestServiceListCmdRunPrintsServices(t *testing.T) {
 		{Name: "worker", Command: []string{"/bin/sh", "-c", "sleep 30"}},
 	})
 	workspaceName := "crawlly"
+	t.Cleanup(func() {
+		stopServiceIfRunningCmd(t, a, workspaceName, "api")
+	})
 
 	if _, err := a.StartService("crawlly", "api"); err != nil {
 		t.Fatalf("StartService returned error: %v", err)
@@ -93,6 +99,9 @@ func TestServiceLogsCmdRunPrintsStdoutAndStderr(t *testing.T) {
 		{Name: "api", Command: []string{"/bin/sh", "-c", "printf out; printf err >&2; sleep 30"}},
 	})
 	workspaceName := "crawlly"
+	t.Cleanup(func() {
+		stopServiceIfRunningCmd(t, a, workspaceName, "api")
+	})
 
 	if _, err := a.StartService("crawlly", "api"); err != nil {
 		t.Fatalf("StartService returned error: %v", err)
@@ -120,6 +129,9 @@ func TestServiceStopCmdRunStopsService(t *testing.T) {
 		{Name: "api", Command: []string{"/bin/sh", "-c", "sleep 30"}},
 	})
 	workspaceName := "crawlly"
+	t.Cleanup(func() {
+		stopServiceIfRunningCmd(t, a, workspaceName, "api")
+	})
 
 	if _, err := a.StartService("crawlly", "api"); err != nil {
 		t.Fatalf("StartService returned error: %v", err)
@@ -146,6 +158,9 @@ func TestServiceRestartCmdRunRestartsService(t *testing.T) {
 		{Name: "api", Command: []string{"/bin/sh", "-c", "sleep 30"}, Restart: "manual"},
 	})
 	workspaceName := "crawlly"
+	t.Cleanup(func() {
+		stopServiceIfRunningCmd(t, a, workspaceName, "api")
+	})
 
 	service, err := a.StartService("crawlly", "api")
 	if err != nil {
@@ -262,4 +277,30 @@ func waitForServiceLogsCmd(t *testing.T, a *app.App, workspaceName, serviceName,
 		time.Sleep(50 * time.Millisecond)
 	}
 	t.Fatalf("timed out waiting for service %q logs", serviceName)
+}
+
+func stopServiceIfRunningCmd(t *testing.T, a *app.App, workspaceName, serviceName string) {
+	t.Helper()
+	service, err := a.ServiceStatus(workspaceName, serviceName)
+	if err != nil {
+		t.Fatalf("ServiceStatus returned error: %v", err)
+	}
+	if service.State != app.ServiceRunning && service.State != app.ServiceStarting {
+		return
+	}
+	if _, err := a.StopService(workspaceName, serviceName); err != nil {
+		t.Fatalf("StopService returned error: %v", err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		service, err = a.ServiceStatus(workspaceName, serviceName)
+		if err != nil {
+			t.Fatalf("ServiceStatus returned error: %v", err)
+		}
+		if service.State == app.ServiceStopped || service.State == app.ServiceFailed {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for service %q to stop", serviceName)
 }

@@ -197,6 +197,41 @@ type eventListResult struct {
 	Events  []app.RuntimeEvent `json:"events"`
 }
 
+type indexUpdateResult struct {
+	Created bool           `json:"created"`
+	Stats   app.IndexStats `json:"stats"`
+}
+
+type indexSearchResult struct {
+	Created bool                 `json:"created"`
+	Files   []app.IndexSearchHit `json:"files"`
+}
+
+type indexSymbolsResult struct {
+	Created bool                       `json:"created"`
+	Symbols []app.IndexSymbolSearchHit `json:"symbols"`
+}
+
+type vaultSearchResult struct {
+	Created bool                 `json:"created"`
+	Nodes   []app.VaultSearchHit `json:"nodes"`
+}
+
+type vaultAppendResult struct {
+	Created bool          `json:"created"`
+	Node    app.VaultNode `json:"node"`
+}
+
+type vaultInitResult struct {
+	Created bool `json:"created"`
+}
+
+type contextBuildResult struct {
+	Created  bool            `json:"created"`
+	Context  app.ContextPack `json:"context"`
+	Markdown string          `json:"markdown"`
+}
+
 type workspaceActivateResult struct {
 	ActiveProject string `json:"active_project"`
 	WorkspaceName string `json:"workspace_name,omitempty"`
@@ -1201,6 +1236,224 @@ func (s *Server) tools() []toolDefinition {
 				"required": []string{"created", "events"},
 			},
 		},
+		{
+			Name:        "index_update",
+			Description: "Resolve or create a workspace from a project path, or use the active project scope, and rebuild the workspace index.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"path": map[string]any{
+						"type":        "string",
+						"description": "Optional absolute or ~/ project path. When omitted, the active project scope is used if exactly one project is active.",
+					},
+				},
+				"additionalProperties": false,
+			},
+			OutputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"created": map[string]any{"type": "boolean"},
+					"stats":   map[string]any{"type": "object"},
+				},
+				"required": []string{"created", "stats"},
+			},
+		},
+		{
+			Name:        "index_search",
+			Description: "Resolve or create a workspace from a project path, or use the active project scope, and search indexed files.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"path": map[string]any{
+						"type":        "string",
+						"description": "Optional absolute or ~/ project path. When omitted, the active project scope is used if exactly one project is active.",
+					},
+					"query": map[string]any{
+						"type":        "string",
+						"description": "Search query.",
+					},
+					"limit": map[string]any{
+						"type":        "integer",
+						"description": "Optional maximum number of file results to return.",
+					},
+				},
+				"required":             []string{"query"},
+				"additionalProperties": false,
+			},
+			OutputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"created": map[string]any{"type": "boolean"},
+					"files":   map[string]any{"type": "array"},
+				},
+				"required": []string{"created", "files"},
+			},
+		},
+		{
+			Name:        "index_symbols",
+			Description: "Resolve or create a workspace from a project path, or use the active project scope, and search indexed symbols.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"path": map[string]any{
+						"type":        "string",
+						"description": "Optional absolute or ~/ project path. When omitted, the active project scope is used if exactly one project is active.",
+					},
+					"query": map[string]any{
+						"type":        "string",
+						"description": "Symbol query.",
+					},
+					"limit": map[string]any{
+						"type":        "integer",
+						"description": "Optional maximum number of symbol results to return.",
+					},
+				},
+				"required":             []string{"query"},
+				"additionalProperties": false,
+			},
+			OutputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"created": map[string]any{"type": "boolean"},
+					"symbols": map[string]any{"type": "array"},
+				},
+				"required": []string{"created", "symbols"},
+			},
+		},
+		{
+			Name:        "vault_init",
+			Description: "Resolve or create a workspace from a project path, or use the active project scope, and initialize the workspace vault.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"path": map[string]any{
+						"type":        "string",
+						"description": "Optional absolute or ~/ project path. When omitted, the active project scope is used if exactly one project is active.",
+					},
+				},
+				"additionalProperties": false,
+			},
+			OutputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"created": map[string]any{"type": "boolean"},
+				},
+				"required": []string{"created"},
+			},
+		},
+		{
+			Name:        "vault_search",
+			Description: "Resolve or create a workspace from a project path, or use the active project scope, and search vault nodes.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"path": map[string]any{
+						"type":        "string",
+						"description": "Optional absolute or ~/ project path. When omitted, the active project scope is used if exactly one project is active.",
+					},
+					"query": map[string]any{
+						"type":        "string",
+						"description": "Vault query.",
+					},
+					"limit": map[string]any{
+						"type":        "integer",
+						"description": "Optional maximum number of vault results to return.",
+					},
+				},
+				"required":             []string{"query"},
+				"additionalProperties": false,
+			},
+			OutputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"created": map[string]any{"type": "boolean"},
+					"nodes":   map[string]any{"type": "array"},
+				},
+				"required": []string{"created", "nodes"},
+			},
+		},
+		{
+			Name:        "vault_append",
+			Description: "Resolve or create a workspace from a project path, or use the active project scope, and append one vault node.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"path": map[string]any{
+						"type":        "string",
+						"description": "Optional absolute or ~/ project path. When omitted, the active project scope is used if exactly one project is active.",
+					},
+					"type": map[string]any{
+						"type":        "string",
+						"description": "Vault node type.",
+					},
+					"title": map[string]any{
+						"type":        "string",
+						"description": "Vault node title.",
+					},
+					"body": map[string]any{
+						"type":        "string",
+						"description": "Vault node body.",
+					},
+					"tags": map[string]any{
+						"type":        "array",
+						"description": "Optional list of tags.",
+						"items": map[string]any{
+							"type": "string",
+						},
+					},
+					"source": map[string]any{
+						"type":        "string",
+						"description": "Optional source label.",
+					},
+					"confidence": map[string]any{
+						"type":        "number",
+						"description": "Optional confidence.",
+					},
+					"status": map[string]any{
+						"type":        "string",
+						"description": "Optional status.",
+					},
+				},
+				"required":             []string{"type", "title", "body"},
+				"additionalProperties": false,
+			},
+			OutputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"created": map[string]any{"type": "boolean"},
+					"node":    map[string]any{"type": "object"},
+				},
+				"required": []string{"created", "node"},
+			},
+		},
+		{
+			Name:        "context_build",
+			Description: "Resolve or create a workspace from a project path, or use the active project scope, and build a compact markdown context pack.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"path": map[string]any{
+						"type":        "string",
+						"description": "Optional absolute or ~/ project path. When omitted, the active project scope is used if exactly one project is active.",
+					},
+					"task": map[string]any{
+						"type":        "string",
+						"description": "Task description to ground.",
+					},
+				},
+				"required":             []string{"task"},
+				"additionalProperties": false,
+			},
+			OutputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"created":  map[string]any{"type": "boolean"},
+					"context":  map[string]any{"type": "object"},
+					"markdown": map[string]any{"type": "string"},
+				},
+				"required": []string{"created", "context", "markdown"},
+			},
+		},
 	}
 }
 
@@ -1292,6 +1545,20 @@ func (s *Server) callTool(params toolCallParams) toolResult {
 		return s.serviceStopTool(params.Arguments)
 	case "event_list":
 		return s.eventListTool(params.Arguments)
+	case "index_update":
+		return s.indexUpdateTool(params.Arguments)
+	case "index_search":
+		return s.indexSearchTool(params.Arguments)
+	case "index_symbols":
+		return s.indexSymbolsTool(params.Arguments)
+	case "vault_init":
+		return s.vaultInitTool(params.Arguments)
+	case "vault_search":
+		return s.vaultSearchTool(params.Arguments)
+	case "vault_append":
+		return s.vaultAppendTool(params.Arguments)
+	case "context_build":
+		return s.contextBuildTool(params.Arguments)
 	default:
 		return errorToolResult(fmt.Sprintf("unknown tool %q", params.Name), nil)
 	}
@@ -2434,6 +2701,264 @@ func (s *Server) eventListTool(args map[string]any) toolResult {
 	)
 }
 
+func (s *Server) indexSearchTool(args map[string]any) toolResult {
+	projectPath, err := s.scopedProjectPathArgOrActive(args, "index_search")
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	query, ok := stringArg(args, "query")
+	if !ok {
+		return errorToolResult(`tool "index_search" requires string argument "query"`, nil)
+	}
+	limit, err := intArgOrDefault(args, "limit", 10)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	if limit < 0 {
+		return errorToolResult(`tool "index_search" requires "limit" to be >= 0`, nil)
+	}
+
+	workspaceName, created, err := s.app.ResolveOrCreateWorkspaceByProjectPath(projectPath)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	files, err := s.app.IndexSearch(workspaceName, query, app.IndexSearchOptions{Limit: limit})
+	if err != nil {
+		return errorToolResult(err.Error(), map[string]any{
+			"workspace_name": workspaceName,
+			"created":        created,
+		})
+	}
+
+	result := indexSearchResult{
+		Created: created,
+		Files:   files,
+	}
+	return successToolResult(
+		fmt.Sprintf("Loaded %d indexed file hits for workspace %q.", len(files), workspaceName),
+		result,
+	)
+}
+
+func (s *Server) indexUpdateTool(args map[string]any) toolResult {
+	projectPath, err := s.scopedProjectPathArgOrActive(args, "index_update")
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+
+	workspaceName, created, err := s.app.ResolveOrCreateWorkspaceByProjectPath(projectPath)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	stats, err := s.app.UpdateIndex(workspaceName)
+	if err != nil {
+		return errorToolResult(err.Error(), map[string]any{
+			"workspace_name": workspaceName,
+			"created":        created,
+		})
+	}
+
+	result := indexUpdateResult{
+		Created: created,
+		Stats:   stats,
+	}
+	return successToolResult(
+		fmt.Sprintf("Updated index for workspace %q.", workspaceName),
+		result,
+	)
+}
+
+func (s *Server) indexSymbolsTool(args map[string]any) toolResult {
+	projectPath, err := s.scopedProjectPathArgOrActive(args, "index_symbols")
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	query, ok := stringArg(args, "query")
+	if !ok {
+		return errorToolResult(`tool "index_symbols" requires string argument "query"`, nil)
+	}
+	limit, err := intArgOrDefault(args, "limit", 10)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	if limit < 0 {
+		return errorToolResult(`tool "index_symbols" requires "limit" to be >= 0`, nil)
+	}
+
+	workspaceName, created, err := s.app.ResolveOrCreateWorkspaceByProjectPath(projectPath)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	symbols, err := s.app.IndexSymbols(workspaceName, query, app.IndexSearchOptions{Limit: limit})
+	if err != nil {
+		return errorToolResult(err.Error(), map[string]any{
+			"workspace_name": workspaceName,
+			"created":        created,
+		})
+	}
+
+	result := indexSymbolsResult{
+		Created: created,
+		Symbols: symbols,
+	}
+	return successToolResult(
+		fmt.Sprintf("Loaded %d indexed symbol hits for workspace %q.", len(symbols), workspaceName),
+		result,
+	)
+}
+
+func (s *Server) vaultSearchTool(args map[string]any) toolResult {
+	projectPath, err := s.scopedProjectPathArgOrActive(args, "vault_search")
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	query, ok := stringArg(args, "query")
+	if !ok {
+		return errorToolResult(`tool "vault_search" requires string argument "query"`, nil)
+	}
+	limit, err := intArgOrDefault(args, "limit", 10)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	if limit < 0 {
+		return errorToolResult(`tool "vault_search" requires "limit" to be >= 0`, nil)
+	}
+
+	workspaceName, created, err := s.app.ResolveOrCreateWorkspaceByProjectPath(projectPath)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	nodes, err := s.app.VaultSearch(workspaceName, query, app.VaultSearchOptions{Limit: limit})
+	if err != nil {
+		return errorToolResult(err.Error(), map[string]any{
+			"workspace_name": workspaceName,
+			"created":        created,
+		})
+	}
+
+	result := vaultSearchResult{
+		Created: created,
+		Nodes:   nodes,
+	}
+	return successToolResult(
+		fmt.Sprintf("Loaded %d vault hits for workspace %q.", len(nodes), workspaceName),
+		result,
+	)
+}
+
+func (s *Server) vaultInitTool(args map[string]any) toolResult {
+	projectPath, err := s.scopedProjectPathArgOrActive(args, "vault_init")
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+
+	workspaceName, created, err := s.app.ResolveOrCreateWorkspaceByProjectPath(projectPath)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	if err := s.app.InitVault(workspaceName); err != nil {
+		return errorToolResult(err.Error(), map[string]any{
+			"workspace_name": workspaceName,
+			"created":        created,
+		})
+	}
+
+	result := vaultInitResult{
+		Created: created,
+	}
+	return successToolResult(
+		fmt.Sprintf("Initialized vault for workspace %q.", workspaceName),
+		result,
+	)
+}
+
+func (s *Server) vaultAppendTool(args map[string]any) toolResult {
+	projectPath, err := s.scopedProjectPathArgOrActive(args, "vault_append")
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	nodeType, ok := stringArg(args, "type")
+	if !ok {
+		return errorToolResult(`tool "vault_append" requires string argument "type"`, nil)
+	}
+	title, ok := stringArg(args, "title")
+	if !ok {
+		return errorToolResult(`tool "vault_append" requires string argument "title"`, nil)
+	}
+	body, ok := stringArg(args, "body")
+	if !ok {
+		return errorToolResult(`tool "vault_append" requires string argument "body"`, nil)
+	}
+	tags, err := stringSliceArg(args, "tags")
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+
+	workspaceName, created, err := s.app.ResolveOrCreateWorkspaceByProjectPath(projectPath)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	spec := app.VaultAppendSpec{
+		Type:       strings.TrimSpace(nodeType),
+		Title:      strings.TrimSpace(title),
+		Body:       strings.TrimSpace(body),
+		Tags:       append([]string{}, tags...),
+		Source:     strings.TrimSpace(stringArgOrDefault(args, "source", "")),
+		Confidence: floatArgOrDefault(args, "confidence", 0),
+		Status:     strings.TrimSpace(stringArgOrDefault(args, "status", "")),
+	}
+	node, err := s.app.VaultAppend(workspaceName, spec)
+	if err != nil {
+		return errorToolResult(err.Error(), map[string]any{
+			"workspace_name": workspaceName,
+			"created":        created,
+		})
+	}
+
+	result := vaultAppendResult{
+		Created: created,
+		Node:    node,
+	}
+	return successToolResult(
+		fmt.Sprintf("Appended vault node %q in workspace %q.", node.ID, workspaceName),
+		result,
+	)
+}
+
+func (s *Server) contextBuildTool(args map[string]any) toolResult {
+	projectPath, err := s.scopedProjectPathArgOrActive(args, "context_build")
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	task, ok := stringArg(args, "task")
+	if !ok {
+		return errorToolResult(`tool "context_build" requires string argument "task"`, nil)
+	}
+
+	workspaceName, created, err := s.app.ResolveOrCreateWorkspaceByProjectPath(projectPath)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	context, err := s.app.BuildContextPack(workspaceName, task)
+	if err != nil {
+		return errorToolResult(err.Error(), map[string]any{
+			"workspace_name": workspaceName,
+			"created":        created,
+		})
+	}
+	markdown := context.Markdown()
+
+	result := contextBuildResult{
+		Created:  created,
+		Context:  context,
+		Markdown: markdown,
+	}
+	return successToolResult(
+		fmt.Sprintf("Built context pack for workspace %q.", workspaceName),
+		result,
+	)
+}
+
 func makeWorkspaceInspection(inspect app.WorkspaceInspection) workspaceInspection {
 	return workspaceInspection{
 		WorkspaceName: inspect.WorkspaceName,
@@ -2490,6 +3015,24 @@ func boolArgOrDefault(args map[string]any, key string, fallback bool) bool {
 		return fallback
 	}
 	return value
+}
+
+func floatArgOrDefault(args map[string]any, key string, fallback float64) float64 {
+	if args == nil {
+		return fallback
+	}
+	raw, ok := args[key]
+	if !ok {
+		return fallback
+	}
+	switch value := raw.(type) {
+	case float64:
+		return value
+	case int:
+		return float64(value)
+	default:
+		return fallback
+	}
 }
 
 func stringArgOrDefault(args map[string]any, key string, fallback string) string {
