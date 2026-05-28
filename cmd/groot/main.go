@@ -38,6 +38,7 @@ func main() {
 		&commands.ExecCmd{},
 		&commands.ExportCmd{},
 		&commands.ImportCmd{},
+		&commands.IndexCmd{},
 		&commands.InitCmd{},
 		&commands.MCPCmd{},
 		&commands.OpenCmd{},
@@ -45,6 +46,7 @@ func main() {
 		&commands.ShellHookCmd{},
 		&commands.StatusCmd{},
 		&commands.TaskCmd{},
+		&commands.VaultCmd{},
 		&commands.VersionCmd{},
 		wscmd,
 	)
