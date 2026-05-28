@@ -83,6 +83,23 @@ func TestUpdateIndexUsesBoundProjectPathAndSkipsWorkspaceAndIgnoredDirs(t *testi
 	if len(hits) != 1 || hits[0].File.Path != "internal/main.go" {
 		t.Fatalf("unexpected search hits: %#v", hits)
 	}
+
+	meta, err := readJSONFile[IndexMetadata](indexMetaPath(wsPath))
+	if err != nil {
+		t.Fatalf("readJSONFile index metadata returned error: %v", err)
+	}
+	if meta.Workspace != "crawlly" {
+		t.Fatalf("workspace = %q, want %q", meta.Workspace, "crawlly")
+	}
+	if meta.ProjectPath != projectPath {
+		t.Fatalf("project_path = %q, want %q", meta.ProjectPath, projectPath)
+	}
+	if meta.FileCount != 1 || meta.SymbolCount != 2 || meta.TermCount == 0 {
+		t.Fatalf("unexpected index metadata: %#v", meta)
+	}
+	if meta.IndexedAt.IsZero() {
+		t.Fatal("expected indexed_at to be set")
+	}
 }
 
 func TestUpdateIndexExtractsGoSymbols(t *testing.T) {
@@ -125,6 +142,22 @@ func (e *Engine) DamagePerHeat() {
 	} {
 		if seen[want] != kind {
 			t.Fatalf("expected symbol %q kind %q, got %#v", want, kind, seen)
+		}
+	}
+
+	gotLines := map[string][2]int{}
+	for _, symbol := range symbols {
+		gotLines[symbol.QualifiedName] = [2]int{symbol.LineStart, symbol.LineEnd}
+	}
+	for want, lines := range map[string][2]int{
+		"demo":                 {1, 1},
+		"fmt":                  {3, 3},
+		"Engine":               {5, 5},
+		"ResolveRound":         {7, 7},
+		"Engine.DamagePerHeat": {9, 11},
+	} {
+		if gotLines[want] != lines {
+			t.Fatalf("expected symbol %q lines %v, got %v", want, lines, gotLines[want])
 		}
 	}
 }

@@ -105,7 +105,7 @@ func (a *App) InitVault(workspaceName string) error {
 			return err
 		}
 	}
-	return nil
+	return a.writeVaultMetadata(workspaceName, wsPath, time.Now().UTC())
 }
 
 func (a *App) VaultAppend(workspaceName string, spec VaultAppendSpec) (VaultNode, error) {
@@ -182,6 +182,9 @@ func (a *App) VaultAppend(workspaceName string, spec VaultAppendSpec) (VaultNode
 		},
 	}
 	if err := appendJSONLRecord(vaultChangesPath(wsPath), change); err != nil {
+		return VaultNode{}, err
+	}
+	if err := a.writeVaultMetadata(workspaceName, wsPath, now); err != nil {
 		return VaultNode{}, err
 	}
 

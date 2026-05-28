@@ -213,8 +213,8 @@ func DamagePerHeat() {}
 		"# Groot Context Pack",
 		"Cards should not allow arbitrary heat spending",
 		"internal/engine/effects.go",
-		"DamagePerHeat",
-		"ResolveRound",
+		"DamagePerHeat (internal/engine/effects.go:8-8)",
+		"ResolveRound (internal/engine/effects.go:6-6)",
 	} {
 		if !strings.Contains(markdown, want) {
 			t.Fatalf("expected markdown to contain %q, got:\n%s", want, markdown)

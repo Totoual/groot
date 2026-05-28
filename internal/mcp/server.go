@@ -202,6 +202,11 @@ type indexUpdateResult struct {
 	Stats   app.IndexStats `json:"stats"`
 }
 
+type indexStatsResult struct {
+	Created bool           `json:"created"`
+	Stats   app.IndexStats `json:"stats"`
+}
+
 type indexSearchResult struct {
 	Created bool                 `json:"created"`
 	Files   []app.IndexSearchHit `json:"files"`
@@ -215,6 +220,11 @@ type indexSymbolsResult struct {
 type vaultSearchResult struct {
 	Created bool                 `json:"created"`
 	Nodes   []app.VaultSearchHit `json:"nodes"`
+}
+
+type vaultRecentResult struct {
+	Created bool            `json:"created"`
+	Nodes   []app.VaultNode `json:"nodes"`
 }
 
 type vaultAppendResult struct {
@@ -1259,6 +1269,28 @@ func (s *Server) tools() []toolDefinition {
 			},
 		},
 		{
+			Name:        "index_stats",
+			Description: "Resolve or create a workspace from a project path, or use the active project scope, and load workspace index statistics.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"path": map[string]any{
+						"type":        "string",
+						"description": "Optional absolute or ~/ project path. When omitted, the active project scope is used if exactly one project is active.",
+					},
+				},
+				"additionalProperties": false,
+			},
+			OutputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"created": map[string]any{"type": "boolean"},
+					"stats":   map[string]any{"type": "object"},
+				},
+				"required": []string{"created", "stats"},
+			},
+		},
+		{
 			Name:        "index_search",
 			Description: "Resolve or create a workspace from a project path, or use the active project scope, and search indexed files.",
 			InputSchema: map[string]any{
@@ -1339,6 +1371,32 @@ func (s *Server) tools() []toolDefinition {
 					"created": map[string]any{"type": "boolean"},
 				},
 				"required": []string{"created"},
+			},
+		},
+		{
+			Name:        "vault_recent",
+			Description: "Resolve or create a workspace from a project path, or use the active project scope, and load recent vault nodes.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"path": map[string]any{
+						"type":        "string",
+						"description": "Optional absolute or ~/ project path. When omitted, the active project scope is used if exactly one project is active.",
+					},
+					"limit": map[string]any{
+						"type":        "integer",
+						"description": "Optional maximum number of recent vault nodes to return.",
+					},
+				},
+				"additionalProperties": false,
+			},
+			OutputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"created": map[string]any{"type": "boolean"},
+					"nodes":   map[string]any{"type": "array"},
+				},
+				"required": []string{"created", "nodes"},
 			},
 		},
 		{
@@ -1547,12 +1605,16 @@ func (s *Server) callTool(params toolCallParams) toolResult {
 		return s.eventListTool(params.Arguments)
 	case "index_update":
 		return s.indexUpdateTool(params.Arguments)
+	case "index_stats":
+		return s.indexStatsTool(params.Arguments)
 	case "index_search":
 		return s.indexSearchTool(params.Arguments)
 	case "index_symbols":
 		return s.indexSymbolsTool(params.Arguments)
 	case "vault_init":
 		return s.vaultInitTool(params.Arguments)
+	case "vault_recent":
+		return s.vaultRecentTool(params.Arguments)
 	case "vault_search":
 		return s.vaultSearchTool(params.Arguments)
 	case "vault_append":
@@ -2768,6 +2830,34 @@ func (s *Server) indexUpdateTool(args map[string]any) toolResult {
 	)
 }
 
+func (s *Server) indexStatsTool(args map[string]any) toolResult {
+	projectPath, err := s.scopedProjectPathArgOrActive(args, "index_stats")
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+
+	workspaceName, created, err := s.app.ResolveOrCreateWorkspaceByProjectPath(projectPath)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	stats, err := s.app.IndexStats(workspaceName)
+	if err != nil {
+		return errorToolResult(err.Error(), map[string]any{
+			"workspace_name": workspaceName,
+			"created":        created,
+		})
+	}
+
+	result := indexStatsResult{
+		Created: created,
+		Stats:   stats,
+	}
+	return successToolResult(
+		fmt.Sprintf("Loaded index stats for workspace %q.", workspaceName),
+		result,
+	)
+}
+
 func (s *Server) indexSymbolsTool(args map[string]any) toolResult {
 	projectPath, err := s.scopedProjectPathArgOrActive(args, "index_symbols")
 	if err != nil {
@@ -2868,6 +2958,41 @@ func (s *Server) vaultInitTool(args map[string]any) toolResult {
 	}
 	return successToolResult(
 		fmt.Sprintf("Initialized vault for workspace %q.", workspaceName),
+		result,
+	)
+}
+
+func (s *Server) vaultRecentTool(args map[string]any) toolResult {
+	projectPath, err := s.scopedProjectPathArgOrActive(args, "vault_recent")
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	limit, err := intArgOrDefault(args, "limit", 10)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	if limit < 0 {
+		return errorToolResult(`tool "vault_recent" requires "limit" to be >= 0`, nil)
+	}
+
+	workspaceName, created, err := s.app.ResolveOrCreateWorkspaceByProjectPath(projectPath)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	nodes, err := s.app.VaultRecent(workspaceName, app.VaultRecentOptions{Limit: limit})
+	if err != nil {
+		return errorToolResult(err.Error(), map[string]any{
+			"workspace_name": workspaceName,
+			"created":        created,
+		})
+	}
+
+	result := vaultRecentResult{
+		Created: created,
+		Nodes:   nodes,
+	}
+	return successToolResult(
+		fmt.Sprintf("Loaded %d recent vault nodes for workspace %q.", len(nodes), workspaceName),
 		result,
 	)
 }

@@ -31,6 +31,19 @@ func TestInitVaultCreatesWorkspaceScopedFiles(t *testing.T) {
 			t.Fatalf("expected %q to exist: %v", path, err)
 		}
 	}
+	meta, err := readJSONFile[VaultMetadata](vaultMetaPath(wsPath))
+	if err != nil {
+		t.Fatalf("readJSONFile vault metadata returned error: %v", err)
+	}
+	if meta.Workspace != "crawlly" {
+		t.Fatalf("workspace = %q, want %q", meta.Workspace, "crawlly")
+	}
+	if meta.NodeCount != 0 || meta.EdgeCount != 0 || meta.ChangeCount != 0 {
+		t.Fatalf("unexpected vault metadata after init: %#v", meta)
+	}
+	if meta.VaultUpdatedAt.IsZero() {
+		t.Fatal("expected vault_updated_at to be set")
+	}
 }
 
 func TestVaultAppendSearchRecentAndStats(t *testing.T) {
@@ -113,5 +126,32 @@ func TestVaultAppendSearchRecentAndStats(t *testing.T) {
 	}
 	if len(changes) != 2 {
 		t.Fatalf("expected 2 changes, got %d", len(changes))
+	}
+
+	meta, err := readJSONFile[VaultMetadata](vaultMetaPath(wsPath))
+	if err != nil {
+		t.Fatalf("readJSONFile vault metadata returned error: %v", err)
+	}
+	if meta.NodeCount != 2 || meta.EdgeCount != 0 || meta.ChangeCount != 2 {
+		t.Fatalf("unexpected vault metadata after append: %#v", meta)
+	}
+	if meta.VaultUpdatedAt.Before(second.CreatedAt) {
+		t.Fatalf("expected vault_updated_at >= second created_at, got %#v", meta)
+	}
+}
+
+func TestVaultRecentReturnsEmptyForNewWorkspace(t *testing.T) {
+	root := t.TempDir()
+	app := NewApp(root)
+	if err := app.CreateNewWorkspace("crawlly"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+
+	nodes, err := app.VaultRecent("crawlly", VaultRecentOptions{Limit: 5})
+	if err != nil {
+		t.Fatalf("VaultRecent returned error: %v", err)
+	}
+	if len(nodes) != 0 {
+		t.Fatalf("expected no recent nodes, got %#v", nodes)
 	}
 }

@@ -200,6 +200,11 @@ func writeContextSymbols(b *strings.Builder, symbols []IndexSymbolRecord) {
 	for _, symbol := range symbols {
 		b.WriteString("- ")
 		b.WriteString(symbol.QualifiedName)
+		if location := contextSymbolLocation(symbol); location != "" {
+			b.WriteString(" (")
+			b.WriteString(location)
+			b.WriteString(")")
+		}
 		b.WriteString("\n")
 	}
 }
@@ -242,4 +247,14 @@ func contextSummary(title, body string) string {
 	default:
 		return body
 	}
+}
+
+func contextSymbolLocation(symbol IndexSymbolRecord) string {
+	if symbol.FilePath == "" {
+		return ""
+	}
+	if symbol.LineStart > 0 && symbol.LineEnd > 0 {
+		return fmt.Sprintf("%s:%d-%d", symbol.FilePath, symbol.LineStart, symbol.LineEnd)
+	}
+	return symbol.FilePath
 }
