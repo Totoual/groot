@@ -102,7 +102,39 @@ func (e *Engine) DamagePerHeat() {}
 	if strings.TrimSpace(stderr) != "" {
 		t.Fatalf("expected stderr to stay quiet, got %q", stderr)
 	}
-	if !strings.Contains(stdout, "Files: 2") || !strings.Contains(stdout, "Symbols:") {
+	for _, want := range []string{"Indexed: true", "Indexed At:", "Workspace: crawlly", "Project Path: " + projectPath, "Files: 2", "Symbols:"} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("unexpected stats output: %q", stdout)
+		}
+	}
+}
+
+func TestIndexStatsCmdHandlesMissingMetadata(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+	projectPath := setupTaskProject(t, a, root)
+	if err := osWriteFile(filepath.Join(projectPath, "notes.txt"), "vault context and workspace scope\n"); err != nil {
+		t.Fatalf("osWriteFile returned error: %v", err)
+	}
+	if err := (&indexInitCmd{}).Run(a, []string{"crawlly"}); err != nil {
+		t.Fatalf("index init returned error: %v", err)
+	}
+
+	stdout, stderr, err := captureCommandOutput(func() error {
+		return (&indexStatsCmd{}).Run(a, []string{"crawlly"})
+	})
+	if err != nil {
+		t.Fatalf("index stats returned error: %v", err)
+	}
+	if strings.TrimSpace(stderr) != "" {
+		t.Fatalf("expected stderr to stay quiet, got %q", stderr)
+	}
+	for _, want := range []string{"Indexed: false", "Indexed At: -", "Workspace: crawlly", "Project Path: " + projectPath} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("unexpected stats output: %q", stdout)
+		}
+	}
+	if !strings.Contains(stdout, "Files: 0") || !strings.Contains(stdout, "Symbols: 0") || !strings.Contains(stdout, "Terms: 0") {
 		t.Fatalf("unexpected stats output: %q", stdout)
 	}
 }

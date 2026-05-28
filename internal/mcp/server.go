@@ -203,8 +203,9 @@ type indexUpdateResult struct {
 }
 
 type indexStatsResult struct {
-	Created bool           `json:"created"`
-	Stats   app.IndexStats `json:"stats"`
+	Created bool              `json:"created"`
+	Stats   app.IndexStats    `json:"stats"`
+	Meta    app.IndexMetadata `json:"meta"`
 }
 
 type indexSearchResult struct {
@@ -1264,8 +1265,9 @@ func (s *Server) tools() []toolDefinition {
 				"properties": map[string]any{
 					"created": map[string]any{"type": "boolean"},
 					"stats":   map[string]any{"type": "object"},
+					"meta":    map[string]any{"type": "object"},
 				},
-				"required": []string{"created", "stats"},
+				"required": []string{"created", "stats", "meta"},
 			},
 		},
 		{
@@ -2847,10 +2849,18 @@ func (s *Server) indexStatsTool(args map[string]any) toolResult {
 			"created":        created,
 		})
 	}
+	meta, err := s.app.IndexMetadata(workspaceName)
+	if err != nil {
+		return errorToolResult(err.Error(), map[string]any{
+			"workspace_name": workspaceName,
+			"created":        created,
+		})
+	}
 
 	result := indexStatsResult{
 		Created: created,
 		Stats:   stats,
+		Meta:    meta,
 	}
 	return successToolResult(
 		fmt.Sprintf("Loaded index stats for workspace %q.", workspaceName),

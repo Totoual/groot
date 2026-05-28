@@ -91,6 +91,9 @@ func TestUpdateIndexUsesBoundProjectPathAndSkipsWorkspaceAndIgnoredDirs(t *testi
 	if meta.Workspace != "crawlly" {
 		t.Fatalf("workspace = %q, want %q", meta.Workspace, "crawlly")
 	}
+	if !meta.Indexed {
+		t.Fatalf("expected indexed=true, got %#v", meta)
+	}
 	if meta.ProjectPath != projectPath {
 		t.Fatalf("project_path = %q, want %q", meta.ProjectPath, projectPath)
 	}
@@ -208,6 +211,34 @@ func (e *Engine) DamagePerHeat() {}
 	}
 	if hits[0].Symbol.QualifiedName != "Engine.DamagePerHeat" {
 		t.Fatalf("unexpected top symbol hit: %#v", hits[0])
+	}
+}
+
+func TestIndexMetadataReturnsEmptyFreshnessWhenMetadataMissing(t *testing.T) {
+	root := t.TempDir()
+	app := NewApp(root)
+	projectPath, _ := setupIndexWorkspace(t, app, root)
+
+	mustWriteFile(t, filepath.Join(projectPath, "notes.txt"), "workspace note\n")
+	if err := app.InitIndex("crawlly"); err != nil {
+		t.Fatalf("InitIndex returned error: %v", err)
+	}
+
+	meta, err := app.IndexMetadata("crawlly")
+	if err != nil {
+		t.Fatalf("IndexMetadata returned error: %v", err)
+	}
+	if meta.Indexed {
+		t.Fatalf("expected indexed=false, got %#v", meta)
+	}
+	if !meta.IndexedAt.IsZero() {
+		t.Fatalf("expected zero indexed_at, got %#v", meta)
+	}
+	if meta.Workspace != "crawlly" || meta.ProjectPath != projectPath {
+		t.Fatalf("unexpected metadata identity: %#v", meta)
+	}
+	if meta.FileCount != 0 || meta.SymbolCount != 0 || meta.TermCount != 0 {
+		t.Fatalf("expected zero counts without update, got %#v", meta)
 	}
 }
 

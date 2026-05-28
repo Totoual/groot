@@ -8,6 +8,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/totoual/groot/internal/app"
 	"github.com/totoual/groot/internal/cli/cliutil"
@@ -311,7 +312,23 @@ func (c *indexStatsCmd) Run(a *app.App, args []string) error {
 	if err != nil {
 		return err
 	}
+	meta, err := a.IndexMetadata(workspaceName)
+	if err != nil {
+		return err
+	}
 
+	fmt.Fprintf(os.Stdout, "Indexed: %t\n", meta.Indexed)
+	if meta.IndexedAt.IsZero() {
+		fmt.Fprintln(os.Stdout, "Indexed At: -")
+	} else {
+		fmt.Fprintf(os.Stdout, "Indexed At: %s\n", meta.IndexedAt.Format(time.RFC3339))
+	}
+	fmt.Fprintf(os.Stdout, "Workspace: %s\n", meta.Workspace)
+	if meta.ProjectPath == "" {
+		fmt.Fprintln(os.Stdout, "Project Path: -")
+	} else {
+		fmt.Fprintf(os.Stdout, "Project Path: %s\n", meta.ProjectPath)
+	}
 	fmt.Fprintf(os.Stdout, "Files: %d\n", stats.FileCount)
 	fmt.Fprintf(os.Stdout, "Symbols: %d\n", stats.SymbolCount)
 	fmt.Fprintf(os.Stdout, "Terms: %d\n", stats.TermCount)

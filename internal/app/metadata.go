@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -8,6 +9,7 @@ import (
 )
 
 type IndexMetadata struct {
+	Indexed     bool      `json:"indexed"`
 	IndexedAt   time.Time `json:"indexed_at"`
 	Workspace   string    `json:"workspace"`
 	ProjectPath string    `json:"project_path"`
@@ -38,6 +40,7 @@ func (a *App) writeIndexMetadata(workspaceName, wsPath string, indexedAt time.Ti
 		return err
 	}
 	meta := IndexMetadata{
+		Indexed:     true,
 		IndexedAt:   indexedAt,
 		Workspace:   workspaceName,
 		ProjectPath: projectPath,
@@ -46,6 +49,39 @@ func (a *App) writeIndexMetadata(workspaceName, wsPath string, indexedAt time.Ti
 		TermCount:   stats.TermCount,
 	}
 	return writeJSONAtomic(indexMetaPath(wsPath), meta)
+}
+
+func (a *App) IndexMetadata(workspaceName string) (IndexMetadata, error) {
+	wsPath, err := a.EnsureWorkspace(workspaceName)
+	if err != nil {
+		return IndexMetadata{}, err
+	}
+	projectPath, err := a.workspaceProjectPathOrEmpty(workspaceName, wsPath)
+	if err != nil {
+		return IndexMetadata{}, err
+	}
+	stats, err := a.IndexStats(workspaceName)
+	if err != nil {
+		return IndexMetadata{}, err
+	}
+
+	meta, err := readJSONFile[IndexMetadata](indexMetaPath(wsPath))
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			return IndexMetadata{}, err
+		}
+		meta = IndexMetadata{}
+		meta.Indexed = false
+	}
+	meta.Workspace = workspaceName
+	meta.ProjectPath = projectPath
+	meta.FileCount = stats.FileCount
+	meta.SymbolCount = stats.SymbolCount
+	meta.TermCount = stats.TermCount
+	if !meta.IndexedAt.IsZero() {
+		meta.Indexed = true
+	}
+	return meta, nil
 }
 
 func (a *App) writeVaultMetadata(workspaceName, wsPath string, updatedAt time.Time) error {

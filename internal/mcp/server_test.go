@@ -132,6 +132,15 @@ func TestServerIndexStatsToolReturnsStructuredContent(t *testing.T) {
 					SymbolCount int `json:"symbol_count"`
 					TermCount   int `json:"term_count"`
 				} `json:"stats"`
+				Meta struct {
+					Indexed     bool   `json:"indexed"`
+					IndexedAt   string `json:"indexed_at"`
+					Workspace   string `json:"workspace"`
+					ProjectPath string `json:"project_path"`
+					FileCount   int    `json:"file_count"`
+					SymbolCount int    `json:"symbol_count"`
+					TermCount   int    `json:"term_count"`
+				} `json:"meta"`
 			} `json:"structuredContent"`
 		} `json:"result"`
 	}
@@ -143,6 +152,17 @@ func TestServerIndexStatsToolReturnsStructuredContent(t *testing.T) {
 	}
 	if rpc.Result.StructuredContent.Stats.FileCount == 0 || rpc.Result.StructuredContent.Stats.SymbolCount == 0 || rpc.Result.StructuredContent.Stats.TermCount == 0 {
 		t.Fatalf("unexpected index_stats result: %#v", rpc.Result.StructuredContent.Stats)
+	}
+	if !rpc.Result.StructuredContent.Meta.Indexed || rpc.Result.StructuredContent.Meta.IndexedAt == "" {
+		t.Fatalf("expected freshness metadata in index_stats, got %#v", rpc.Result.StructuredContent.Meta)
+	}
+	if rpc.Result.StructuredContent.Meta.Workspace != "crawlly" || rpc.Result.StructuredContent.Meta.ProjectPath != projectPath {
+		t.Fatalf("unexpected index_stats meta identity: %#v", rpc.Result.StructuredContent.Meta)
+	}
+	if rpc.Result.StructuredContent.Meta.FileCount != rpc.Result.StructuredContent.Stats.FileCount ||
+		rpc.Result.StructuredContent.Meta.SymbolCount != rpc.Result.StructuredContent.Stats.SymbolCount ||
+		rpc.Result.StructuredContent.Meta.TermCount != rpc.Result.StructuredContent.Stats.TermCount {
+		t.Fatalf("expected meta counts to match stats, got meta=%#v stats=%#v", rpc.Result.StructuredContent.Meta, rpc.Result.StructuredContent.Stats)
 	}
 }
 
