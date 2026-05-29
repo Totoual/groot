@@ -57,6 +57,69 @@ func TestWalkWorkspaceProjectFilesSkipsIgnoredDirectories(t *testing.T) {
 	}
 }
 
+func TestWalkWorkspaceProjectFilesSkipsWorkspaceConfiguredIgnoredDirectories(t *testing.T) {
+	root := t.TempDir()
+	app := NewApp(root)
+
+	if err := app.CreateNewWorkspace("crawlly"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+
+	projectPath := filepath.Join(root, "repos", "crawlly")
+	for _, dir := range []string{
+		projectPath,
+		filepath.Join(projectPath, "internal"),
+		filepath.Join(projectPath, "generated"),
+		filepath.Join(projectPath, "tmp"),
+		filepath.Join(projectPath, "nested", "path"),
+	} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("MkdirAll(%q) returned error: %v", dir, err)
+		}
+	}
+	for path := range map[string]string{
+		filepath.Join(projectPath, "go.mod"):               "module crawlly\n",
+		filepath.Join(projectPath, "internal", "main.go"):  "package main\n",
+		filepath.Join(projectPath, "generated", "code.go"): "package generated\n",
+		filepath.Join(projectPath, "tmp", "cache.txt"):     "temporary\n",
+		filepath.Join(projectPath, "nested", "path", "x"):  "kept\n",
+	} {
+		if err := os.WriteFile(path, []byte("x"), 0o600); err != nil {
+			t.Fatalf("WriteFile(%q) returned error: %v", path, err)
+		}
+	}
+	if err := app.BindWorkspace("crawlly", projectPath); err != nil {
+		t.Fatalf("BindWorkspace returned error: %v", err)
+	}
+
+	wsPath, err := app.EnsureWorkspace("crawlly")
+	if err != nil {
+		t.Fatalf("EnsureWorkspace returned error: %v", err)
+	}
+	manifest, err := app.getManifest(wsPath)
+	if err != nil {
+		t.Fatalf("getManifest returned error: %v", err)
+	}
+	manifest.Index.Ignore = []string{" generated ", "tmp/", "nested/path", "", "."}
+	if err := app.writeManifest(wsPath, manifest); err != nil {
+		t.Fatalf("writeManifest returned error: %v", err)
+	}
+
+	var got []string
+	if err := app.WalkWorkspaceProjectFiles("crawlly", ProjectScanOptions{}, func(file ProjectFile) error {
+		got = append(got, file.RelativePath)
+		return nil
+	}); err != nil {
+		t.Fatalf("WalkWorkspaceProjectFiles returned error: %v", err)
+	}
+
+	slices.Sort(got)
+	want := []string{"go.mod", "internal/main.go", "nested/path/x"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("walked files = %#v, want %#v", got, want)
+	}
+}
+
 func TestWorkspaceProjectPathRequiresBinding(t *testing.T) {
 	app := NewApp(t.TempDir())
 	if err := app.CreateNewWorkspace("crawlly"); err != nil {

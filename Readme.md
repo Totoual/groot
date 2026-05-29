@@ -41,6 +41,9 @@ Today Groot can:
 - run tracked task executions with persisted logs and status
 - run manifest-declared services with current logs and state
 - persist runtime lifecycle events for tasks and services
+- build a workspace-scoped index for deterministic file and symbol lookup
+- persist a workspace-scoped vault for rules, decisions, tasks, failures, patterns, and notes
+- build compact context packs from index and vault state
 - expose the same runtime core through MCP
 
 ## Install
@@ -127,6 +130,20 @@ groot service stop crawlly api
 groot service remove crawlly api
 
 groot event list crawlly
+
+groot index init crawlly
+groot index update crawlly
+groot index search crawlly vault
+groot index symbols crawlly VaultRecent
+groot index stats crawlly
+
+groot vault init crawlly
+groot vault append crawlly --type decision --title "Vault is workspace-scoped" --body "Each Groot workspace owns its own vault."
+groot vault search crawlly vault
+groot vault recent crawlly
+groot vault stats crawlly
+
+groot context build crawlly "add vault recent mcp tool"
 ```
 
 Service restart policy:
@@ -145,6 +162,9 @@ What these mean:
 - `service add/remove/list-declared` manages manifest service declarations without hand-editing `manifest.json`
 - `service start/restart/status/list/logs/stop` manages long-running workspace-owned services
 - `event ...` lists persisted runtime lifecycle events such as `task.started`, `task.exited`, `service.started`, and `service.failed`
+- `index ...` builds and queries a deterministic workspace-scoped file and symbol index
+- `vault ...` persists workspace cognition such as rules, decisions, tasks, failures, patterns, and notes
+- `context build ...` combines relevant files, symbols, vault entries, and recent vault activity into a compact context pack
 - `status` shows detected, attached, installed, and host-fallback runtime state for the project path
 - `export` and `import` move the workspace contract, not the repository contents
 - `ws ...` remains the lower-level explicit workspace surface
@@ -202,6 +222,15 @@ Current MCP tools:
 - `service_logs`
 - `service_stop`
 - `event_list`
+- `index_update`
+- `index_stats`
+- `index_search`
+- `index_symbols`
+- `vault_init`
+- `vault_recent`
+- `vault_search`
+- `vault_append`
+- `context_build`
 
 Current MCP resources:
 

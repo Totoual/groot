@@ -105,6 +105,51 @@ func TestUpdateIndexUsesBoundProjectPathAndSkipsWorkspaceAndIgnoredDirs(t *testi
 	}
 }
 
+func TestUpdateIndexSkipsWorkspaceConfiguredIgnoredDirs(t *testing.T) {
+	root := t.TempDir()
+	app := NewApp(root)
+	projectPath, wsPath := setupIndexWorkspace(t, app, root)
+
+	mustWriteFile(t, filepath.Join(projectPath, "internal", "main.go"), "package main\n\nfunc main() { println(\"projecttoken\") }\n")
+	mustWriteFile(t, filepath.Join(projectPath, "generated", "assets.txt"), "generatedtoken\n")
+	mustWriteFile(t, filepath.Join(projectPath, "tmp", "cache.txt"), "tmptoken\n")
+
+	manifest, err := app.getManifest(wsPath)
+	if err != nil {
+		t.Fatalf("getManifest returned error: %v", err)
+	}
+	manifest.Index.Ignore = []string{"generated", " tmp "}
+	if err := app.writeManifest(wsPath, manifest); err != nil {
+		t.Fatalf("writeManifest returned error: %v", err)
+	}
+
+	stats, err := app.UpdateIndex("crawlly")
+	if err != nil {
+		t.Fatalf("UpdateIndex returned error: %v", err)
+	}
+	if stats.FileCount != 1 {
+		t.Fatalf("expected 1 indexed file, got %d", stats.FileCount)
+	}
+
+	files, err := app.indexFiles("crawlly")
+	if err != nil {
+		t.Fatalf("indexFiles returned error: %v", err)
+	}
+	if len(files) != 1 || files[0].Path != "internal/main.go" {
+		t.Fatalf("unexpected indexed files: %#v", files)
+	}
+
+	for _, query := range []string{"generatedtoken", "tmptoken"} {
+		hits, err := app.IndexSearch("crawlly", query, IndexSearchOptions{})
+		if err != nil {
+			t.Fatalf("IndexSearch(%q) returned error: %v", query, err)
+		}
+		if len(hits) != 0 {
+			t.Fatalf("expected no hits for %q, got %#v", query, hits)
+		}
+	}
+}
+
 func TestUpdateIndexExtractsGoSymbols(t *testing.T) {
 	root := t.TempDir()
 	app := NewApp(root)
