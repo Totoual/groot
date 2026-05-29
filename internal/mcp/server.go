@@ -248,6 +248,12 @@ type vaultEdgeQueryResult struct {
 	Edges   []app.VaultEdge `json:"edges"`
 }
 
+type vaultTaskResumeResult struct {
+	Created  bool                `json:"created"`
+	Resume   app.VaultTaskResume `json:"resume"`
+	Markdown string              `json:"markdown"`
+}
+
 type vaultInitResult struct {
 	Created bool `json:"created"`
 }
@@ -1596,6 +1602,37 @@ func (s *Server) tools() []toolDefinition {
 			},
 		},
 		{
+			Name:        "vault_task_resume",
+			Description: "Resolve or create a workspace from a project path, or use the active project scope, and build a deterministic task-centric vault resume.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"path": map[string]any{
+						"type":        "string",
+						"description": "Optional absolute or ~/ project path. When omitted, the active project scope is used if exactly one project is active.",
+					},
+					"task_id": map[string]any{
+						"type":        "string",
+						"description": "Optional exact vault task node id.",
+					},
+					"query": map[string]any{
+						"type":        "string",
+						"description": "Optional task title substring used to resolve a candidate task when task_id is omitted.",
+					},
+				},
+				"additionalProperties": false,
+			},
+			OutputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"created":  map[string]any{"type": "boolean"},
+					"resume":   map[string]any{"type": "object"},
+					"markdown": map[string]any{"type": "string"},
+				},
+				"required": []string{"created", "resume", "markdown"},
+			},
+		},
+		{
 			Name:        "context_build",
 			Description: "Resolve or create a workspace from a project path, or use the active project scope, and build a compact markdown context pack.",
 			InputSchema: map[string]any{
@@ -1734,6 +1771,8 @@ func (s *Server) callTool(params toolCallParams) toolResult {
 		return s.vaultEdgeAppendTool(params.Arguments)
 	case "vault_edge_query":
 		return s.vaultEdgeQueryTool(params.Arguments)
+	case "vault_task_resume":
+		return s.vaultTaskResumeTool(params.Arguments)
 	case "context_build":
 		return s.contextBuildTool(params.Arguments)
 	default:
@@ -3283,6 +3322,47 @@ func (s *Server) vaultEdgeQueryTool(args map[string]any) toolResult {
 		fmt.Sprintf("Loaded %d vault edges for workspace %q.", len(edges), workspaceName),
 		result,
 	)
+}
+
+func (s *Server) vaultTaskResumeTool(args map[string]any) toolResult {
+	projectPath, err := s.scopedProjectPathArgOrActive(args, "vault_task_resume")
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	taskID := strings.TrimSpace(stringArgOrDefault(args, "task_id", ""))
+	query := strings.TrimSpace(stringArgOrDefault(args, "query", ""))
+	if taskID == "" && query == "" {
+		return errorToolResult(`tool "vault_task_resume" requires "task_id" or "query"`, nil)
+	}
+
+	workspaceName, created, err := s.app.ResolveOrCreateWorkspaceByProjectPath(projectPath)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+
+	var resume app.VaultTaskResume
+	if taskID != "" {
+		resume, err = s.app.BuildTaskResume(workspaceName, taskID)
+	} else {
+		resume, err = s.app.ResolveTaskResume(workspaceName, query)
+	}
+	if err != nil {
+		return errorToolResult(err.Error(), map[string]any{
+			"workspace_name": workspaceName,
+			"created":        created,
+		})
+	}
+
+	markdown := resume.Markdown()
+	result := vaultTaskResumeResult{
+		Created:  created,
+		Resume:   resume,
+		Markdown: markdown,
+	}
+	return toolResult{
+		Content:           []toolContent{{Type: "text", Text: markdown}},
+		StructuredContent: result,
+	}
 }
 
 func (s *Server) contextBuildTool(args map[string]any) toolResult {

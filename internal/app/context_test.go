@@ -221,3 +221,61 @@ func DamagePerHeat() {}
 		}
 	}
 }
+
+func TestBuildContextPackIncludesTaskResumeCandidates(t *testing.T) {
+	root := t.TempDir()
+	app := NewApp(root)
+	projectPath, _ := setupIndexWorkspace(t, app, root)
+
+	mustWriteFile(t, filepath.Join(projectPath, "internal", "vault", "query.go"), "package vault\n\nfunc VaultQueryEdges() {}\n")
+	if _, err := app.UpdateIndex("crawlly"); err != nil {
+		t.Fatalf("UpdateIndex returned error: %v", err)
+	}
+
+	task, err := app.VaultAppend("crawlly", VaultAppendSpec{
+		Type:  VaultNodeTypeTask,
+		Title: "Implement vault relationship queries",
+		Body:  "Add deterministic relationship queries over workspace vault edges.",
+	})
+	if err != nil {
+		t.Fatalf("VaultAppend task returned error: %v", err)
+	}
+	progress, err := app.VaultAppend("crawlly", VaultAppendSpec{
+		Type:  VaultNodeTypeProgress,
+		Title: "Stopped after app and MCP read support",
+		Body:  "CLI query command remains unfinished.",
+	})
+	if err != nil {
+		t.Fatalf("VaultAppend progress returned error: %v", err)
+	}
+	if _, err := app.VaultAppendEdge("crawlly", VaultEdgeAppendSpec{
+		FromID: progress.ID,
+		ToID:   task.ID,
+		Type:   VaultEdgeTypeForTask,
+	}); err != nil {
+		t.Fatalf("VaultAppendEdge returned error: %v", err)
+	}
+
+	pack, err := app.BuildContextPack("crawlly", "vault relationship queries")
+	if err != nil {
+		t.Fatalf("BuildContextPack returned error: %v", err)
+	}
+	if len(pack.TaskResumeCandidates) != 1 {
+		t.Fatalf("expected 1 task resume candidate, got %#v", pack.TaskResumeCandidates)
+	}
+	if pack.TaskResumeCandidates[0].Task.ID != task.ID {
+		t.Fatalf("unexpected task candidate: %#v", pack.TaskResumeCandidates[0])
+	}
+	if pack.TaskResumeCandidates[0].LatestProgress == nil || pack.TaskResumeCandidates[0].LatestProgress.ID != progress.ID {
+		t.Fatalf("unexpected latest progress candidate: %#v", pack.TaskResumeCandidates[0])
+	}
+	markdown := pack.Markdown()
+	for _, want := range []string{
+		"Task Resume Candidates:",
+		"Implement vault relationship queries - Stopped after app and MCP read support",
+	} {
+		if !strings.Contains(markdown, want) {
+			t.Fatalf("expected markdown to contain %q, got:\n%s", want, markdown)
+		}
+	}
+}

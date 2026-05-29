@@ -15,7 +15,7 @@ func TestVaultCmdZeroValueUsesDefaultSubcommands(t *testing.T) {
 	(&VaultCmd{}).PrintHelp(&buf)
 
 	output := buf.String()
-	for _, want := range []string{"init", "append", "edge", "search", "recent", "stats"} {
+	for _, want := range []string{"init", "append", "edge", "search", "recent", "resume", "stats"} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("expected help to include %q, got %q", want, output)
 		}
@@ -195,5 +195,57 @@ func TestVaultAppendAndEdgeCmdsSupportProgressForTask(t *testing.T) {
 	}
 	if !strings.Contains(edgeOut, "\tfor_task\t"+progressNodeID+"\t"+taskNodeID) {
 		t.Fatalf("unexpected progress edge output: %q", edgeOut)
+	}
+}
+
+func TestVaultResumeCmdOutputsTaskResume(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+	if err := a.CreateNewWorkspace("crawlly"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+
+	task, err := a.VaultAppend("crawlly", app.VaultAppendSpec{
+		Type:  app.VaultNodeTypeTask,
+		Title: "Implement vault relationship queries",
+		Body:  "Add deterministic relationship queries over workspace vault edges.",
+	})
+	if err != nil {
+		t.Fatalf("VaultAppend task returned error: %v", err)
+	}
+	progress, err := a.VaultAppend("crawlly", app.VaultAppendSpec{
+		Type:  app.VaultNodeTypeProgress,
+		Title: "Stopped after app and MCP read support",
+		Body:  "Remaining work: CLI query command and docs.",
+	})
+	if err != nil {
+		t.Fatalf("VaultAppend progress returned error: %v", err)
+	}
+	if _, err := a.VaultAppendEdge("crawlly", app.VaultEdgeAppendSpec{
+		FromID: progress.ID,
+		ToID:   task.ID,
+		Type:   app.VaultEdgeTypeForTask,
+	}); err != nil {
+		t.Fatalf("VaultAppendEdge returned error: %v", err)
+	}
+
+	stdout, stderr, err := captureCommandOutput(func() error {
+		return (&vaultResumeCmd{}).Run(a, []string{"crawlly", "vault relationship queries"})
+	})
+	if err != nil {
+		t.Fatalf("vault resume returned error: %v", err)
+	}
+	if strings.TrimSpace(stderr) != "" {
+		t.Fatalf("expected stderr to stay quiet, got %q", stderr)
+	}
+	for _, want := range []string{
+		"# Groot Task Resume",
+		"Implement vault relationship queries",
+		"Stopped after app and MCP read support",
+		"for_task: " + progress.ID + " -> " + task.ID,
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("expected resume output to contain %q, got:\n%s", want, stdout)
+		}
 	}
 }

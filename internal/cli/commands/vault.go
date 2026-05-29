@@ -40,6 +40,7 @@ func defaultVaultCommands() []interfaces.Cmd {
 		&vaultEdgeCmd{},
 		&vaultSearchCmd{},
 		&vaultRecentCmd{},
+		&vaultResumeCmd{},
 		&vaultStatsCmd{},
 	}
 }
@@ -365,6 +366,56 @@ func (c *vaultRecentCmd) Run(a *app.App, args []string) error {
 }
 
 type vaultStatsCmd struct{}
+
+type vaultResumeCmd struct{}
+
+func (c *vaultResumeCmd) Name() string { return "resume" }
+func (c *vaultResumeCmd) Help() string {
+	return "Build a compact task resume view for a workspace task"
+}
+
+func (c *vaultResumeCmd) Run(a *app.App, args []string) error {
+	if len(args) == 0 {
+		fs := flag.NewFlagSet("vault resume", flag.ContinueOnError)
+		fs.SetOutput(os.Stdout)
+		fs.Usage = func() {
+			fmt.Fprintln(fs.Output(), "usage: groot vault resume <workspace> <task-or-query>")
+			fmt.Fprintln(fs.Output())
+			fmt.Fprintln(fs.Output(), c.Help())
+		}
+		fs.Usage()
+		return fmt.Errorf("workspace name required")
+	}
+	workspaceName := args[0]
+	fs := flag.NewFlagSet("vault resume", flag.ContinueOnError)
+	fs.SetOutput(os.Stdout)
+	fs.Usage = func() {
+		fmt.Fprintln(fs.Output(), "usage: groot vault resume <workspace> <task-or-query>")
+		fmt.Fprintln(fs.Output())
+		fmt.Fprintln(fs.Output(), c.Help())
+	}
+	if err := fs.Parse(args[1:]); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
+		return err
+	}
+	if fs.NArg() < 1 {
+		fs.Usage()
+		return fmt.Errorf("task id or query required")
+	}
+
+	workspaceName, err := requireWorkspaceArg(a, workspaceName)
+	if err != nil {
+		return err
+	}
+	resume, err := a.ResolveTaskResume(workspaceName, strings.Join(fs.Args(), " "))
+	if err != nil {
+		return err
+	}
+	fmt.Fprint(os.Stdout, resume.Markdown())
+	return nil
+}
 
 func (c *vaultStatsCmd) Name() string { return "stats" }
 func (c *vaultStatsCmd) Help() string { return "Print vault counts for a workspace" }

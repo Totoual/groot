@@ -11,15 +11,17 @@ const (
 	contextSymbolLimit        = 10
 	contextRecentLimit        = 5
 	contextSuggestedReadLimit = 5
+	contextTaskResumeLimit    = 3
 )
 
 type ContextPack struct {
-	Task           string              `json:"task"`
-	VaultEntries   []VaultNode         `json:"vault_entries"`
-	Files          []IndexFileRecord   `json:"files"`
-	Symbols        []IndexSymbolRecord `json:"symbols"`
-	RecentActivity []VaultNode         `json:"recent_activity"`
-	SuggestedReads []string            `json:"suggested_reads"`
+	Task                 string               `json:"task"`
+	VaultEntries         []VaultNode          `json:"vault_entries"`
+	TaskResumeCandidates []VaultTaskCandidate `json:"task_resume_candidates"`
+	Files                []IndexFileRecord    `json:"files"`
+	Symbols              []IndexSymbolRecord  `json:"symbols"`
+	RecentActivity       []VaultNode          `json:"recent_activity"`
+	SuggestedReads       []string             `json:"suggested_reads"`
 }
 
 func (a *App) BuildContextPack(workspaceName, task string) (ContextPack, error) {
@@ -51,6 +53,11 @@ func (a *App) BuildContextPack(workspaceName, task string) (ContextPack, error) 
 		Files:        dedupeIndexSearchHits(fileHits, contextFileLimit),
 		Symbols:      dedupeIndexSymbolHits(symbolHits, contextSymbolLimit),
 	}
+	candidates, err := a.FindVaultTaskCandidates(workspaceName, task, contextTaskResumeLimit)
+	if err != nil {
+		return ContextPack{}, err
+	}
+	pack.TaskResumeCandidates = candidates
 	pack.RecentActivity = filterRecentVaultActivity(recentNodes, pack.VaultEntries, contextRecentLimit)
 	pack.SuggestedReads = buildSuggestedReads(pack.Files, pack.Symbols, contextSuggestedReadLimit)
 	return pack, nil
@@ -64,6 +71,7 @@ func (p ContextPack) Markdown() string {
 	b.WriteString("\n")
 
 	writeContextVaultEntries(&b, p.VaultEntries)
+	writeContextTaskResumeCandidates(&b, p.TaskResumeCandidates)
 	writeContextFiles(&b, p.Files)
 	writeContextSymbols(&b, p.Symbols)
 	writeContextRecentActivity(&b, p.RecentActivity)
@@ -187,6 +195,22 @@ func writeContextFiles(b *strings.Builder, files []IndexFileRecord) {
 	for _, file := range files {
 		b.WriteString("- ")
 		b.WriteString(file.Path)
+		b.WriteString("\n")
+	}
+}
+
+func writeContextTaskResumeCandidates(b *strings.Builder, candidates []VaultTaskCandidate) {
+	if len(candidates) == 0 {
+		return
+	}
+	b.WriteString("\nTask Resume Candidates:\n")
+	for _, candidate := range candidates {
+		b.WriteString("- ")
+		b.WriteString(candidate.Task.Title)
+		if candidate.LatestProgress != nil {
+			b.WriteString(" - ")
+			b.WriteString(contextSummary(candidate.LatestProgress.Title, ""))
+		}
 		b.WriteString("\n")
 	}
 }

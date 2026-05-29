@@ -1,319 +1,95 @@
-## 🪴 Groot
+# Groot
 
-Groot is a workspace-first runtime layer for local development.
+Groot is a workspace-first runtime for local development.
 
-It treats the workspace as the primary unit of runtime ownership:
+It gives one project a stable local runtime surface:
 
-- isolated workspace `HOME`
-- attached toolchains in a shared Groot-managed store
-- path-first project resolution
-- tracked task and service execution
-- durable runtime events
-- one runtime core exposed through CLI and MCP
+- a workspace-scoped home and state directory
+- attached toolchains managed by Groot
+- tracked tasks and services
+- deterministic local index, vault, and context data
+- the same runtime exposed through CLI and MCP
 
-Groot does not replace the host OS, the shell, or the IDE. It adds discipline around project runtime state.
+Groot is not an agent, a planner, or a hidden memory system. It is the local substrate that people and MCP clients can share.
 
-## Product Direction
+## Goal
 
-Groot is being built in deliberate phases:
+Groot tries to make project runtime state:
 
-- Phase 1: workspace-first runtime for local development
-- Phase 1.5: MCP control plane over the same runtime
-- Phase 2: planning and intent surfaces on top of external agents
-- Phase 3: deeper GOS-style runtime evolution only if the earlier phases prove daily value
+- local-first
+- inspectable
+- reproducible
+- workspace-scoped
 
-The architectural bridge toward that longer-term direction is:
+The core idea is simple: the project workspace is the unit of runtime ownership.
 
-- workspace ownership
-- task ownership
-- service ownership
-- event ownership
+## What It Does Today
 
-That runtime direction is defined in [docs/runtime-model-v1.md](/Users/aristotelistriantafyllidis/Documents/groot/docs/runtime-model-v1.md).
+Groot currently supports:
 
-## Current Scope
-
-Today Groot can:
-
-- resolve or auto-create a workspace from a project path
-- open, enter, exec, export, import, and inspect project workspaces
-- attach and install toolchains in a shared Groot store
-- run tracked task executions with persisted logs and status
-- run manifest-declared services with current logs and state
-- persist runtime lifecycle events for tasks and services
-- build a workspace-scoped index for deterministic file and symbol lookup
-- persist a workspace-scoped vault for rules, decisions, tasks, failures, patterns, and notes
-- build compact context packs from index and vault state
-- expose the same runtime core through MCP
+- workspace resolution and binding from a project path
+- toolchain attach/install flows
+- tracked task execution with logs and status
+- managed workspace services
+- persisted runtime events
+- deterministic workspace indexing
+- deterministic workspace vault and task-progress handoff data
+- compact context packs
+- the same runtime surface over MCP
 
 ## Install
 
-Install the `groot` binary with Go:
-
 ```bash
 go install ./cmd/groot
-```
-
-Make sure your Go binary install directory is on `PATH`.
-
-Then initialize Groot and install the shell hook:
-
-```bash
 groot init
 groot shell-hook install
 ```
 
-That gives you:
-
-- the shared Groot root under `~/.groot`
-- the `groot` CLI on your shell path
-- automatic terminal re-entry into the strict runtime for supported editor terminals
+That sets up Groot under `~/.groot` and installs the shell integration.
 
 ## Quick Start
 
 ```bash
-groot init
 groot open ~/Documents/crawlly --setup
 ```
 
-`groot open <path>` resolves the workspace for that repo path and, on first open, creates and binds one automatically before launching the IDE.
-
-On first open, Groot also scans the repo for likely runtimes such as Go, Node, Python, Rust, Bun, Deno, PHP, and Java.
-
-Current first-open modes:
-
-- default: warn and suggest attach/install
-- `--attach-detected`: attach detected runtimes with concrete versions
-- `--install-detected`, `--setup`, or `--setup-detected`: attach and install detected runtimes
-- `GROOT_STRICT_RUNTIME=1`: fail instead of warning when detected runtimes are still undeclared
-
-Examples:
-
-```bash
-groot open ~/Documents/crawlly
-groot open ~/Documents/crawlly --attach-detected
-groot open ~/Documents/crawlly --setup
-```
-
-## Daily Commands
-
-Path-first workflows:
+Useful next commands:
 
 ```bash
 groot enter ~/Documents/crawlly
-groot exec ~/Documents/crawlly git status
 groot status ~/Documents/crawlly
-groot status ~/Documents/crawlly --json
-groot export ~/Documents/crawlly
-groot import crawlly-export.json --project-path ~/Documents/crawlly-copy --workspace-name crawlly-copy
-```
-
-Workspace-first runtime workflows:
-
-```bash
-groot task add crawlly test --cwd . -- go test ./...
-groot task list-declared crawlly
 groot task start crawlly test
-groot task list crawlly
-groot task status crawlly <task-id>
-groot task logs crawlly <task-id>
-groot task remove crawlly test
-
-groot service add crawlly api --cwd . --restart manual -- go run ./cmd/api
-groot service list-declared crawlly
 groot service start crawlly api
-groot service restart crawlly api
-groot service list crawlly
-groot service status crawlly api
-groot service logs crawlly api
-groot service stop crawlly api
-groot service remove crawlly api
-
-groot event list crawlly
-
-groot index init crawlly
 groot index update crawlly
-groot index search crawlly vault
-groot index symbols crawlly VaultRecent
-groot index stats crawlly
-
-groot vault init crawlly
-groot vault append crawlly --type decision --title "Vault is workspace-scoped" --body "Each Groot workspace owns its own vault."
-groot vault search crawlly vault
-groot vault recent crawlly
-groot vault stats crawlly
-
-groot context build crawlly "add vault recent mcp tool"
+groot vault resume crawlly "vault relationship queries"
+groot context build crawlly "continue unfinished vault work"
 ```
 
-Service restart policy:
-
-- `--restart manual` means Groot will leave the service stopped or failed until you act explicitly.
-- `--restart on-failure` means Groot will restart the service when it observes the failed state through `service status`, `service list`, or `service start`.
-
-What these mean:
-
-- `open` is the main human GUI shortcut
-- `enter` and `exec` use the strict workspace runtime
-- path-first commands discover or resolve a workspace from a repo path
-- workspace-first runtime commands operate on an existing workspace identity
-- `task add/remove/list-declared` manages manifest task declarations without hand-editing `manifest.json`
-- `task start/status/list/logs/stop` manages tracked execution records and per-run logs
-- `service add/remove/list-declared` manages manifest service declarations without hand-editing `manifest.json`
-- `service start/restart/status/list/logs/stop` manages long-running workspace-owned services
-- `event ...` lists persisted runtime lifecycle events such as `task.started`, `task.exited`, `service.started`, and `service.failed`
-- `index ...` builds and queries a deterministic workspace-scoped file and symbol index
-- `vault ...` persists workspace cognition such as rules, decisions, tasks, failures, patterns, and notes
-- `context build ...` combines relevant files, symbols, vault entries, and recent vault activity into a compact context pack
-- `status` shows detected, attached, installed, and host-fallback runtime state for the project path
-- `export` and `import` move the workspace contract, not the repository contents
-- `ws ...` remains the lower-level explicit workspace surface
+For the full CLI reference, use [docs/reference.md](/Users/aristotelistriantafyllidis/Documents/groot/docs/reference.md).
 
 ## MCP
 
-Groot exposes a testable MCP server over stdio:
+Groot also exposes the same runtime over stdio MCP:
 
 ```bash
 groot mcp
 ```
 
-Recommended normal flow:
+Recommended flow:
 
-```bash
-groot mcp
-```
+- start the MCP server
+- activate a project with `workspace_activate`
+- use the same runtime operations through structured tools
 
-Then let the agent activate one project for the session with `workspace_activate`.
-
-Optional hard-lock startup scope:
-
-```bash
-groot mcp --workspace crawlly
-groot mcp --project ~/Documents/crawlly --project ~/Documents/the_grime_tcg
-```
-
-Current MCP tools:
-
-- `workspace_activate`
-- `workspace_status`
-- `workspace_setup`
-- `workspace_exec`
-- `workspace_inspect`
-- `workspace_env`
-- `workspace_attach`
-- `workspace_install`
-- `workspace_export`
-- `workspace_import`
-- `task_start`
-- `task_declare`
-- `task_delete`
-- `task_list_declared`
-- `task_status`
-- `task_list`
-- `task_logs`
-- `task_stop`
-- `service_start`
-- `service_restart`
-- `service_declare`
-- `service_delete`
-- `service_list_declared`
-- `service_status`
-- `service_list`
-- `service_logs`
-- `service_stop`
-- `event_list`
-- `index_update`
-- `index_stats`
-- `index_search`
-- `index_symbols`
-- `vault_init`
-- `vault_recent`
-- `vault_search`
-- `vault_append`
-- `vault_edge_append`
-- `vault_edge_query`
-- `context_build`
-
-Current MCP resources:
-
-- workspace manifest
-- workspace metadata and runtime snapshot
-
-Detailed MCP semantics and tool contracts live in [docs/agent-contract.md](/Users/aristotelistriantafyllidis/Documents/groot/docs/agent-contract.md).
-
-## Workspace Commands
-
-Use `groot ws ...` when you want explicit workspace-by-name control:
-
-```bash
-groot ws create crawlly
-groot ws bind crawlly ~/Documents/crawlly
-groot ws attach crawlly go@1.26 node@25.8.1
-groot ws install crawlly
-groot ws open crawlly --ide code
-groot ws shell crawlly
-```
-
-Go version input supports exact and resolved forms:
-
-- `go@1.26.2` pins an exact release
-- `go@1.26` resolves to the latest stable `1.26.x` patch release
-- `go@latest` resolves to the latest stable Go release
-
-Resolved toolchain versions are written into the workspace manifest as concrete versions.
-
-Available subcommands:
-
-- `attach`
-- `bind`
-- `create`
-- `delete`
-- `env`
-- `exec`
-- `gc`
-- `install`
-- `open`
-- `shell`
-- `unbind`
-
-## Supported Toolchains
-
-Groot currently supports:
-
-- `bun`
-- `deno`
-- `go`
-- `java`
-- `node`
-- `php`
-- `python`
-- `rust`
-
-See [docs/reference.md](/Users/aristotelistriantafyllidis/Documents/groot/docs/reference.md) for toolchain install behavior and version semantics.
-
-## Workspace Layout
-
-```bash
-~/.groot/
-  bin/
-  cache/
-  store/
-  toolchains/
-  workspaces/
-    crawlly/
-      manifest.json
-      home/
-      state/
-      logs/
-```
+For MCP tool contracts and schemas, use [docs/agent-contract.md](/Users/aristotelistriantafyllidis/Documents/groot/docs/agent-contract.md).
 
 ## Docs
 
 - [docs/runtime-model-v1.md](/Users/aristotelistriantafyllidis/Documents/groot/docs/runtime-model-v1.md)
-  Runtime ownership model for tasks, services, and events.
-- [docs/agent.md](/Users/aristotelistriantafyllidis/Documents/groot/docs/agent.md)
-  Product direction for external-agent integration through MCP.
-- [docs/agent-contract.md](/Users/aristotelistriantafyllidis/Documents/groot/docs/agent-contract.md)
-  Current MCP tool and resource contract.
+  Runtime model and product direction.
 - [docs/reference.md](/Users/aristotelistriantafyllidis/Documents/groot/docs/reference.md)
-  CLI reference, shell hook details, manifest shape, supported toolchains, and runtime behavior notes.
+  CLI reference, shell hook details, manifests, toolchains, and runtime behavior.
+- [docs/agent-contract.md](/Users/aristotelistriantafyllidis/Documents/groot/docs/agent-contract.md)
+  MCP contract and structured tool/resource behavior.
+- [docs/agent.md](/Users/aristotelistriantafyllidis/Documents/groot/docs/agent.md)
+  Agent-facing product direction.

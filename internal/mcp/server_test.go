@@ -60,14 +60,14 @@ func TestServerHandleInitializeAndListTools(t *testing.T) {
 	if err := json.Unmarshal(response, &listResponse); err != nil {
 		t.Fatalf("Unmarshal tools/list response returned error: %v", err)
 	}
-	if len(listResponse.Result.Tools) != 39 {
-		t.Fatalf("len(tools) = %d, want %d", len(listResponse.Result.Tools), 39)
+	if len(listResponse.Result.Tools) != 40 {
+		t.Fatalf("len(tools) = %d, want %d", len(listResponse.Result.Tools), 40)
 	}
 	names := make([]string, 0, len(listResponse.Result.Tools))
 	for _, tool := range listResponse.Result.Tools {
 		names = append(names, tool.Name)
 	}
-	for _, want := range []string{"task_start", "task_declare", "task_delete", "task_list_declared", "task_status", "task_list", "task_logs", "task_stop", "service_start", "service_restart", "service_declare", "service_delete", "service_list_declared", "service_status", "service_list", "service_logs", "service_stop", "event_list", "index_update", "index_stats", "index_search", "index_symbols", "vault_init", "vault_recent", "vault_search", "vault_append", "vault_edge_append", "vault_edge_query", "context_build"} {
+	for _, want := range []string{"task_start", "task_declare", "task_delete", "task_list_declared", "task_status", "task_list", "task_logs", "task_stop", "service_start", "service_restart", "service_declare", "service_delete", "service_list_declared", "service_status", "service_list", "service_logs", "service_stop", "event_list", "index_update", "index_stats", "index_search", "index_symbols", "vault_init", "vault_recent", "vault_search", "vault_append", "vault_edge_append", "vault_edge_query", "vault_task_resume", "context_build"} {
 		if !slicesContainsString(names, want) {
 			t.Fatalf("missing tool %q in %#v", want, names)
 		}
@@ -632,6 +632,104 @@ func TestServerVaultEdgeQueryToolReturnsStructuredContent(t *testing.T) {
 		rpc.Result.StructuredContent.Edges[0].Type != app.VaultEdgeTypeSupports ||
 		rpc.Result.StructuredContent.Edges[0].ToID != task.ID {
 		t.Fatalf("unexpected queried edge: %#v", rpc.Result.StructuredContent.Edges[0])
+	}
+}
+
+func TestServerVaultTaskResumeToolReturnsStructuredContent(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+	projectPath := setupMCPIndexedWorkspace(t, a, root)
+
+	task, err := a.VaultAppend("crawlly", app.VaultAppendSpec{
+		Type:  app.VaultNodeTypeTask,
+		Title: "Implement vault relationship queries",
+		Body:  "Add deterministic relationship queries over workspace vault edges.",
+	})
+	if err != nil {
+		t.Fatalf("VaultAppend task returned error: %v", err)
+	}
+	progress, err := a.VaultAppend("crawlly", app.VaultAppendSpec{
+		Type:  app.VaultNodeTypeProgress,
+		Title: "Stopped after app and MCP read support",
+		Body:  "Remaining work: CLI query command and docs.",
+	})
+	if err != nil {
+		t.Fatalf("VaultAppend progress returned error: %v", err)
+	}
+	decision, err := a.VaultAppend("crawlly", app.VaultAppendSpec{
+		Type:  app.VaultNodeTypeDecision,
+		Title: "Keep relationship queries node-centric",
+		Body:  "Do not expand into graph traversal in the first slice.",
+	})
+	if err != nil {
+		t.Fatalf("VaultAppend decision returned error: %v", err)
+	}
+	if _, err := a.VaultAppendEdge("crawlly", app.VaultEdgeAppendSpec{
+		FromID: progress.ID,
+		ToID:   task.ID,
+		Type:   app.VaultEdgeTypeForTask,
+	}); err != nil {
+		t.Fatalf("VaultAppendEdge progress returned error: %v", err)
+	}
+	if _, err := a.VaultAppendEdge("crawlly", app.VaultEdgeAppendSpec{
+		FromID: decision.ID,
+		ToID:   task.ID,
+		Type:   app.VaultEdgeTypeSupports,
+	}); err != nil {
+		t.Fatalf("VaultAppendEdge decision returned error: %v", err)
+	}
+
+	server := NewServer(a)
+	request := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"vault_task_resume","arguments":{"path":"` + projectPath + `","query":"vault relationship queries"}}}`
+	response, err := server.HandleMessage([]byte(request))
+	if err != nil {
+		t.Fatalf("HandleMessage vault_task_resume returned error: %v", err)
+	}
+
+	var rpc struct {
+		Result struct {
+			IsError bool `json:"isError"`
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+			StructuredContent struct {
+				Resume struct {
+					Task struct {
+						ID    string `json:"id"`
+						Title string `json:"title"`
+					} `json:"task"`
+					LatestProgress *struct {
+						ID    string `json:"id"`
+						Title string `json:"title"`
+					} `json:"latest_progress"`
+					Decisions []struct {
+						ID string `json:"id"`
+					} `json:"decisions"`
+				} `json:"resume"`
+				Markdown string `json:"markdown"`
+			} `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(response, &rpc); err != nil {
+		t.Fatalf("Unmarshal vault_task_resume returned error: %v", err)
+	}
+	if rpc.Result.IsError {
+		t.Fatal("expected vault_task_resume success result")
+	}
+	if rpc.Result.StructuredContent.Resume.Task.ID != task.ID || rpc.Result.StructuredContent.Resume.Task.Title != task.Title {
+		t.Fatalf("unexpected resumed task: %#v", rpc.Result.StructuredContent.Resume.Task)
+	}
+	if rpc.Result.StructuredContent.Resume.LatestProgress == nil || rpc.Result.StructuredContent.Resume.LatestProgress.ID != progress.ID {
+		t.Fatalf("unexpected latest progress: %#v", rpc.Result.StructuredContent.Resume.LatestProgress)
+	}
+	if len(rpc.Result.StructuredContent.Resume.Decisions) != 1 || rpc.Result.StructuredContent.Resume.Decisions[0].ID != decision.ID {
+		t.Fatalf("unexpected decisions: %#v", rpc.Result.StructuredContent.Resume.Decisions)
+	}
+	if len(rpc.Result.Content) == 0 || !strings.Contains(rpc.Result.Content[0].Text, "# Groot Task Resume") {
+		t.Fatalf("expected markdown text content, got %#v", rpc.Result.Content)
+	}
+	if !strings.Contains(rpc.Result.StructuredContent.Markdown, "Stopped after app and MCP read support") {
+		t.Fatalf("unexpected task resume markdown: %q", rpc.Result.StructuredContent.Markdown)
 	}
 }
 
