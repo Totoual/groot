@@ -18,6 +18,8 @@ type Server struct {
 	app             *app.App
 	allowedProjects []string
 	activeProjects  []string
+	shutdownReady   bool
+	exitRequested   bool
 }
 
 type rpcRequest struct {
@@ -198,8 +200,17 @@ type eventListResult struct {
 }
 
 type indexUpdateResult struct {
-	Created bool           `json:"created"`
-	Stats   app.IndexStats `json:"stats"`
+	Created bool              `json:"created"`
+	Stats   app.IndexStats    `json:"stats"`
+	Meta    app.IndexMetadata `json:"meta"`
+	Status  app.IndexStatus   `json:"status"`
+}
+
+type indexStatsResult struct {
+	Created bool              `json:"created"`
+	Stats   app.IndexStats    `json:"stats"`
+	Meta    app.IndexMetadata `json:"meta"`
+	Status  app.IndexStatus   `json:"status"`
 }
 
 type indexSearchResult struct {
@@ -217,9 +228,30 @@ type vaultSearchResult struct {
 	Nodes   []app.VaultSearchHit `json:"nodes"`
 }
 
+type vaultRecentResult struct {
+	Created bool            `json:"created"`
+	Nodes   []app.VaultNode `json:"nodes"`
+}
+
 type vaultAppendResult struct {
 	Created bool          `json:"created"`
 	Node    app.VaultNode `json:"node"`
+}
+
+type vaultEdgeAppendResult struct {
+	Created bool          `json:"created"`
+	Edge    app.VaultEdge `json:"edge"`
+}
+
+type vaultEdgeQueryResult struct {
+	Created bool            `json:"created"`
+	Edges   []app.VaultEdge `json:"edges"`
+}
+
+type vaultTaskResumeResult struct {
+	Created  bool                `json:"created"`
+	Resume   app.VaultTaskResume `json:"resume"`
+	Markdown string              `json:"markdown"`
 }
 
 type vaultInitResult struct {
@@ -287,6 +319,9 @@ func (s *Server) Serve(in io.Reader, out io.Writer) error {
 		response, err := s.HandleMessage(line)
 		if err != nil {
 			return err
+		}
+		if s.exitRequested {
+			return nil
 		}
 		if len(response) == 0 {
 			continue
@@ -356,6 +391,13 @@ func (s *Server) handleSingle(message []byte) ([]byte, error) {
 			Error:   &rpcError{Code: -32600, Message: "invalid request"},
 		})
 	}
+	switch req.Method {
+	case "notifications/initialized":
+		return nil, nil
+	case "notifications/exit", "exit":
+		s.exitRequested = true
+		return nil, nil
+	}
 	if len(req.ID) == 0 {
 		return nil, nil
 	}
@@ -378,6 +420,13 @@ func (s *Server) handleSingle(message []byte) ([]byte, error) {
 			},
 		})
 	case "ping":
+		return marshalResponse(rpcResponse{
+			JSONRPC: "2.0",
+			ID:      req.ID,
+			Result:  map[string]any{},
+		})
+	case "shutdown":
+		s.shutdownReady = true
 		return marshalResponse(rpcResponse{
 			JSONRPC: "2.0",
 			ID:      req.ID,
@@ -1254,8 +1303,34 @@ func (s *Server) tools() []toolDefinition {
 				"properties": map[string]any{
 					"created": map[string]any{"type": "boolean"},
 					"stats":   map[string]any{"type": "object"},
+					"meta":    map[string]any{"type": "object"},
+					"status":  map[string]any{"type": "object"},
 				},
-				"required": []string{"created", "stats"},
+				"required": []string{"created", "stats", "meta", "status"},
+			},
+		},
+		{
+			Name:        "index_stats",
+			Description: "Resolve or create a workspace from a project path, or use the active project scope, and load workspace index statistics.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"path": map[string]any{
+						"type":        "string",
+						"description": "Optional absolute or ~/ project path. When omitted, the active project scope is used if exactly one project is active.",
+					},
+				},
+				"additionalProperties": false,
+			},
+			OutputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"created": map[string]any{"type": "boolean"},
+					"stats":   map[string]any{"type": "object"},
+					"meta":    map[string]any{"type": "object"},
+					"status":  map[string]any{"type": "object"},
+				},
+				"required": []string{"created", "stats", "meta", "status"},
 			},
 		},
 		{
@@ -1339,6 +1414,32 @@ func (s *Server) tools() []toolDefinition {
 					"created": map[string]any{"type": "boolean"},
 				},
 				"required": []string{"created"},
+			},
+		},
+		{
+			Name:        "vault_recent",
+			Description: "Resolve or create a workspace from a project path, or use the active project scope, and load recent vault nodes.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"path": map[string]any{
+						"type":        "string",
+						"description": "Optional absolute or ~/ project path. When omitted, the active project scope is used if exactly one project is active.",
+					},
+					"limit": map[string]any{
+						"type":        "integer",
+						"description": "Optional maximum number of recent vault nodes to return.",
+					},
+				},
+				"additionalProperties": false,
+			},
+			OutputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"created": map[string]any{"type": "boolean"},
+					"nodes":   map[string]any{"type": "array"},
+				},
+				"required": []string{"created", "nodes"},
 			},
 		},
 		{
@@ -1427,6 +1528,111 @@ func (s *Server) tools() []toolDefinition {
 			},
 		},
 		{
+			Name:        "vault_edge_append",
+			Description: "Resolve or create a workspace from a project path, or use the active project scope, and append one vault edge between existing vault nodes.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"path": map[string]any{
+						"type":        "string",
+						"description": "Optional absolute or ~/ project path. When omitted, the active project scope is used if exactly one project is active.",
+					},
+					"from_id": map[string]any{
+						"type":        "string",
+						"description": "Source vault node id.",
+					},
+					"to_id": map[string]any{
+						"type":        "string",
+						"description": "Destination vault node id.",
+					},
+					"type": map[string]any{
+						"type":        "string",
+						"description": "Vault edge type.",
+					},
+				},
+				"required":             []string{"from_id", "to_id", "type"},
+				"additionalProperties": false,
+			},
+			OutputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"created": map[string]any{"type": "boolean"},
+					"edge":    map[string]any{"type": "object"},
+				},
+				"required": []string{"created", "edge"},
+			},
+		},
+		{
+			Name:        "vault_edge_query",
+			Description: "Resolve or create a workspace from a project path, or use the active project scope, and query vault edges related to one vault node.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"path": map[string]any{
+						"type":        "string",
+						"description": "Optional absolute or ~/ project path. When omitted, the active project scope is used if exactly one project is active.",
+					},
+					"node_id": map[string]any{
+						"type":        "string",
+						"description": "Vault node id to query relationships for.",
+					},
+					"direction": map[string]any{
+						"type":        "string",
+						"description": "Optional edge direction: any, incoming, or outgoing.",
+					},
+					"type": map[string]any{
+						"type":        "string",
+						"description": "Optional vault edge type filter.",
+					},
+					"limit": map[string]any{
+						"type":        "integer",
+						"description": "Optional maximum number of edge results to return.",
+					},
+				},
+				"required":             []string{"node_id"},
+				"additionalProperties": false,
+			},
+			OutputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"created": map[string]any{"type": "boolean"},
+					"edges":   map[string]any{"type": "array"},
+				},
+				"required": []string{"created", "edges"},
+			},
+		},
+		{
+			Name:        "vault_task_resume",
+			Description: "Resolve or create a workspace from a project path, or use the active project scope, and build a deterministic task-centric vault resume.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"path": map[string]any{
+						"type":        "string",
+						"description": "Optional absolute or ~/ project path. When omitted, the active project scope is used if exactly one project is active.",
+					},
+					"task_id": map[string]any{
+						"type":        "string",
+						"description": "Optional exact vault task node id.",
+					},
+					"query": map[string]any{
+						"type":        "string",
+						"description": "Optional task title substring used to resolve a candidate task when task_id is omitted.",
+					},
+				},
+				"additionalProperties": false,
+			},
+			OutputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"created":  map[string]any{"type": "boolean"},
+					"resume":   map[string]any{"type": "object"},
+					"markdown": map[string]any{"type": "string"},
+				},
+				"required": []string{"created", "resume", "markdown"},
+			},
+		},
+		{
 			Name:        "context_build",
 			Description: "Resolve or create a workspace from a project path, or use the active project scope, and build a compact markdown context pack.",
 			InputSchema: map[string]any{
@@ -1439,6 +1645,10 @@ func (s *Server) tools() []toolDefinition {
 					"task": map[string]any{
 						"type":        "string",
 						"description": "Task description to ground.",
+					},
+					"mode": map[string]any{
+						"type":        "string",
+						"description": "Optional context build mode: narrow, handoff, or broad.",
 					},
 				},
 				"required":             []string{"task"},
@@ -1547,16 +1757,26 @@ func (s *Server) callTool(params toolCallParams) toolResult {
 		return s.eventListTool(params.Arguments)
 	case "index_update":
 		return s.indexUpdateTool(params.Arguments)
+	case "index_stats":
+		return s.indexStatsTool(params.Arguments)
 	case "index_search":
 		return s.indexSearchTool(params.Arguments)
 	case "index_symbols":
 		return s.indexSymbolsTool(params.Arguments)
 	case "vault_init":
 		return s.vaultInitTool(params.Arguments)
+	case "vault_recent":
+		return s.vaultRecentTool(params.Arguments)
 	case "vault_search":
 		return s.vaultSearchTool(params.Arguments)
 	case "vault_append":
 		return s.vaultAppendTool(params.Arguments)
+	case "vault_edge_append":
+		return s.vaultEdgeAppendTool(params.Arguments)
+	case "vault_edge_query":
+		return s.vaultEdgeQueryTool(params.Arguments)
+	case "vault_task_resume":
+		return s.vaultTaskResumeTool(params.Arguments)
 	case "context_build":
 		return s.contextBuildTool(params.Arguments)
 	default:
@@ -2757,13 +2977,73 @@ func (s *Server) indexUpdateTool(args map[string]any) toolResult {
 			"created":        created,
 		})
 	}
+	meta, err := s.app.IndexMetadata(workspaceName)
+	if err != nil {
+		return errorToolResult(err.Error(), map[string]any{
+			"workspace_name": workspaceName,
+			"created":        created,
+		})
+	}
+	status, err := s.app.IndexStatus(workspaceName)
+	if err != nil {
+		return errorToolResult(err.Error(), map[string]any{
+			"workspace_name": workspaceName,
+			"created":        created,
+		})
+	}
 
 	result := indexUpdateResult{
 		Created: created,
 		Stats:   stats,
+		Meta:    meta,
+		Status:  status,
 	}
 	return successToolResult(
 		fmt.Sprintf("Updated index for workspace %q.", workspaceName),
+		result,
+	)
+}
+
+func (s *Server) indexStatsTool(args map[string]any) toolResult {
+	projectPath, err := s.scopedProjectPathArgOrActive(args, "index_stats")
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+
+	workspaceName, created, err := s.app.ResolveOrCreateWorkspaceByProjectPath(projectPath)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	stats, err := s.app.IndexStats(workspaceName)
+	if err != nil {
+		return errorToolResult(err.Error(), map[string]any{
+			"workspace_name": workspaceName,
+			"created":        created,
+		})
+	}
+	meta, err := s.app.IndexMetadata(workspaceName)
+	if err != nil {
+		return errorToolResult(err.Error(), map[string]any{
+			"workspace_name": workspaceName,
+			"created":        created,
+		})
+	}
+	status, err := s.app.IndexStatus(workspaceName)
+	if err != nil {
+		return errorToolResult(err.Error(), map[string]any{
+			"workspace_name": workspaceName,
+			"created":        created,
+		})
+	}
+
+	result := indexStatsResult{
+		Created: created,
+		Stats:   stats,
+		Meta:    meta,
+		Status:  status,
+	}
+	return successToolResult(
+		fmt.Sprintf("Loaded index stats for workspace %q.", workspaceName),
 		result,
 	)
 }
@@ -2872,6 +3152,41 @@ func (s *Server) vaultInitTool(args map[string]any) toolResult {
 	)
 }
 
+func (s *Server) vaultRecentTool(args map[string]any) toolResult {
+	projectPath, err := s.scopedProjectPathArgOrActive(args, "vault_recent")
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	limit, err := intArgOrDefault(args, "limit", 10)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	if limit < 0 {
+		return errorToolResult(`tool "vault_recent" requires "limit" to be >= 0`, nil)
+	}
+
+	workspaceName, created, err := s.app.ResolveOrCreateWorkspaceByProjectPath(projectPath)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	nodes, err := s.app.VaultRecent(workspaceName, app.VaultRecentOptions{Limit: limit})
+	if err != nil {
+		return errorToolResult(err.Error(), map[string]any{
+			"workspace_name": workspaceName,
+			"created":        created,
+		})
+	}
+
+	result := vaultRecentResult{
+		Created: created,
+		Nodes:   nodes,
+	}
+	return successToolResult(
+		fmt.Sprintf("Loaded %d recent vault nodes for workspace %q.", len(nodes), workspaceName),
+		result,
+	)
+}
+
 func (s *Server) vaultAppendTool(args map[string]any) toolResult {
 	projectPath, err := s.scopedProjectPathArgOrActive(args, "vault_append")
 	if err != nil {
@@ -2925,6 +3240,135 @@ func (s *Server) vaultAppendTool(args map[string]any) toolResult {
 	)
 }
 
+func (s *Server) vaultEdgeAppendTool(args map[string]any) toolResult {
+	projectPath, err := s.scopedProjectPathArgOrActive(args, "vault_edge_append")
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	fromID, ok := stringArg(args, "from_id")
+	if !ok {
+		return errorToolResult(`tool "vault_edge_append" requires string argument "from_id"`, nil)
+	}
+	toID, ok := stringArg(args, "to_id")
+	if !ok {
+		return errorToolResult(`tool "vault_edge_append" requires string argument "to_id"`, nil)
+	}
+	edgeType, ok := stringArg(args, "type")
+	if !ok {
+		return errorToolResult(`tool "vault_edge_append" requires string argument "type"`, nil)
+	}
+
+	workspaceName, created, err := s.app.ResolveOrCreateWorkspaceByProjectPath(projectPath)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	edge, err := s.app.VaultAppendEdge(workspaceName, app.VaultEdgeAppendSpec{
+		FromID: strings.TrimSpace(fromID),
+		ToID:   strings.TrimSpace(toID),
+		Type:   strings.TrimSpace(edgeType),
+	})
+	if err != nil {
+		return errorToolResult(err.Error(), map[string]any{
+			"workspace_name": workspaceName,
+			"created":        created,
+		})
+	}
+
+	result := vaultEdgeAppendResult{
+		Created: created,
+		Edge:    edge,
+	}
+	return successToolResult(
+		fmt.Sprintf("Appended vault edge %q in workspace %q.", edge.ID, workspaceName),
+		result,
+	)
+}
+
+func (s *Server) vaultEdgeQueryTool(args map[string]any) toolResult {
+	projectPath, err := s.scopedProjectPathArgOrActive(args, "vault_edge_query")
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	nodeID, ok := stringArg(args, "node_id")
+	if !ok {
+		return errorToolResult(`tool "vault_edge_query" requires string argument "node_id"`, nil)
+	}
+	limit, err := intArgOrDefault(args, "limit", 10)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	if limit < 0 {
+		return errorToolResult(`tool "vault_edge_query" requires "limit" to be >= 0`, nil)
+	}
+
+	workspaceName, created, err := s.app.ResolveOrCreateWorkspaceByProjectPath(projectPath)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	edges, err := s.app.VaultQueryEdges(workspaceName, app.VaultEdgeQueryOptions{
+		NodeID:    strings.TrimSpace(nodeID),
+		Direction: strings.TrimSpace(stringArgOrDefault(args, "direction", "")),
+		Type:      strings.TrimSpace(stringArgOrDefault(args, "type", "")),
+		Limit:     limit,
+	})
+	if err != nil {
+		return errorToolResult(err.Error(), map[string]any{
+			"workspace_name": workspaceName,
+			"created":        created,
+		})
+	}
+
+	result := vaultEdgeQueryResult{
+		Created: created,
+		Edges:   edges,
+	}
+	return successToolResult(
+		fmt.Sprintf("Loaded %d vault edges for workspace %q.", len(edges), workspaceName),
+		result,
+	)
+}
+
+func (s *Server) vaultTaskResumeTool(args map[string]any) toolResult {
+	projectPath, err := s.scopedProjectPathArgOrActive(args, "vault_task_resume")
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	taskID := strings.TrimSpace(stringArgOrDefault(args, "task_id", ""))
+	query := strings.TrimSpace(stringArgOrDefault(args, "query", ""))
+	if taskID == "" && query == "" {
+		return errorToolResult(`tool "vault_task_resume" requires "task_id" or "query"`, nil)
+	}
+
+	workspaceName, created, err := s.app.ResolveOrCreateWorkspaceByProjectPath(projectPath)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+
+	var resume app.VaultTaskResume
+	if taskID != "" {
+		resume, err = s.app.BuildTaskResume(workspaceName, taskID)
+	} else {
+		resume, err = s.app.ResolveTaskResume(workspaceName, query)
+	}
+	if err != nil {
+		return errorToolResult(err.Error(), map[string]any{
+			"workspace_name": workspaceName,
+			"created":        created,
+		})
+	}
+
+	markdown := resume.Markdown()
+	result := vaultTaskResumeResult{
+		Created:  created,
+		Resume:   resume,
+		Markdown: markdown,
+	}
+	return toolResult{
+		Content:           []toolContent{{Type: "text", Text: markdown}},
+		StructuredContent: result,
+	}
+}
+
 func (s *Server) contextBuildTool(args map[string]any) toolResult {
 	projectPath, err := s.scopedProjectPathArgOrActive(args, "context_build")
 	if err != nil {
@@ -2934,12 +3378,15 @@ func (s *Server) contextBuildTool(args map[string]any) toolResult {
 	if !ok {
 		return errorToolResult(`tool "context_build" requires string argument "task"`, nil)
 	}
+	mode := strings.TrimSpace(stringArgOrDefault(args, "mode", string(app.ContextModeNarrow)))
 
 	workspaceName, created, err := s.app.ResolveOrCreateWorkspaceByProjectPath(projectPath)
 	if err != nil {
 		return errorToolResult(err.Error(), nil)
 	}
-	context, err := s.app.BuildContextPack(workspaceName, task)
+	context, err := s.app.BuildContextPackWithOptions(workspaceName, task, app.ContextBuildOptions{
+		Mode: app.ContextMode(mode),
+	})
 	if err != nil {
 		return errorToolResult(err.Error(), map[string]any{
 			"workspace_name": workspaceName,

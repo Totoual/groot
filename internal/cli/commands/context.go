@@ -1,8 +1,6 @@
 package commands
 
 import (
-	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -94,29 +92,49 @@ func (c *contextBuildCmd) Help() string {
 }
 
 func (c *contextBuildCmd) Run(a *app.App, args []string) error {
-	fs := flag.NewFlagSet("context build", flag.ContinueOnError)
-	fs.SetOutput(os.Stdout)
-	fs.Usage = func() {
-		fmt.Fprintln(fs.Output(), "usage: groot context build <workspace> <task>")
-		fmt.Fprintln(fs.Output())
-		fmt.Fprintln(fs.Output(), c.Help())
+	usage := func() {
+		fmt.Fprintln(os.Stdout, "usage: groot context build <workspace> <task> [--mode narrow|handoff|broad]")
+		fmt.Fprintln(os.Stdout)
+		fmt.Fprintln(os.Stdout, c.Help())
 	}
-	if err := fs.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return nil
-		}
-		return err
+	if cliutil.IsHelpRequest(args) {
+		usage()
+		return nil
 	}
-	if fs.NArg() < 2 {
-		fs.Usage()
+	if len(args) < 2 {
+		usage()
 		return fmt.Errorf("workspace name and task required")
 	}
 
-	workspaceName, err := requireWorkspaceArg(a, fs.Arg(0))
+	mode := string(app.ContextModeNarrow)
+	taskParts := make([]string, 0, len(args)-1)
+	for i := 1; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "--mode":
+			if i+1 >= len(args) {
+				return fmt.Errorf("context build requires a value after --mode")
+			}
+			mode = args[i+1]
+			i++
+		case strings.HasPrefix(arg, "--mode="):
+			mode = strings.TrimPrefix(arg, "--mode=")
+		default:
+			taskParts = append(taskParts, arg)
+		}
+	}
+	if len(taskParts) == 0 {
+		usage()
+		return fmt.Errorf("task required")
+	}
+
+	workspaceName, err := requireWorkspaceArg(a, args[0])
 	if err != nil {
 		return err
 	}
-	pack, err := a.BuildContextPack(workspaceName, strings.Join(fs.Args()[1:], " "))
+	pack, err := a.BuildContextPackWithOptions(workspaceName, strings.Join(taskParts, " "), app.ContextBuildOptions{
+		Mode: app.ContextMode(strings.TrimSpace(mode)),
+	})
 	if err != nil {
 		return err
 	}

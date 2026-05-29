@@ -43,6 +43,8 @@ func main() {
 		&commands.InitCmd{},
 		&commands.MCPCmd{},
 		&commands.OpenCmd{},
+		&commands.ResumeCmd{},
+		&commands.SearchCmd{},
 		&commands.ServiceCmd{},
 		&commands.ShellHookCmd{},
 		&commands.StatusCmd{},

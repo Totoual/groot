@@ -99,7 +99,7 @@ func (a *App) DetectProjectToolchains(projectPath string) ([]DetectedToolchain, 
 
 		depth := strings.Count(rel, string(os.PathSeparator))
 		if d.IsDir() {
-			if shouldSkipWorkspaceProjectDir(d.Name()) {
+			if shouldSkipWorkspaceProjectDir(d.Name(), nil) {
 				return filepath.SkipDir
 			}
 			if depth >= 3 {

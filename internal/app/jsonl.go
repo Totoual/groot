@@ -122,3 +122,55 @@ func writeJSONL[T any](w io.Writer, records []T) error {
 	}
 	return nil
 }
+
+func readJSONFile[T any](path string) (T, error) {
+	var value T
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return value, fmt.Errorf("read %s: %w", path, err)
+	}
+	if err := json.Unmarshal(data, &value); err != nil {
+		return value, fmt.Errorf("decode %s: %w", path, err)
+	}
+	return value, nil
+}
+
+func writeJSONAtomic(path string, value any) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return fmt.Errorf("mkdir %s: %w", filepath.Dir(path), err)
+	}
+
+	data, err := json.MarshalIndent(value, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal json file: %w", err)
+	}
+	data = append(data, '\n')
+
+	tmpFile, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return fmt.Errorf("create temp file for %s: %w", path, err)
+	}
+	tmpPath := tmpFile.Name()
+	cleanup := func() {
+		_ = tmpFile.Close()
+		_ = os.Remove(tmpPath)
+	}
+
+	if err := tmpFile.Chmod(0o600); err != nil {
+		cleanup()
+		return fmt.Errorf("chmod temp file for %s: %w", path, err)
+	}
+	if _, err := tmpFile.Write(data); err != nil {
+		cleanup()
+		return fmt.Errorf("write temp file for %s: %w", path, err)
+	}
+	if err := tmpFile.Close(); err != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("close temp file for %s: %w", path, err)
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("replace %s: %w", path, err)
+	}
+	return nil
+}

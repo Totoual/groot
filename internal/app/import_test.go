@@ -22,9 +22,12 @@ func TestImportWorkspaceCreatesWorkspaceFromExport(t *testing.T) {
 			Manifest: Manifest{
 				SchemaVersion: 1,
 				Name:          "crawlly",
-				Packages:      []Component{{Name: "go", Version: "1.25.4"}},
-				Services:      []ServiceSpec{{Name: "postgres", Version: "16"}},
-				Env:           map[string]string{"APP_ENV": "dev"},
+				Index: IndexConfig{
+					Ignore: []string{"generated", "tmp"},
+				},
+				Packages: []Component{{Name: "go", Version: "1.25.4"}},
+				Services: []ServiceSpec{{Name: "postgres", Version: "16"}},
+				Env:      map[string]string{"APP_ENV": "dev"},
 			},
 		},
 	}
@@ -52,6 +55,9 @@ func TestImportWorkspaceCreatesWorkspaceFromExport(t *testing.T) {
 	}
 	if len(manifest.Services) != 1 || !reflect.DeepEqual(manifest.Services[0], ServiceSpec{Name: "postgres", Version: "16"}) {
 		t.Fatalf("unexpected services: %#v", manifest.Services)
+	}
+	if !reflect.DeepEqual(manifest.Index.Ignore, []string{"generated", "tmp"}) {
+		t.Fatalf("unexpected index ignore config: %#v", manifest.Index.Ignore)
 	}
 	if manifest.Env["APP_ENV"] != "dev" {
 		t.Fatalf("Env[APP_ENV] = %q, want %q", manifest.Env["APP_ENV"], "dev")
@@ -183,6 +189,65 @@ func TestImportWorkspaceAsAllowsWorkspaceNameOverrideOnCollision(t *testing.T) {
 	}
 	if manifest.ProjectPath != importProject {
 		t.Fatalf("manifest.ProjectPath = %q, want %q", manifest.ProjectPath, importProject)
+	}
+}
+
+func TestExportImportWorkspaceRoundTripPreservesIndexIgnoreConfig(t *testing.T) {
+	sourceRoot := t.TempDir()
+	sourceApp := NewApp(sourceRoot)
+	sourceProject := filepath.Join(sourceRoot, "repos", "crawlly")
+	if err := osMkdirAll(sourceProject); err != nil {
+		t.Fatalf("osMkdirAll returned error: %v", err)
+	}
+	if err := sourceApp.CreateNewWorkspace("crawlly"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+	if err := sourceApp.BindWorkspace("crawlly", sourceProject); err != nil {
+		t.Fatalf("BindWorkspace returned error: %v", err)
+	}
+
+	sourceWSPath, err := sourceApp.EnsureWorkspace("crawlly")
+	if err != nil {
+		t.Fatalf("EnsureWorkspace returned error: %v", err)
+	}
+	manifest, err := sourceApp.getManifest(sourceWSPath)
+	if err != nil {
+		t.Fatalf("getManifest returned error: %v", err)
+	}
+	manifest.Index.Ignore = []string{"generated", "tmp"}
+	if err := sourceApp.writeManifest(sourceWSPath, manifest); err != nil {
+		t.Fatalf("writeManifest returned error: %v", err)
+	}
+
+	exported, err := sourceApp.ExportWorkspace("crawlly")
+	if err != nil {
+		t.Fatalf("ExportWorkspace returned error: %v", err)
+	}
+	if !reflect.DeepEqual(exported.Workspace.Manifest.Index.Ignore, []string{"generated", "tmp"}) {
+		t.Fatalf("unexpected exported index ignore config: %#v", exported.Workspace.Manifest.Index.Ignore)
+	}
+
+	destRoot := t.TempDir()
+	destApp := NewApp(destRoot)
+	destProject := filepath.Join(destRoot, "repos", "imported")
+	if err := osMkdirAll(destProject); err != nil {
+		t.Fatalf("osMkdirAll returned error: %v", err)
+	}
+
+	result, err := destApp.ImportWorkspace(exported, destProject, false)
+	if err != nil {
+		t.Fatalf("ImportWorkspace returned error: %v", err)
+	}
+	if !result.Created {
+		t.Fatal("expected import to create a destination workspace")
+	}
+
+	importedManifest, err := destApp.getManifest(filepath.Join(destRoot, "workspaces", "crawlly"))
+	if err != nil {
+		t.Fatalf("getManifest returned error: %v", err)
+	}
+	if !reflect.DeepEqual(importedManifest.Index.Ignore, []string{"generated", "tmp"}) {
+		t.Fatalf("unexpected imported index ignore config: %#v", importedManifest.Index.Ignore)
 	}
 }
 

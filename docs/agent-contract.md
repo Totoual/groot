@@ -68,6 +68,10 @@ The current MCP surface is intentionally small:
 - start, inspect, list, stop, and read logs for workspace-owned task runs
 - start, inspect, list, stop, and read logs for manifest-declared workspace-owned services
 - list persisted task lifecycle events
+- update and inspect a workspace-scoped code index
+- search indexed files and symbols
+- initialize, read, search, and append workspace vault nodes and edges
+- build compact context packs from index and vault context
 
 It does not yet cover:
 
@@ -684,6 +688,211 @@ Structured result:
 
 - `created`
 - `service`
+
+### `index_update`
+
+Resolve or create a workspace from a project path, or use the active project scope, and rebuild the workspace index.
+
+Input:
+
+```json
+{
+  "path": "/Users/example/Documents/the_grime_tcg"
+}
+```
+
+Structured result:
+
+- `created`
+- `stats`
+- `meta`
+- `status`
+
+### `index_stats`
+
+Resolve or create a workspace from a project path, or use the active project scope, and load index statistics and freshness state.
+
+Input:
+
+```json
+{}
+```
+
+Structured result:
+
+- `created`
+- `stats`
+- `meta`
+- `status`
+
+### `index_search`
+
+Resolve or create a workspace from a project path, or use the active project scope, and search indexed files.
+
+Input:
+
+```json
+{
+  "query": "vault edge query",
+  "limit": 5
+}
+```
+
+Structured result:
+
+- `created`
+- `files`
+
+### `index_symbols`
+
+Resolve or create a workspace from a project path, or use the active project scope, and search indexed symbols.
+
+Input:
+
+```json
+{
+  "query": "VaultQueryEdges",
+  "limit": 5
+}
+```
+
+Structured result:
+
+- `created`
+- `symbols`
+
+### `vault_init`
+
+Resolve or create a workspace from a project path, or use the active project scope, and initialize the workspace vault.
+
+Input:
+
+```json
+{}
+```
+
+Structured result:
+
+- `created`
+
+### `vault_recent`
+
+Resolve or create a workspace from a project path, or use the active project scope, and load recent vault nodes.
+
+Input:
+
+```json
+{
+  "limit": 10
+}
+```
+
+Structured result:
+
+- `created`
+- `nodes`
+
+### `vault_search`
+
+Resolve or create a workspace from a project path, or use the active project scope, and search vault nodes.
+
+Input:
+
+```json
+{
+  "query": "relationship query",
+  "limit": 5
+}
+```
+
+Structured result:
+
+- `created`
+- `nodes`
+
+### `vault_append`
+
+Resolve or create a workspace from a project path, or use the active project scope, and append one vault node.
+
+Input:
+
+```json
+{
+  "type": "decision",
+  "title": "Vault queries stay deterministic",
+  "body": "Keep the first slice node-centric and inspectable."
+}
+```
+
+Structured result:
+
+- `created`
+- `node`
+
+### `vault_edge_append`
+
+Resolve or create a workspace from a project path, or use the active project scope, and append one vault edge between existing vault nodes.
+
+Input:
+
+```json
+{
+  "from_id": "node-a",
+  "to_id": "node-b",
+  "type": "depends_on"
+}
+```
+
+Structured result:
+
+- `created`
+- `edge`
+
+### `vault_edge_query`
+
+Resolve or create a workspace from a project path, or use the active project scope, and query vault edges related to one vault node.
+
+Input:
+
+```json
+{
+  "node_id": "node-a",
+  "direction": "incoming",
+  "type": "supports",
+  "limit": 10
+}
+```
+
+Structured result:
+
+- `created`
+- `edges`
+
+Current query semantics:
+
+- `direction` defaults to `any`
+- supported directions are `any`, `incoming`, and `outgoing`
+- `type` is an optional exact edge-type filter
+- results stay deterministic and newest-first
+- `limit` defaults to `10`; pass `0` to return all matches
+
+### `context_build`
+
+Resolve or create a workspace from a project path, or use the active project scope, and build a compact markdown context pack.
+
+Input:
+
+```json
+{
+  "task": "Continue the unfinished vault edge query work"
+}
+```
+
+Structured result:
+
+- `created`
+- `context`
+- `markdown`
 
 ## Available Resources
 

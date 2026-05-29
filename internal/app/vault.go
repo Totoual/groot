@@ -12,22 +12,42 @@ const (
 	VaultNodeTypeRule     = "rule"
 	VaultNodeTypeDecision = "decision"
 	VaultNodeTypeTask     = "task"
+	VaultNodeTypeProgress = "progress"
 	VaultNodeTypeFailure  = "failure"
 	VaultNodeTypePattern  = "pattern"
 	VaultNodeTypeNote     = "note"
 	VaultNodeTypeFile     = "file"
 	VaultNodeTypeSymbol   = "symbol"
+
+	VaultEdgeTypeDependsOn   = "depends_on"
+	VaultEdgeTypeImplements  = "implements"
+	VaultEdgeTypeReferences  = "references"
+	VaultEdgeTypeSupports    = "supports"
+	VaultEdgeTypeContradicts = "contradicts"
+	VaultEdgeTypeSupersedes  = "supersedes"
+	VaultEdgeTypeForTask     = "for_task"
 )
 
 var supportedVaultNodeTypes = map[string]struct{}{
 	VaultNodeTypeRule:     {},
 	VaultNodeTypeDecision: {},
 	VaultNodeTypeTask:     {},
+	VaultNodeTypeProgress: {},
 	VaultNodeTypeFailure:  {},
 	VaultNodeTypePattern:  {},
 	VaultNodeTypeNote:     {},
 	VaultNodeTypeFile:     {},
 	VaultNodeTypeSymbol:   {},
+}
+
+var supportedVaultEdgeTypes = map[string]struct{}{
+	VaultEdgeTypeDependsOn:   {},
+	VaultEdgeTypeImplements:  {},
+	VaultEdgeTypeReferences:  {},
+	VaultEdgeTypeSupports:    {},
+	VaultEdgeTypeContradicts: {},
+	VaultEdgeTypeSupersedes:  {},
+	VaultEdgeTypeForTask:     {},
 }
 
 type VaultNode struct {
@@ -69,6 +89,19 @@ type VaultAppendSpec struct {
 	Status     string
 }
 
+type VaultEdgeAppendSpec struct {
+	FromID string
+	ToID   string
+	Type   string
+}
+
+type VaultEdgeQueryOptions struct {
+	NodeID    string
+	Direction string
+	Type      string
+	Limit     int
+}
+
 type VaultSearchOptions struct {
 	Limit int
 }
@@ -105,7 +138,7 @@ func (a *App) InitVault(workspaceName string) error {
 			return err
 		}
 	}
-	return nil
+	return a.writeVaultMetadata(workspaceName, wsPath, time.Now().UTC())
 }
 
 func (a *App) VaultAppend(workspaceName string, spec VaultAppendSpec) (VaultNode, error) {
@@ -184,8 +217,193 @@ func (a *App) VaultAppend(workspaceName string, spec VaultAppendSpec) (VaultNode
 	if err := appendJSONLRecord(vaultChangesPath(wsPath), change); err != nil {
 		return VaultNode{}, err
 	}
+	if err := a.writeVaultMetadata(workspaceName, wsPath, now); err != nil {
+		return VaultNode{}, err
+	}
 
 	return node, nil
+}
+
+func (a *App) VaultAppendEdge(workspaceName string, spec VaultEdgeAppendSpec) (VaultEdge, error) {
+	if err := a.InitVault(workspaceName); err != nil {
+		return VaultEdge{}, err
+	}
+
+	fromID := strings.TrimSpace(spec.FromID)
+	if fromID == "" {
+		return VaultEdge{}, fmt.Errorf("vault edge from_id required")
+	}
+	toID := strings.TrimSpace(spec.ToID)
+	if toID == "" {
+		return VaultEdge{}, fmt.Errorf("vault edge to_id required")
+	}
+	if fromID == toID {
+		return VaultEdge{}, fmt.Errorf("vault edge requires distinct from_id and to_id")
+	}
+
+	edgeType := strings.ToLower(strings.TrimSpace(spec.Type))
+	if _, ok := supportedVaultEdgeTypes[edgeType]; !ok {
+		return VaultEdge{}, fmt.Errorf("unsupported vault edge type %q", spec.Type)
+	}
+
+	nodes, err := a.vaultNodes(workspaceName)
+	if err != nil {
+		return VaultEdge{}, err
+	}
+	nodeIDs := make(map[string]struct{}, len(nodes))
+	for _, node := range nodes {
+		nodeIDs[node.ID] = struct{}{}
+	}
+	if _, ok := nodeIDs[fromID]; !ok {
+		return VaultEdge{}, fmt.Errorf("vault edge from_id %q not found", fromID)
+	}
+	if _, ok := nodeIDs[toID]; !ok {
+		return VaultEdge{}, fmt.Errorf("vault edge to_id %q not found", toID)
+	}
+
+	edges, err := a.vaultEdges(workspaceName)
+	if err != nil {
+		return VaultEdge{}, err
+	}
+	for _, edge := range edges {
+		if edge.FromID == fromID && edge.ToID == toID && edge.Type == edgeType {
+			return VaultEdge{}, fmt.Errorf("vault edge %q from %q to %q already exists", edgeType, fromID, toID)
+		}
+	}
+
+	edgeID, err := newVaultRecordID("edge")
+	if err != nil {
+		return VaultEdge{}, err
+	}
+	now := time.Now().UTC()
+	edge := VaultEdge{
+		ID:        edgeID,
+		FromID:    fromID,
+		ToID:      toID,
+		Type:      edgeType,
+		CreatedAt: now,
+	}
+
+	wsPath, err := a.EnsureWorkspace(workspaceName)
+	if err != nil {
+		return VaultEdge{}, err
+	}
+	if err := appendJSONLRecord(vaultEdgesPath(wsPath), edge); err != nil {
+		return VaultEdge{}, err
+	}
+
+	changeID, err := newVaultRecordID("chg")
+	if err != nil {
+		return VaultEdge{}, err
+	}
+	change := VaultChange{
+		ID:        changeID,
+		Kind:      "edge.appended",
+		Timestamp: now,
+		Summary:   fmt.Sprintf("Appended vault edge %q from %s to %s.", edge.Type, edge.FromID, edge.ToID),
+		Payload: map[string]any{
+			"edge_id": edge.ID,
+			"type":    edge.Type,
+			"from_id": edge.FromID,
+			"to_id":   edge.ToID,
+		},
+	}
+	if err := appendJSONLRecord(vaultChangesPath(wsPath), change); err != nil {
+		return VaultEdge{}, err
+	}
+	if err := a.writeVaultMetadata(workspaceName, wsPath, now); err != nil {
+		return VaultEdge{}, err
+	}
+
+	return edge, nil
+}
+
+func (a *App) VaultQueryEdges(workspaceName string, opts VaultEdgeQueryOptions) ([]VaultEdge, error) {
+	if err := a.InitVault(workspaceName); err != nil {
+		return nil, err
+	}
+
+	nodeID := strings.TrimSpace(opts.NodeID)
+	if nodeID == "" {
+		return nil, fmt.Errorf("vault edge query node_id required")
+	}
+	direction := strings.ToLower(strings.TrimSpace(opts.Direction))
+	if direction == "" {
+		direction = "any"
+	}
+	switch direction {
+	case "any", "incoming", "outgoing":
+	default:
+		return nil, fmt.Errorf("unsupported vault edge direction %q", opts.Direction)
+	}
+	edgeType := strings.ToLower(strings.TrimSpace(opts.Type))
+	if edgeType != "" {
+		if _, ok := supportedVaultEdgeTypes[edgeType]; !ok {
+			return nil, fmt.Errorf("unsupported vault edge type %q", opts.Type)
+		}
+	}
+
+	nodes, err := a.vaultNodes(workspaceName)
+	if err != nil {
+		return nil, err
+	}
+	foundNode := false
+	for _, node := range nodes {
+		if node.ID == nodeID {
+			foundNode = true
+			break
+		}
+	}
+	if !foundNode {
+		return nil, fmt.Errorf("vault edge query node_id %q not found", nodeID)
+	}
+
+	edges, err := a.vaultEdges(workspaceName)
+	if err != nil {
+		return nil, err
+	}
+	hits := make([]VaultEdge, 0)
+	for _, edge := range edges {
+		if edgeType != "" && edge.Type != edgeType {
+			continue
+		}
+		switch direction {
+		case "any":
+			if edge.FromID != nodeID && edge.ToID != nodeID {
+				continue
+			}
+		case "incoming":
+			if edge.ToID != nodeID {
+				continue
+			}
+		case "outgoing":
+			if edge.FromID != nodeID {
+				continue
+			}
+		}
+		hits = append(hits, edge)
+	}
+
+	slices.SortFunc(hits, func(a, b VaultEdge) int {
+		if cmp := b.CreatedAt.Compare(a.CreatedAt); cmp != 0 {
+			return cmp
+		}
+		if cmp := strings.Compare(a.Type, b.Type); cmp != 0 {
+			return cmp
+		}
+		if cmp := strings.Compare(a.FromID, b.FromID); cmp != 0 {
+			return cmp
+		}
+		if cmp := strings.Compare(a.ToID, b.ToID); cmp != 0 {
+			return cmp
+		}
+		return strings.Compare(a.ID, b.ID)
+	})
+
+	if opts.Limit > 0 && len(hits) > opts.Limit {
+		hits = hits[:opts.Limit]
+	}
+	return hits, nil
 }
 
 func (a *App) VaultSearch(workspaceName, query string, opts VaultSearchOptions) ([]VaultSearchHit, error) {

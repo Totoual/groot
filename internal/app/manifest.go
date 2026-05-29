@@ -16,10 +16,15 @@ type Manifest struct {
 	CreatedAt     time.Time         `json:"created_at"`
 	Name          string            `json:"name"`
 	ProjectPath   string            `json:"project_path"`
+	Index         IndexConfig       `json:"index"`
 	Packages      []PackageSpec     `json:"packages"`
 	Tasks         []TaskSpec        `json:"tasks"`
 	Services      []ServiceSpec     `json:"services"`
 	Env           map[string]string `json:"env"`
+}
+
+type IndexConfig struct {
+	Ignore []string `json:"ignore"`
 }
 
 type PackageSpec struct {
@@ -49,10 +54,13 @@ func NewManifest(name string) *Manifest {
 		CreatedAt:     time.Now(),
 		Name:          name,
 		ProjectPath:   "",
-		Packages:      make([]PackageSpec, 0),
-		Tasks:         make([]TaskSpec, 0),
-		Services:      make([]ServiceSpec, 0),
-		Env:           make(map[string]string),
+		Index: IndexConfig{
+			Ignore: make([]string, 0),
+		},
+		Packages: make([]PackageSpec, 0),
+		Tasks:    make([]TaskSpec, 0),
+		Services: make([]ServiceSpec, 0),
+		Env:      make(map[string]string),
 	}
 }
 
@@ -67,6 +75,7 @@ func (a *App) getManifest(wsPath string) (Manifest, error) {
 	if err != nil {
 		return Manifest{}, err
 	}
+	normalizeManifest(&manifest)
 
 	return manifest, nil
 }
@@ -76,6 +85,7 @@ func getManifestPath(wsPath string) string {
 }
 
 func (a *App) writeManifest(wsPath string, manifest Manifest) error {
+	normalizeManifest(&manifest)
 	data, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
 		return err
@@ -139,4 +149,22 @@ func (a *App) CreateManifest(name string) error {
 	manifest := NewManifest(name)
 
 	return a.writeManifest(wsPath, *manifest)
+}
+
+func normalizeManifest(manifest *Manifest) {
+	if manifest.Packages == nil {
+		manifest.Packages = []PackageSpec{}
+	}
+	if manifest.Tasks == nil {
+		manifest.Tasks = []TaskSpec{}
+	}
+	if manifest.Services == nil {
+		manifest.Services = []ServiceSpec{}
+	}
+	if manifest.Env == nil {
+		manifest.Env = map[string]string{}
+	}
+	if manifest.Index.Ignore == nil {
+		manifest.Index.Ignore = []string{}
+	}
 }

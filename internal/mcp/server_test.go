@@ -52,24 +52,71 @@ func TestServerHandleInitializeAndListTools(t *testing.T) {
 	var listResponse struct {
 		Result struct {
 			Tools []struct {
-				Name string `json:"name"`
+				Name         string         `json:"name"`
+				OutputSchema map[string]any `json:"outputSchema"`
 			} `json:"tools"`
 		} `json:"result"`
 	}
 	if err := json.Unmarshal(response, &listResponse); err != nil {
 		t.Fatalf("Unmarshal tools/list response returned error: %v", err)
 	}
-	if len(listResponse.Result.Tools) != 35 {
-		t.Fatalf("len(tools) = %d, want %d", len(listResponse.Result.Tools), 35)
+	if len(listResponse.Result.Tools) != 40 {
+		t.Fatalf("len(tools) = %d, want %d", len(listResponse.Result.Tools), 40)
 	}
 	names := make([]string, 0, len(listResponse.Result.Tools))
 	for _, tool := range listResponse.Result.Tools {
 		names = append(names, tool.Name)
 	}
-	for _, want := range []string{"task_start", "task_declare", "task_delete", "task_list_declared", "task_status", "task_list", "task_logs", "task_stop", "service_start", "service_restart", "service_declare", "service_delete", "service_list_declared", "service_status", "service_list", "service_logs", "service_stop", "event_list", "index_update", "index_search", "index_symbols", "vault_init", "vault_search", "vault_append", "context_build"} {
+	for _, want := range []string{"task_start", "task_declare", "task_delete", "task_list_declared", "task_status", "task_list", "task_logs", "task_stop", "service_start", "service_restart", "service_declare", "service_delete", "service_list_declared", "service_status", "service_list", "service_logs", "service_stop", "event_list", "index_update", "index_stats", "index_search", "index_symbols", "vault_init", "vault_recent", "vault_search", "vault_append", "vault_edge_append", "vault_edge_query", "vault_task_resume", "context_build"} {
 		if !slicesContainsString(names, want) {
 			t.Fatalf("missing tool %q in %#v", want, names)
 		}
+	}
+	for _, want := range []struct {
+		name     string
+		required []string
+	}{
+		{name: "index_update", required: []string{"created", "stats", "meta", "status"}},
+		{name: "index_stats", required: []string{"created", "stats", "meta", "status"}},
+	} {
+		schema := map[string]any(nil)
+		for _, tool := range listResponse.Result.Tools {
+			if tool.Name == want.name {
+				schema = tool.OutputSchema
+				break
+			}
+		}
+		if schema == nil {
+			t.Fatalf("missing output schema for %q", want.name)
+		}
+		required, ok := schema["required"].([]any)
+		if !ok {
+			t.Fatalf("expected required array in %q output schema, got %#v", want.name, schema)
+		}
+		for _, field := range want.required {
+			if !slicesContainsAnyString(required, field) {
+				t.Fatalf("expected %q output schema to require %q, got %#v", want.name, field, required)
+			}
+		}
+	}
+}
+
+func TestServerHandleShutdownReturnsEmptyObject(t *testing.T) {
+	server := NewServer(app.NewApp(t.TempDir()))
+
+	response, err := server.HandleMessage([]byte(`{"jsonrpc":"2.0","id":1,"method":"shutdown"}`))
+	if err != nil {
+		t.Fatalf("HandleMessage shutdown returned error: %v", err)
+	}
+
+	var rpc struct {
+		Result map[string]any `json:"result"`
+	}
+	if err := json.Unmarshal(response, &rpc); err != nil {
+		t.Fatalf("Unmarshal shutdown response returned error: %v", err)
+	}
+	if rpc.Result == nil || len(rpc.Result) != 0 {
+		t.Fatalf("unexpected shutdown result: %#v", rpc.Result)
 	}
 }
 
@@ -94,6 +141,20 @@ func TestServerIndexUpdateToolReturnsStructuredContent(t *testing.T) {
 					FileCount   int `json:"file_count"`
 					SymbolCount int `json:"symbol_count"`
 				} `json:"stats"`
+				Meta struct {
+					Indexed     bool   `json:"indexed"`
+					IndexedAt   string `json:"indexed_at"`
+					Workspace   string `json:"workspace"`
+					ProjectPath string `json:"project_path"`
+				} `json:"meta"`
+				Status struct {
+					Fresh      bool   `json:"fresh"`
+					Stale      bool   `json:"stale"`
+					Reason     string `json:"reason"`
+					IndexedAt  string `json:"indexed_at"`
+					Workspace  string `json:"workspace"`
+					AgeSeconds int64  `json:"age_seconds"`
+				} `json:"status"`
 			} `json:"structuredContent"`
 		} `json:"result"`
 	}
@@ -108,6 +169,103 @@ func TestServerIndexUpdateToolReturnsStructuredContent(t *testing.T) {
 	}
 	if rpc.Result.StructuredContent.Stats.SymbolCount == 0 {
 		t.Fatal("expected index_update to return extracted symbols")
+	}
+	if !rpc.Result.StructuredContent.Meta.Indexed || rpc.Result.StructuredContent.Meta.IndexedAt == "" {
+		t.Fatalf("expected index_update to return metadata, got %#v", rpc.Result.StructuredContent.Meta)
+	}
+	if rpc.Result.StructuredContent.Meta.Workspace != "crawlly" || rpc.Result.StructuredContent.Meta.ProjectPath != projectPath {
+		t.Fatalf("unexpected index_update meta identity: %#v", rpc.Result.StructuredContent.Meta)
+	}
+	if !rpc.Result.StructuredContent.Status.Fresh || rpc.Result.StructuredContent.Status.Stale || rpc.Result.StructuredContent.Status.Reason != "fresh" {
+		t.Fatalf("expected index_update to return fresh status, got %#v", rpc.Result.StructuredContent.Status)
+	}
+	if rpc.Result.StructuredContent.Status.Workspace != "crawlly" || rpc.Result.StructuredContent.Status.IndexedAt == "" {
+		t.Fatalf("unexpected index_update status identity: %#v", rpc.Result.StructuredContent.Status)
+	}
+}
+
+func TestServerIndexStatsToolReturnsStructuredContent(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+	projectPath := setupMCPIndexedWorkspace(t, a, root)
+
+	server := NewServer(a)
+	request := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"index_stats","arguments":{"path":"` + projectPath + `"}}}`
+	response, err := server.HandleMessage([]byte(request))
+	if err != nil {
+		t.Fatalf("HandleMessage index_stats returned error: %v", err)
+	}
+
+	var rpc struct {
+		Result struct {
+			IsError           bool `json:"isError"`
+			StructuredContent struct {
+				Stats struct {
+					FileCount   int `json:"file_count"`
+					SymbolCount int `json:"symbol_count"`
+					TermCount   int `json:"term_count"`
+				} `json:"stats"`
+				Meta struct {
+					Indexed     bool   `json:"indexed"`
+					IndexedAt   string `json:"indexed_at"`
+					Workspace   string `json:"workspace"`
+					ProjectPath string `json:"project_path"`
+					FileCount   int    `json:"file_count"`
+					SymbolCount int    `json:"symbol_count"`
+					TermCount   int    `json:"term_count"`
+				} `json:"meta"`
+				Status struct {
+					Fresh         bool   `json:"fresh"`
+					Stale         bool   `json:"stale"`
+					Reason        string `json:"reason"`
+					IndexedAt     string `json:"indexed_at"`
+					Workspace     string `json:"workspace"`
+					ProjectPath   string `json:"project_path"`
+					FileCount     int    `json:"file_count"`
+					SymbolCount   int    `json:"symbol_count"`
+					TermCount     int    `json:"term_count"`
+					MaxAgeSeconds int64  `json:"max_age_seconds"`
+				} `json:"status"`
+			} `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(response, &rpc); err != nil {
+		t.Fatalf("Unmarshal index_stats returned error: %v", err)
+	}
+	if rpc.Result.IsError {
+		t.Fatal("expected index_stats success result")
+	}
+	if rpc.Result.StructuredContent.Stats.FileCount == 0 || rpc.Result.StructuredContent.Stats.SymbolCount == 0 || rpc.Result.StructuredContent.Stats.TermCount == 0 {
+		t.Fatalf("unexpected index_stats result: %#v", rpc.Result.StructuredContent.Stats)
+	}
+	if !rpc.Result.StructuredContent.Meta.Indexed || rpc.Result.StructuredContent.Meta.IndexedAt == "" {
+		t.Fatalf("expected freshness metadata in index_stats, got %#v", rpc.Result.StructuredContent.Meta)
+	}
+	if rpc.Result.StructuredContent.Meta.Workspace != "crawlly" || rpc.Result.StructuredContent.Meta.ProjectPath != projectPath {
+		t.Fatalf("unexpected index_stats meta identity: %#v", rpc.Result.StructuredContent.Meta)
+	}
+	if rpc.Result.StructuredContent.Meta.FileCount != rpc.Result.StructuredContent.Stats.FileCount ||
+		rpc.Result.StructuredContent.Meta.SymbolCount != rpc.Result.StructuredContent.Stats.SymbolCount ||
+		rpc.Result.StructuredContent.Meta.TermCount != rpc.Result.StructuredContent.Stats.TermCount {
+		t.Fatalf("expected meta counts to match stats, got meta=%#v stats=%#v", rpc.Result.StructuredContent.Meta, rpc.Result.StructuredContent.Stats)
+	}
+	if !rpc.Result.StructuredContent.Status.Fresh || rpc.Result.StructuredContent.Status.Stale || rpc.Result.StructuredContent.Status.Reason != "fresh" {
+		t.Fatalf("expected fresh index status, got %#v", rpc.Result.StructuredContent.Status)
+	}
+	if rpc.Result.StructuredContent.Status.IndexedAt != rpc.Result.StructuredContent.Meta.IndexedAt {
+		t.Fatalf("expected status indexed_at to match meta indexed_at, got status=%#v meta=%#v", rpc.Result.StructuredContent.Status, rpc.Result.StructuredContent.Meta)
+	}
+	if rpc.Result.StructuredContent.Status.Workspace != rpc.Result.StructuredContent.Meta.Workspace ||
+		rpc.Result.StructuredContent.Status.ProjectPath != rpc.Result.StructuredContent.Meta.ProjectPath {
+		t.Fatalf("expected status identity to match meta, got status=%#v meta=%#v", rpc.Result.StructuredContent.Status, rpc.Result.StructuredContent.Meta)
+	}
+	if rpc.Result.StructuredContent.Status.FileCount != rpc.Result.StructuredContent.Meta.FileCount ||
+		rpc.Result.StructuredContent.Status.SymbolCount != rpc.Result.StructuredContent.Meta.SymbolCount ||
+		rpc.Result.StructuredContent.Status.TermCount != rpc.Result.StructuredContent.Meta.TermCount {
+		t.Fatalf("expected status counts to match meta, got status=%#v meta=%#v", rpc.Result.StructuredContent.Status, rpc.Result.StructuredContent.Meta)
+	}
+	if rpc.Result.StructuredContent.Status.MaxAgeSeconds <= 0 {
+		t.Fatalf("expected positive max_age_seconds, got %#v", rpc.Result.StructuredContent.Status)
 	}
 }
 
@@ -248,6 +406,333 @@ func TestServerVaultSearchAndAppendToolsReturnStructuredContent(t *testing.T) {
 	}
 }
 
+func TestServerVaultEdgeAppendToolReturnsStructuredContent(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+	projectPath := setupMCPIndexedWorkspace(t, a, root)
+
+	from, err := a.VaultAppend("crawlly", app.VaultAppendSpec{
+		Type:  app.VaultNodeTypeTask,
+		Title: "Implement edge tool",
+		Body:  "Wire through MCP.",
+	})
+	if err != nil {
+		t.Fatalf("VaultAppend from returned error: %v", err)
+	}
+	to, err := a.VaultAppend("crawlly", app.VaultAppendSpec{
+		Type:  app.VaultNodeTypeDecision,
+		Title: "Keep edges minimal",
+		Body:  "Append-only and directional.",
+	})
+	if err != nil {
+		t.Fatalf("VaultAppend to returned error: %v", err)
+	}
+
+	server := NewServer(a)
+	request := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"vault_edge_append","arguments":{"path":"` + projectPath + `","from_id":"` + from.ID + `","to_id":"` + to.ID + `","type":"depends_on"}}}`
+	response, err := server.HandleMessage([]byte(request))
+	if err != nil {
+		t.Fatalf("HandleMessage vault_edge_append returned error: %v", err)
+	}
+
+	var rpc struct {
+		Result struct {
+			IsError           bool `json:"isError"`
+			StructuredContent struct {
+				Edge struct {
+					Type   string `json:"type"`
+					FromID string `json:"from_id"`
+					ToID   string `json:"to_id"`
+				} `json:"edge"`
+			} `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(response, &rpc); err != nil {
+		t.Fatalf("Unmarshal vault_edge_append returned error: %v", err)
+	}
+	if rpc.Result.IsError {
+		t.Fatal("expected vault_edge_append success result")
+	}
+	if rpc.Result.StructuredContent.Edge.Type != app.VaultEdgeTypeDependsOn ||
+		rpc.Result.StructuredContent.Edge.FromID != from.ID ||
+		rpc.Result.StructuredContent.Edge.ToID != to.ID {
+		t.Fatalf("unexpected appended edge: %#v", rpc.Result.StructuredContent.Edge)
+	}
+
+	stats, err := a.VaultStats("crawlly")
+	if err != nil {
+		t.Fatalf("VaultStats returned error: %v", err)
+	}
+	if stats.EdgeCount != 1 || stats.ChangeCount != 3 {
+		t.Fatalf("unexpected stats after MCP edge append: %#v", stats)
+	}
+}
+
+func TestServerVaultAppendAndEdgeSupportProgressForTask(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+	projectPath := setupMCPIndexedWorkspace(t, a, root)
+
+	server := NewServer(a)
+	taskRequest := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"vault_append","arguments":{"path":"` + projectPath + `","type":"task","title":"Implement vault relationship queries","body":"Add deterministic vault edge query support in app and MCP."}}}`
+	taskResponse, err := server.HandleMessage([]byte(taskRequest))
+	if err != nil {
+		t.Fatalf("HandleMessage task vault_append returned error: %v", err)
+	}
+
+	var taskRPC struct {
+		Result struct {
+			IsError           bool `json:"isError"`
+			StructuredContent struct {
+				Node struct {
+					ID   string `json:"id"`
+					Type string `json:"type"`
+				} `json:"node"`
+			} `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(taskResponse, &taskRPC); err != nil {
+		t.Fatalf("Unmarshal task vault_append returned error: %v", err)
+	}
+	if taskRPC.Result.IsError || taskRPC.Result.StructuredContent.Node.Type != app.VaultNodeTypeTask {
+		t.Fatalf("unexpected task append response: %#v", taskRPC)
+	}
+
+	progressRequest := `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"vault_append","arguments":{"path":"` + projectPath + `","type":"progress","title":"Stopped after app and MCP read support","body":"CLI query command and context integration remain unfinished."}}}`
+	progressResponse, err := server.HandleMessage([]byte(progressRequest))
+	if err != nil {
+		t.Fatalf("HandleMessage progress vault_append returned error: %v", err)
+	}
+
+	var progressRPC struct {
+		Result struct {
+			IsError           bool `json:"isError"`
+			StructuredContent struct {
+				Node struct {
+					ID   string `json:"id"`
+					Type string `json:"type"`
+				} `json:"node"`
+			} `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(progressResponse, &progressRPC); err != nil {
+		t.Fatalf("Unmarshal progress vault_append returned error: %v", err)
+	}
+	if progressRPC.Result.IsError || progressRPC.Result.StructuredContent.Node.Type != app.VaultNodeTypeProgress {
+		t.Fatalf("unexpected progress append response: %#v", progressRPC)
+	}
+
+	edgeRequest := `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"vault_edge_append","arguments":{"path":"` + projectPath + `","from_id":"` + progressRPC.Result.StructuredContent.Node.ID + `","to_id":"` + taskRPC.Result.StructuredContent.Node.ID + `","type":"for_task"}}}`
+	edgeResponse, err := server.HandleMessage([]byte(edgeRequest))
+	if err != nil {
+		t.Fatalf("HandleMessage progress vault_edge_append returned error: %v", err)
+	}
+
+	var edgeRPC struct {
+		Result struct {
+			IsError           bool `json:"isError"`
+			StructuredContent struct {
+				Edge struct {
+					Type   string `json:"type"`
+					FromID string `json:"from_id"`
+					ToID   string `json:"to_id"`
+				} `json:"edge"`
+			} `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(edgeResponse, &edgeRPC); err != nil {
+		t.Fatalf("Unmarshal progress vault_edge_append returned error: %v", err)
+	}
+	if edgeRPC.Result.IsError {
+		t.Fatal("expected progress vault_edge_append success result")
+	}
+	if edgeRPC.Result.StructuredContent.Edge.Type != app.VaultEdgeTypeForTask ||
+		edgeRPC.Result.StructuredContent.Edge.FromID != progressRPC.Result.StructuredContent.Node.ID ||
+		edgeRPC.Result.StructuredContent.Edge.ToID != taskRPC.Result.StructuredContent.Node.ID {
+		t.Fatalf("unexpected progress edge response: %#v", edgeRPC.Result.StructuredContent.Edge)
+	}
+}
+
+func TestServerVaultEdgeQueryToolReturnsStructuredContent(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+	projectPath := setupMCPIndexedWorkspace(t, a, root)
+
+	task, err := a.VaultAppend("crawlly", app.VaultAppendSpec{
+		Type:  app.VaultNodeTypeTask,
+		Title: "Task node",
+		Body:  "body",
+	})
+	if err != nil {
+		t.Fatalf("VaultAppend task returned error: %v", err)
+	}
+	decision, err := a.VaultAppend("crawlly", app.VaultAppendSpec{
+		Type:  app.VaultNodeTypeDecision,
+		Title: "Decision node",
+		Body:  "body",
+	})
+	if err != nil {
+		t.Fatalf("VaultAppend decision returned error: %v", err)
+	}
+	rule, err := a.VaultAppend("crawlly", app.VaultAppendSpec{
+		Type:  app.VaultNodeTypeRule,
+		Title: "Rule node",
+		Body:  "body",
+	})
+	if err != nil {
+		t.Fatalf("VaultAppend rule returned error: %v", err)
+	}
+	if _, err := a.VaultAppendEdge("crawlly", app.VaultEdgeAppendSpec{
+		FromID: task.ID,
+		ToID:   decision.ID,
+		Type:   app.VaultEdgeTypeDependsOn,
+	}); err != nil {
+		t.Fatalf("VaultAppendEdge outgoing returned error: %v", err)
+	}
+	time.Sleep(2 * time.Millisecond)
+	incoming, err := a.VaultAppendEdge("crawlly", app.VaultEdgeAppendSpec{
+		FromID: rule.ID,
+		ToID:   task.ID,
+		Type:   app.VaultEdgeTypeSupports,
+	})
+	if err != nil {
+		t.Fatalf("VaultAppendEdge incoming returned error: %v", err)
+	}
+
+	server := NewServer(a)
+	request := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"vault_edge_query","arguments":{"path":"` + projectPath + `","node_id":"` + task.ID + `","direction":"incoming","type":"supports","limit":1}}}`
+	response, err := server.HandleMessage([]byte(request))
+	if err != nil {
+		t.Fatalf("HandleMessage vault_edge_query returned error: %v", err)
+	}
+
+	var rpc struct {
+		Result struct {
+			IsError           bool `json:"isError"`
+			StructuredContent struct {
+				Edges []struct {
+					ID     string `json:"id"`
+					Type   string `json:"type"`
+					FromID string `json:"from_id"`
+					ToID   string `json:"to_id"`
+				} `json:"edges"`
+			} `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(response, &rpc); err != nil {
+		t.Fatalf("Unmarshal vault_edge_query returned error: %v", err)
+	}
+	if rpc.Result.IsError {
+		t.Fatal("expected vault_edge_query success result")
+	}
+	if len(rpc.Result.StructuredContent.Edges) != 1 {
+		t.Fatalf("expected 1 queried edge, got %#v", rpc.Result.StructuredContent.Edges)
+	}
+	if rpc.Result.StructuredContent.Edges[0].ID != incoming.ID ||
+		rpc.Result.StructuredContent.Edges[0].Type != app.VaultEdgeTypeSupports ||
+		rpc.Result.StructuredContent.Edges[0].ToID != task.ID {
+		t.Fatalf("unexpected queried edge: %#v", rpc.Result.StructuredContent.Edges[0])
+	}
+}
+
+func TestServerVaultTaskResumeToolReturnsStructuredContent(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+	projectPath := setupMCPIndexedWorkspace(t, a, root)
+
+	task, err := a.VaultAppend("crawlly", app.VaultAppendSpec{
+		Type:  app.VaultNodeTypeTask,
+		Title: "Implement vault relationship queries",
+		Body:  "Add deterministic relationship queries over workspace vault edges.",
+	})
+	if err != nil {
+		t.Fatalf("VaultAppend task returned error: %v", err)
+	}
+	progress, err := a.VaultAppend("crawlly", app.VaultAppendSpec{
+		Type:  app.VaultNodeTypeProgress,
+		Title: "Stopped after app and MCP read support",
+		Body:  "Remaining work: CLI query command and docs.",
+	})
+	if err != nil {
+		t.Fatalf("VaultAppend progress returned error: %v", err)
+	}
+	decision, err := a.VaultAppend("crawlly", app.VaultAppendSpec{
+		Type:  app.VaultNodeTypeDecision,
+		Title: "Keep relationship queries node-centric",
+		Body:  "Do not expand into graph traversal in the first slice.",
+	})
+	if err != nil {
+		t.Fatalf("VaultAppend decision returned error: %v", err)
+	}
+	if _, err := a.VaultAppendEdge("crawlly", app.VaultEdgeAppendSpec{
+		FromID: progress.ID,
+		ToID:   task.ID,
+		Type:   app.VaultEdgeTypeForTask,
+	}); err != nil {
+		t.Fatalf("VaultAppendEdge progress returned error: %v", err)
+	}
+	if _, err := a.VaultAppendEdge("crawlly", app.VaultEdgeAppendSpec{
+		FromID: decision.ID,
+		ToID:   task.ID,
+		Type:   app.VaultEdgeTypeSupports,
+	}); err != nil {
+		t.Fatalf("VaultAppendEdge decision returned error: %v", err)
+	}
+
+	server := NewServer(a)
+	request := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"vault_task_resume","arguments":{"path":"` + projectPath + `","query":"vault relationship queries"}}}`
+	response, err := server.HandleMessage([]byte(request))
+	if err != nil {
+		t.Fatalf("HandleMessage vault_task_resume returned error: %v", err)
+	}
+
+	var rpc struct {
+		Result struct {
+			IsError bool `json:"isError"`
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+			StructuredContent struct {
+				Resume struct {
+					Task struct {
+						ID    string `json:"id"`
+						Title string `json:"title"`
+					} `json:"task"`
+					LatestProgress *struct {
+						ID    string `json:"id"`
+						Title string `json:"title"`
+					} `json:"latest_progress"`
+					Decisions []struct {
+						ID string `json:"id"`
+					} `json:"decisions"`
+				} `json:"resume"`
+				Markdown string `json:"markdown"`
+			} `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(response, &rpc); err != nil {
+		t.Fatalf("Unmarshal vault_task_resume returned error: %v", err)
+	}
+	if rpc.Result.IsError {
+		t.Fatal("expected vault_task_resume success result")
+	}
+	if rpc.Result.StructuredContent.Resume.Task.ID != task.ID || rpc.Result.StructuredContent.Resume.Task.Title != task.Title {
+		t.Fatalf("unexpected resumed task: %#v", rpc.Result.StructuredContent.Resume.Task)
+	}
+	if rpc.Result.StructuredContent.Resume.LatestProgress == nil || rpc.Result.StructuredContent.Resume.LatestProgress.ID != progress.ID {
+		t.Fatalf("unexpected latest progress: %#v", rpc.Result.StructuredContent.Resume.LatestProgress)
+	}
+	if len(rpc.Result.StructuredContent.Resume.Decisions) != 1 || rpc.Result.StructuredContent.Resume.Decisions[0].ID != decision.ID {
+		t.Fatalf("unexpected decisions: %#v", rpc.Result.StructuredContent.Resume.Decisions)
+	}
+	if len(rpc.Result.Content) == 0 || !strings.Contains(rpc.Result.Content[0].Text, "# Groot Task Resume") {
+		t.Fatalf("expected markdown text content, got %#v", rpc.Result.Content)
+	}
+	if !strings.Contains(rpc.Result.StructuredContent.Markdown, "Stopped after app and MCP read support") {
+		t.Fatalf("unexpected task resume markdown: %q", rpc.Result.StructuredContent.Markdown)
+	}
+}
+
 func TestServerVaultInitToolReturnsStructuredContent(t *testing.T) {
 	root := t.TempDir()
 	a := app.NewApp(root)
@@ -290,6 +775,60 @@ func TestServerVaultInitToolReturnsStructuredContent(t *testing.T) {
 	}
 }
 
+func TestServerVaultRecentToolReturnsStructuredContent(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+	projectPath := setupMCPIndexedWorkspace(t, a, root)
+	first, err := a.VaultAppend("crawlly", app.VaultAppendSpec{
+		Type:  app.VaultNodeTypeDecision,
+		Title: "First vault node",
+		Body:  "first body",
+	})
+	if err != nil {
+		t.Fatalf("VaultAppend first returned error: %v", err)
+	}
+	time.Sleep(2 * time.Millisecond)
+	second, err := a.VaultAppend("crawlly", app.VaultAppendSpec{
+		Type:  app.VaultNodeTypeTask,
+		Title: "Second vault node",
+		Body:  "second body",
+	})
+	if err != nil {
+		t.Fatalf("VaultAppend second returned error: %v", err)
+	}
+
+	server := NewServer(a)
+	request := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"vault_recent","arguments":{"path":"` + projectPath + `","limit":2}}}`
+	response, err := server.HandleMessage([]byte(request))
+	if err != nil {
+		t.Fatalf("HandleMessage vault_recent returned error: %v", err)
+	}
+
+	var rpc struct {
+		Result struct {
+			IsError           bool `json:"isError"`
+			StructuredContent struct {
+				Nodes []struct {
+					ID    string `json:"id"`
+					Title string `json:"title"`
+				} `json:"nodes"`
+			} `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(response, &rpc); err != nil {
+		t.Fatalf("Unmarshal vault_recent returned error: %v", err)
+	}
+	if rpc.Result.IsError {
+		t.Fatal("expected vault_recent success result")
+	}
+	if len(rpc.Result.StructuredContent.Nodes) != 2 {
+		t.Fatalf("expected 2 recent nodes, got %#v", rpc.Result.StructuredContent.Nodes)
+	}
+	if rpc.Result.StructuredContent.Nodes[0].ID != second.ID || rpc.Result.StructuredContent.Nodes[1].ID != first.ID {
+		t.Fatalf("unexpected vault_recent ordering: %#v", rpc.Result.StructuredContent.Nodes)
+	}
+}
+
 func TestServerContextBuildToolReturnsMarkdownWithoutChangingOutput(t *testing.T) {
 	root := t.TempDir()
 	a := app.NewApp(root)
@@ -301,6 +840,29 @@ func TestServerContextBuildToolReturnsMarkdownWithoutChangingOutput(t *testing.T
 		Tags:  []string{"engine"},
 	}); err != nil {
 		t.Fatalf("VaultAppend returned error: %v", err)
+	}
+	task, err := a.VaultAppend("crawlly", app.VaultAppendSpec{
+		Type:  app.VaultNodeTypeTask,
+		Title: "Implement vault relationship queries",
+		Body:  "Add deterministic relationship queries over workspace vault edges.",
+	})
+	if err != nil {
+		t.Fatalf("VaultAppend task returned error: %v", err)
+	}
+	progress, err := a.VaultAppend("crawlly", app.VaultAppendSpec{
+		Type:  app.VaultNodeTypeProgress,
+		Title: "Stopped after app and MCP read support",
+		Body:  "Remaining work: CLI query command and docs.",
+	})
+	if err != nil {
+		t.Fatalf("VaultAppend progress returned error: %v", err)
+	}
+	if _, err := a.VaultAppendEdge("crawlly", app.VaultEdgeAppendSpec{
+		FromID: progress.ID,
+		ToID:   task.ID,
+		Type:   app.VaultEdgeTypeForTask,
+	}); err != nil {
+		t.Fatalf("VaultAppendEdge returned error: %v", err)
 	}
 
 	server := NewServer(a)
@@ -317,6 +879,7 @@ func TestServerContextBuildToolReturnsMarkdownWithoutChangingOutput(t *testing.T
 				Markdown string `json:"markdown"`
 				Context  struct {
 					Task string `json:"task"`
+					Mode string `json:"mode"`
 				} `json:"context"`
 			} `json:"structuredContent"`
 		} `json:"result"`
@@ -330,10 +893,31 @@ func TestServerContextBuildToolReturnsMarkdownWithoutChangingOutput(t *testing.T
 	if rpc.Result.StructuredContent.Context.Task != "vault damage" {
 		t.Fatalf("task = %q, want %q", rpc.Result.StructuredContent.Context.Task, "vault damage")
 	}
-	for _, want := range []string{"# Groot Context Pack", "Relevant Vault Entries:", "Relevant Files:", "Relevant Symbols:"} {
+	if rpc.Result.StructuredContent.Context.Mode != string(app.ContextModeNarrow) {
+		t.Fatalf("mode = %q, want %q", rpc.Result.StructuredContent.Context.Mode, app.ContextModeNarrow)
+	}
+	for _, want := range []string{"# Groot Context Pack", "Relevant Vault Entries:", "Relevant Files:", "Relevant Symbols:", "Engine.DamagePerHeat (engine.go:6-6)"} {
 		if !strings.Contains(rpc.Result.StructuredContent.Markdown, want) {
 			t.Fatalf("expected markdown to contain %q, got:\n%s", want, rpc.Result.StructuredContent.Markdown)
 		}
+	}
+
+	handoffRequest := `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"context_build","arguments":{"path":"` + projectPath + `","task":"vault relationship queries","mode":"handoff"}}}`
+	response, err = server.HandleMessage([]byte(handoffRequest))
+	if err != nil {
+		t.Fatalf("HandleMessage handoff context_build returned error: %v", err)
+	}
+	if err := json.Unmarshal(response, &rpc); err != nil {
+		t.Fatalf("Unmarshal handoff context_build returned error: %v", err)
+	}
+	if rpc.Result.IsError {
+		t.Fatal("expected handoff context_build success result")
+	}
+	if rpc.Result.StructuredContent.Context.Mode != string(app.ContextModeHandoff) {
+		t.Fatalf("handoff mode = %q, want %q", rpc.Result.StructuredContent.Context.Mode, app.ContextModeHandoff)
+	}
+	if !strings.Contains(rpc.Result.StructuredContent.Markdown, "Task Resume:") {
+		t.Fatalf("expected handoff markdown to contain Task Resume, got:\n%s", rpc.Result.StructuredContent.Markdown)
 	}
 }
 
@@ -1900,7 +2484,9 @@ func TestServerServeUsesNewlineDelimitedMessages(t *testing.T) {
 	var in bytes.Buffer
 	in.WriteString(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}` + "\n")
 	in.WriteString(`{"jsonrpc":"2.0","method":"notifications/initialized"}` + "\n")
-	in.WriteString(`{"jsonrpc":"2.0","id":2,"method":"ping"}` + "\n")
+	in.WriteString(`{"jsonrpc":"2.0","id":2,"method":"shutdown"}` + "\n")
+	in.WriteString(`{"jsonrpc":"2.0","method":"notifications/exit"}` + "\n")
+	in.WriteString(`{"jsonrpc":"2.0","id":3,"method":"ping"}` + "\n")
 
 	var out bytes.Buffer
 	if err := server.Serve(&in, &out); err != nil {
@@ -2024,6 +2610,15 @@ func writeServiceManifestForMCPTest(t *testing.T, a *app.App, projectPath string
 func slicesContainsString(items []string, want string) bool {
 	for _, item := range items {
 		if item == want {
+			return true
+		}
+	}
+	return false
+}
+
+func slicesContainsAnyString(items []any, want string) bool {
+	for _, item := range items {
+		if value, ok := item.(string); ok && value == want {
 			return true
 		}
 	}

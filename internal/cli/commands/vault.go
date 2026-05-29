@@ -37,8 +37,10 @@ func defaultVaultCommands() []interfaces.Cmd {
 	return []interfaces.Cmd{
 		&vaultInitCmd{},
 		&vaultAppendCmd{},
+		&vaultEdgeCmd{},
 		&vaultSearchCmd{},
 		&vaultRecentCmd{},
+		&vaultResumeCmd{},
 		&vaultStatsCmd{},
 	}
 }
@@ -191,6 +193,62 @@ func (c *vaultAppendCmd) Run(a *app.App, args []string) error {
 
 type vaultSearchCmd struct{}
 
+type vaultEdgeCmd struct{}
+
+func (c *vaultEdgeCmd) Name() string { return "edge" }
+func (c *vaultEdgeCmd) Help() string { return "Append one vault edge between existing workspace nodes" }
+
+func (c *vaultEdgeCmd) Run(a *app.App, args []string) error {
+	if len(args) == 0 {
+		fs := flag.NewFlagSet("vault edge", flag.ContinueOnError)
+		fs.SetOutput(os.Stdout)
+		fs.Usage = func() {
+			fmt.Fprintln(fs.Output(), "usage: groot vault edge <workspace> --from <node-id> --to <node-id> --type <type>")
+			fmt.Fprintln(fs.Output())
+			fmt.Fprintln(fs.Output(), c.Help())
+		}
+		fs.Usage()
+		return fmt.Errorf("workspace name required")
+	}
+	workspaceName := args[0]
+	fs := flag.NewFlagSet("vault edge", flag.ContinueOnError)
+	fs.SetOutput(os.Stdout)
+	fromID := fs.String("from", "", "source vault node id")
+	toID := fs.String("to", "", "destination vault node id")
+	edgeType := fs.String("type", "", "vault edge type")
+	fs.Usage = func() {
+		fmt.Fprintln(fs.Output(), "usage: groot vault edge <workspace> --from <node-id> --to <node-id> --type <type>")
+		fmt.Fprintln(fs.Output())
+		fmt.Fprintln(fs.Output(), c.Help())
+	}
+	if err := fs.Parse(args[1:]); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
+		return err
+	}
+	if fs.NArg() != 0 {
+		fs.Usage()
+		return fmt.Errorf("vault edge does not accept positional arguments after the workspace name")
+	}
+
+	workspaceName, err := requireWorkspaceArg(a, workspaceName)
+	if err != nil {
+		return err
+	}
+	edge, err := a.VaultAppendEdge(workspaceName, app.VaultEdgeAppendSpec{
+		FromID: *fromID,
+		ToID:   *toID,
+		Type:   *edgeType,
+	})
+	if err != nil {
+		return err
+	}
+
+	writeVaultEdge(edge)
+	return nil
+}
+
 func (c *vaultSearchCmd) Name() string { return "search" }
 func (c *vaultSearchCmd) Help() string { return "Search vault nodes for a workspace" }
 
@@ -309,6 +367,56 @@ func (c *vaultRecentCmd) Run(a *app.App, args []string) error {
 
 type vaultStatsCmd struct{}
 
+type vaultResumeCmd struct{}
+
+func (c *vaultResumeCmd) Name() string { return "resume" }
+func (c *vaultResumeCmd) Help() string {
+	return "Build a compact task resume view for a workspace task"
+}
+
+func (c *vaultResumeCmd) Run(a *app.App, args []string) error {
+	if len(args) == 0 {
+		fs := flag.NewFlagSet("vault resume", flag.ContinueOnError)
+		fs.SetOutput(os.Stdout)
+		fs.Usage = func() {
+			fmt.Fprintln(fs.Output(), "usage: groot vault resume <workspace> <task-or-query>")
+			fmt.Fprintln(fs.Output())
+			fmt.Fprintln(fs.Output(), c.Help())
+		}
+		fs.Usage()
+		return fmt.Errorf("workspace name required")
+	}
+	workspaceName := args[0]
+	fs := flag.NewFlagSet("vault resume", flag.ContinueOnError)
+	fs.SetOutput(os.Stdout)
+	fs.Usage = func() {
+		fmt.Fprintln(fs.Output(), "usage: groot vault resume <workspace> <task-or-query>")
+		fmt.Fprintln(fs.Output())
+		fmt.Fprintln(fs.Output(), c.Help())
+	}
+	if err := fs.Parse(args[1:]); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
+		return err
+	}
+	if fs.NArg() < 1 {
+		fs.Usage()
+		return fmt.Errorf("task id or query required")
+	}
+
+	workspaceName, err := requireWorkspaceArg(a, workspaceName)
+	if err != nil {
+		return err
+	}
+	resume, err := a.ResolveTaskResume(workspaceName, strings.Join(fs.Args(), " "))
+	if err != nil {
+		return err
+	}
+	fmt.Fprint(os.Stdout, resume.Markdown())
+	return nil
+}
+
 func (c *vaultStatsCmd) Name() string { return "stats" }
 func (c *vaultStatsCmd) Help() string { return "Print vault counts for a workspace" }
 
@@ -367,6 +475,10 @@ func parseCommaSeparatedValues(raw string) []string {
 func writeVaultNode(node app.VaultNode) {
 	body := strings.ReplaceAll(node.Body, "\n", " ")
 	fmt.Fprintf(os.Stdout, "%s\t%s\t%s\t%s\t%s\n", node.ID, node.Type, node.Title, strings.Join(node.Tags, ","), body)
+}
+
+func writeVaultEdge(edge app.VaultEdge) {
+	fmt.Fprintf(os.Stdout, "%s\t%s\t%s\t%s\n", edge.ID, edge.Type, edge.FromID, edge.ToID)
 }
 
 func writeVaultCountMap(label string, counts map[string]int) {

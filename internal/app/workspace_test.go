@@ -87,6 +87,9 @@ func TestCreateNewWorkspaceOmitsProjectsDirAndInitializesManifest(t *testing.T) 
 	if len(manifest.Services) != 0 {
 		t.Fatalf("expected no services, got %d", len(manifest.Services))
 	}
+	if len(manifest.Index.Ignore) != 0 {
+		t.Fatalf("expected no index ignore entries, got %#v", manifest.Index.Ignore)
+	}
 	if manifest.Env == nil {
 		t.Fatal("expected manifest env map to be initialized")
 	}
@@ -705,6 +708,9 @@ func TestWriteManifestRoundTrip(t *testing.T) {
 		SchemaVersion: 1,
 		Name:          "crawlly",
 		ProjectPath:   filepath.Join(root, "repos", "crawlly"),
+		Index: IndexConfig{
+			Ignore: []string{"generated", "tmp"},
+		},
 		Packages: []Component{
 			{Name: "go", Version: "1.25.0"},
 		},
@@ -739,6 +745,9 @@ func TestWriteManifestRoundTrip(t *testing.T) {
 	}
 	if len(got.Services) != 1 || !reflect.DeepEqual(got.Services[0], want.Services[0]) {
 		t.Fatalf("unexpected services: %#v", got.Services)
+	}
+	if !reflect.DeepEqual(got.Index, want.Index) {
+		t.Fatalf("unexpected index config: %#v", got.Index)
 	}
 	if got.Env["APP_ENV"] != "dev" {
 		t.Fatalf("unexpected env map: %#v", got.Env)

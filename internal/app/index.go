@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type IndexFileRecord struct {
@@ -172,8 +173,14 @@ func (a *App) UpdateIndex(workspaceName string) (IndexStats, error) {
 	if err := writeJSONLAtomic(indexHashesPath(wsPath), builder.hashes); err != nil {
 		return IndexStats{}, err
 	}
-
-	return a.IndexStats(workspaceName)
+	stats, err := a.IndexStats(workspaceName)
+	if err != nil {
+		return IndexStats{}, err
+	}
+	if err := a.writeIndexMetadata(workspaceName, wsPath, time.Now().UTC(), stats); err != nil {
+		return IndexStats{}, err
+	}
+	return stats, nil
 }
 
 func (a *App) IndexSearch(workspaceName, query string, opts IndexSearchOptions) ([]IndexSearchHit, error) {
