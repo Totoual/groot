@@ -148,3 +148,52 @@ func TestVaultInitCreatesExpectedFiles(t *testing.T) {
 		}
 	}
 }
+
+func TestVaultAppendAndEdgeCmdsSupportProgressForTask(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+	if err := a.CreateNewWorkspace("crawlly"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+
+	taskOut, taskErr, err := captureCommandOutput(func() error {
+		return (&vaultAppendCmd{}).Run(a, []string{"crawlly", "--type", "task", "--title", "Implement vault relationship queries", "--body", "Add deterministic vault edge query support in app and MCP."})
+	})
+	if err != nil {
+		t.Fatalf("vault append task returned error: %v", err)
+	}
+	if strings.TrimSpace(taskErr) != "" {
+		t.Fatalf("expected stderr to stay quiet, got %q", taskErr)
+	}
+	if !strings.Contains(taskOut, "\ttask\tImplement vault relationship queries\t") {
+		t.Fatalf("unexpected task append output: %q", taskOut)
+	}
+	taskNodeID := strings.SplitN(strings.TrimSpace(taskOut), "\t", 2)[0]
+
+	progressOut, progressErr, err := captureCommandOutput(func() error {
+		return (&vaultAppendCmd{}).Run(a, []string{"crawlly", "--type", "progress", "--title", "Stopped after app and MCP read support", "--body", "CLI query command and context integration remain unfinished."})
+	})
+	if err != nil {
+		t.Fatalf("vault append progress returned error: %v", err)
+	}
+	if strings.TrimSpace(progressErr) != "" {
+		t.Fatalf("expected stderr to stay quiet, got %q", progressErr)
+	}
+	if !strings.Contains(progressOut, "\tprogress\tStopped after app and MCP read support\t") {
+		t.Fatalf("unexpected progress append output: %q", progressOut)
+	}
+	progressNodeID := strings.SplitN(strings.TrimSpace(progressOut), "\t", 2)[0]
+
+	edgeOut, edgeErr, err := captureCommandOutput(func() error {
+		return (&vaultEdgeCmd{}).Run(a, []string{"crawlly", "--from", progressNodeID, "--to", taskNodeID, "--type", "for_task"})
+	})
+	if err != nil {
+		t.Fatalf("vault edge returned error: %v", err)
+	}
+	if strings.TrimSpace(edgeErr) != "" {
+		t.Fatalf("expected stderr to stay quiet, got %q", edgeErr)
+	}
+	if !strings.Contains(edgeOut, "\tfor_task\t"+progressNodeID+"\t"+taskNodeID) {
+		t.Fatalf("unexpected progress edge output: %q", edgeOut)
+	}
+}

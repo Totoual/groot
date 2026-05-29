@@ -230,6 +230,8 @@ Current MCP tools:
 - `vault_recent`
 - `vault_search`
 - `vault_append`
+- `vault_edge_append`
+- `vault_edge_query`
 - `context_build`
 
 Current MCP resources:

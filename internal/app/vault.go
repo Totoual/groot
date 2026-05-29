@@ -12,6 +12,7 @@ const (
 	VaultNodeTypeRule     = "rule"
 	VaultNodeTypeDecision = "decision"
 	VaultNodeTypeTask     = "task"
+	VaultNodeTypeProgress = "progress"
 	VaultNodeTypeFailure  = "failure"
 	VaultNodeTypePattern  = "pattern"
 	VaultNodeTypeNote     = "note"
@@ -24,12 +25,14 @@ const (
 	VaultEdgeTypeSupports    = "supports"
 	VaultEdgeTypeContradicts = "contradicts"
 	VaultEdgeTypeSupersedes  = "supersedes"
+	VaultEdgeTypeForTask     = "for_task"
 )
 
 var supportedVaultNodeTypes = map[string]struct{}{
 	VaultNodeTypeRule:     {},
 	VaultNodeTypeDecision: {},
 	VaultNodeTypeTask:     {},
+	VaultNodeTypeProgress: {},
 	VaultNodeTypeFailure:  {},
 	VaultNodeTypePattern:  {},
 	VaultNodeTypeNote:     {},
@@ -44,6 +47,7 @@ var supportedVaultEdgeTypes = map[string]struct{}{
 	VaultEdgeTypeSupports:    {},
 	VaultEdgeTypeContradicts: {},
 	VaultEdgeTypeSupersedes:  {},
+	VaultEdgeTypeForTask:     {},
 }
 
 type VaultNode struct {
@@ -89,6 +93,13 @@ type VaultEdgeAppendSpec struct {
 	FromID string
 	ToID   string
 	Type   string
+}
+
+type VaultEdgeQueryOptions struct {
+	NodeID    string
+	Direction string
+	Type      string
+	Limit     int
 }
 
 type VaultSearchOptions struct {
@@ -305,6 +316,94 @@ func (a *App) VaultAppendEdge(workspaceName string, spec VaultEdgeAppendSpec) (V
 	}
 
 	return edge, nil
+}
+
+func (a *App) VaultQueryEdges(workspaceName string, opts VaultEdgeQueryOptions) ([]VaultEdge, error) {
+	if err := a.InitVault(workspaceName); err != nil {
+		return nil, err
+	}
+
+	nodeID := strings.TrimSpace(opts.NodeID)
+	if nodeID == "" {
+		return nil, fmt.Errorf("vault edge query node_id required")
+	}
+	direction := strings.ToLower(strings.TrimSpace(opts.Direction))
+	if direction == "" {
+		direction = "any"
+	}
+	switch direction {
+	case "any", "incoming", "outgoing":
+	default:
+		return nil, fmt.Errorf("unsupported vault edge direction %q", opts.Direction)
+	}
+	edgeType := strings.ToLower(strings.TrimSpace(opts.Type))
+	if edgeType != "" {
+		if _, ok := supportedVaultEdgeTypes[edgeType]; !ok {
+			return nil, fmt.Errorf("unsupported vault edge type %q", opts.Type)
+		}
+	}
+
+	nodes, err := a.vaultNodes(workspaceName)
+	if err != nil {
+		return nil, err
+	}
+	foundNode := false
+	for _, node := range nodes {
+		if node.ID == nodeID {
+			foundNode = true
+			break
+		}
+	}
+	if !foundNode {
+		return nil, fmt.Errorf("vault edge query node_id %q not found", nodeID)
+	}
+
+	edges, err := a.vaultEdges(workspaceName)
+	if err != nil {
+		return nil, err
+	}
+	hits := make([]VaultEdge, 0)
+	for _, edge := range edges {
+		if edgeType != "" && edge.Type != edgeType {
+			continue
+		}
+		switch direction {
+		case "any":
+			if edge.FromID != nodeID && edge.ToID != nodeID {
+				continue
+			}
+		case "incoming":
+			if edge.ToID != nodeID {
+				continue
+			}
+		case "outgoing":
+			if edge.FromID != nodeID {
+				continue
+			}
+		}
+		hits = append(hits, edge)
+	}
+
+	slices.SortFunc(hits, func(a, b VaultEdge) int {
+		if cmp := b.CreatedAt.Compare(a.CreatedAt); cmp != 0 {
+			return cmp
+		}
+		if cmp := strings.Compare(a.Type, b.Type); cmp != 0 {
+			return cmp
+		}
+		if cmp := strings.Compare(a.FromID, b.FromID); cmp != 0 {
+			return cmp
+		}
+		if cmp := strings.Compare(a.ToID, b.ToID); cmp != 0 {
+			return cmp
+		}
+		return strings.Compare(a.ID, b.ID)
+	})
+
+	if opts.Limit > 0 && len(hits) > opts.Limit {
+		hits = hits[:opts.Limit]
+	}
+	return hits, nil
 }
 
 func (a *App) VaultSearch(workspaceName, query string, opts VaultSearchOptions) ([]VaultSearchHit, error) {

@@ -141,6 +141,41 @@ func TestVaultAppendSearchRecentAndStats(t *testing.T) {
 	}
 }
 
+func TestVaultAppendAcceptsProgressNodes(t *testing.T) {
+	root := t.TempDir()
+	app := NewApp(root)
+	if err := app.CreateNewWorkspace("crawlly"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+
+	progress, err := app.VaultAppend("crawlly", VaultAppendSpec{
+		Type:  VaultNodeTypeProgress,
+		Title: "Progress update",
+		Body:  "Completed app-layer query support and MCP read wiring.",
+		Tags:  []string{"progress", "vault", "progress"},
+	})
+	if err != nil {
+		t.Fatalf("VaultAppend progress returned error: %v", err)
+	}
+	if progress.Type != VaultNodeTypeProgress {
+		t.Fatalf("expected progress node type, got %#v", progress)
+	}
+	if progress.Source != "human" || progress.Confidence != 1.0 || progress.Status != "active" {
+		t.Fatalf("unexpected defaults on progress node: %#v", progress)
+	}
+	if len(progress.Tags) != 2 || progress.Tags[0] != "progress" || progress.Tags[1] != "vault" {
+		t.Fatalf("unexpected normalized progress tags: %#v", progress.Tags)
+	}
+
+	stats, err := app.VaultStats("crawlly")
+	if err != nil {
+		t.Fatalf("VaultStats returned error: %v", err)
+	}
+	if stats.NodeCount != 1 || stats.ByType[VaultNodeTypeProgress] != 1 {
+		t.Fatalf("unexpected stats after progress append: %#v", stats)
+	}
+}
+
 func TestVaultAppendEdgeRecordsEdgeChangeAndStats(t *testing.T) {
 	root := t.TempDir()
 	app := NewApp(root)
@@ -221,6 +256,67 @@ func TestVaultAppendEdgeRecordsEdgeChangeAndStats(t *testing.T) {
 	}
 	if meta.VaultUpdatedAt.Before(edge.CreatedAt) {
 		t.Fatalf("expected vault_updated_at >= edge created_at, got %#v", meta)
+	}
+}
+
+func TestVaultAppendEdgeSupportsProgressForTaskRelationship(t *testing.T) {
+	root := t.TempDir()
+	app := NewApp(root)
+	if err := app.CreateNewWorkspace("crawlly"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+
+	task, err := app.VaultAppend("crawlly", VaultAppendSpec{
+		Type:  VaultNodeTypeTask,
+		Title: "Implement vault relationship queries",
+		Body:  "Add deterministic vault edge query support in app and MCP.",
+	})
+	if err != nil {
+		t.Fatalf("VaultAppend task returned error: %v", err)
+	}
+	time.Sleep(2 * time.Millisecond)
+	progress, err := app.VaultAppend("crawlly", VaultAppendSpec{
+		Type:  VaultNodeTypeProgress,
+		Title: "Stopped after app and MCP read support",
+		Body:  "CLI query command and context integration remain unfinished.",
+	})
+	if err != nil {
+		t.Fatalf("VaultAppend progress returned error: %v", err)
+	}
+
+	edge, err := app.VaultAppendEdge("crawlly", VaultEdgeAppendSpec{
+		FromID: progress.ID,
+		ToID:   task.ID,
+		Type:   VaultEdgeTypeForTask,
+	})
+	if err != nil {
+		t.Fatalf("VaultAppendEdge for_task returned error: %v", err)
+	}
+	if edge.Type != VaultEdgeTypeForTask || edge.FromID != progress.ID || edge.ToID != task.ID {
+		t.Fatalf("unexpected progress->task edge: %#v", edge)
+	}
+
+	edges, err := app.VaultQueryEdges("crawlly", VaultEdgeQueryOptions{
+		NodeID:    task.ID,
+		Direction: "incoming",
+		Type:      VaultEdgeTypeForTask,
+	})
+	if err != nil {
+		t.Fatalf("VaultQueryEdges returned error: %v", err)
+	}
+	if len(edges) != 1 || edges[0].ID != edge.ID {
+		t.Fatalf("unexpected queried progress->task edges: %#v", edges)
+	}
+
+	stats, err := app.VaultStats("crawlly")
+	if err != nil {
+		t.Fatalf("VaultStats returned error: %v", err)
+	}
+	if stats.NodeCount != 2 || stats.EdgeCount != 1 || stats.ChangeCount != 3 {
+		t.Fatalf("unexpected stats after progress edge append: %#v", stats)
+	}
+	if stats.ByType[VaultNodeTypeTask] != 1 || stats.ByType[VaultNodeTypeProgress] != 1 {
+		t.Fatalf("unexpected by-type stats after progress edge append: %#v", stats.ByType)
 	}
 }
 
@@ -307,6 +403,111 @@ func TestVaultAppendEdgeValidatesInputs(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "already exists") {
 		t.Fatalf("duplicate edge error = %q, want duplicate message", err.Error())
+	}
+}
+
+func TestVaultQueryEdgesFiltersByNodeDirectionTypeAndLimit(t *testing.T) {
+	root := t.TempDir()
+	app := NewApp(root)
+	if err := app.CreateNewWorkspace("crawlly"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+
+	task, err := app.VaultAppend("crawlly", VaultAppendSpec{Type: VaultNodeTypeTask, Title: "Task", Body: "body"})
+	if err != nil {
+		t.Fatalf("VaultAppend task returned error: %v", err)
+	}
+	decision, err := app.VaultAppend("crawlly", VaultAppendSpec{Type: VaultNodeTypeDecision, Title: "Decision", Body: "body"})
+	if err != nil {
+		t.Fatalf("VaultAppend decision returned error: %v", err)
+	}
+	rule, err := app.VaultAppend("crawlly", VaultAppendSpec{Type: VaultNodeTypeRule, Title: "Rule", Body: "body"})
+	if err != nil {
+		t.Fatalf("VaultAppend rule returned error: %v", err)
+	}
+
+	outgoing, err := app.VaultAppendEdge("crawlly", VaultEdgeAppendSpec{FromID: task.ID, ToID: decision.ID, Type: VaultEdgeTypeDependsOn})
+	if err != nil {
+		t.Fatalf("VaultAppendEdge outgoing returned error: %v", err)
+	}
+	time.Sleep(2 * time.Millisecond)
+	incoming, err := app.VaultAppendEdge("crawlly", VaultEdgeAppendSpec{FromID: rule.ID, ToID: task.ID, Type: VaultEdgeTypeSupports})
+	if err != nil {
+		t.Fatalf("VaultAppendEdge incoming returned error: %v", err)
+	}
+
+	edges, err := app.VaultQueryEdges("crawlly", VaultEdgeQueryOptions{NodeID: task.ID})
+	if err != nil {
+		t.Fatalf("VaultQueryEdges any returned error: %v", err)
+	}
+	if len(edges) != 2 || edges[0].ID != incoming.ID || edges[1].ID != outgoing.ID {
+		t.Fatalf("unexpected any-direction edges: %#v", edges)
+	}
+
+	edges, err = app.VaultQueryEdges("crawlly", VaultEdgeQueryOptions{NodeID: task.ID, Direction: "outgoing"})
+	if err != nil {
+		t.Fatalf("VaultQueryEdges outgoing returned error: %v", err)
+	}
+	if len(edges) != 1 || edges[0].ID != outgoing.ID {
+		t.Fatalf("unexpected outgoing edges: %#v", edges)
+	}
+
+	edges, err = app.VaultQueryEdges("crawlly", VaultEdgeQueryOptions{NodeID: task.ID, Direction: "incoming", Type: VaultEdgeTypeSupports, Limit: 1})
+	if err != nil {
+		t.Fatalf("VaultQueryEdges incoming returned error: %v", err)
+	}
+	if len(edges) != 1 || edges[0].ID != incoming.ID {
+		t.Fatalf("unexpected incoming typed edges: %#v", edges)
+	}
+}
+
+func TestVaultQueryEdgesValidatesInputs(t *testing.T) {
+	root := t.TempDir()
+	app := NewApp(root)
+	if err := app.CreateNewWorkspace("crawlly"); err != nil {
+		t.Fatalf("CreateNewWorkspace returned error: %v", err)
+	}
+
+	node, err := app.VaultAppend("crawlly", VaultAppendSpec{Type: VaultNodeTypeTask, Title: "Task", Body: "body"})
+	if err != nil {
+		t.Fatalf("VaultAppend returned error: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name string
+		opts VaultEdgeQueryOptions
+		want string
+	}{
+		{
+			name: "missing node id",
+			opts: VaultEdgeQueryOptions{},
+			want: "node_id required",
+		},
+		{
+			name: "missing node",
+			opts: VaultEdgeQueryOptions{NodeID: "node-missing"},
+			want: `node_id "node-missing" not found`,
+		},
+		{
+			name: "unsupported direction",
+			opts: VaultEdgeQueryOptions{NodeID: node.ID, Direction: "sideways"},
+			want: `unsupported vault edge direction "sideways"`,
+		},
+		{
+			name: "unsupported type",
+			opts: VaultEdgeQueryOptions{NodeID: node.ID, Type: "related_to"},
+			want: `unsupported vault edge type "related_to"`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := app.VaultQueryEdges("crawlly", tc.opts)
+			if err == nil {
+				t.Fatal("expected VaultQueryEdges to fail")
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("error = %q, want substring %q", err.Error(), tc.want)
+			}
+		})
 	}
 }
 

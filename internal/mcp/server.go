@@ -18,6 +18,8 @@ type Server struct {
 	app             *app.App
 	allowedProjects []string
 	activeProjects  []string
+	shutdownReady   bool
+	exitRequested   bool
 }
 
 type rpcRequest struct {
@@ -241,6 +243,11 @@ type vaultEdgeAppendResult struct {
 	Edge    app.VaultEdge `json:"edge"`
 }
 
+type vaultEdgeQueryResult struct {
+	Created bool            `json:"created"`
+	Edges   []app.VaultEdge `json:"edges"`
+}
+
 type vaultInitResult struct {
 	Created bool `json:"created"`
 }
@@ -306,6 +313,9 @@ func (s *Server) Serve(in io.Reader, out io.Writer) error {
 		response, err := s.HandleMessage(line)
 		if err != nil {
 			return err
+		}
+		if s.exitRequested {
+			return nil
 		}
 		if len(response) == 0 {
 			continue
@@ -375,6 +385,13 @@ func (s *Server) handleSingle(message []byte) ([]byte, error) {
 			Error:   &rpcError{Code: -32600, Message: "invalid request"},
 		})
 	}
+	switch req.Method {
+	case "notifications/initialized":
+		return nil, nil
+	case "notifications/exit", "exit":
+		s.exitRequested = true
+		return nil, nil
+	}
 	if len(req.ID) == 0 {
 		return nil, nil
 	}
@@ -397,6 +414,13 @@ func (s *Server) handleSingle(message []byte) ([]byte, error) {
 			},
 		})
 	case "ping":
+		return marshalResponse(rpcResponse{
+			JSONRPC: "2.0",
+			ID:      req.ID,
+			Result:  map[string]any{},
+		})
+	case "shutdown":
+		s.shutdownReady = true
 		return marshalResponse(rpcResponse{
 			JSONRPC: "2.0",
 			ID:      req.ID,
@@ -1533,6 +1557,45 @@ func (s *Server) tools() []toolDefinition {
 			},
 		},
 		{
+			Name:        "vault_edge_query",
+			Description: "Resolve or create a workspace from a project path, or use the active project scope, and query vault edges related to one vault node.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"path": map[string]any{
+						"type":        "string",
+						"description": "Optional absolute or ~/ project path. When omitted, the active project scope is used if exactly one project is active.",
+					},
+					"node_id": map[string]any{
+						"type":        "string",
+						"description": "Vault node id to query relationships for.",
+					},
+					"direction": map[string]any{
+						"type":        "string",
+						"description": "Optional edge direction: any, incoming, or outgoing.",
+					},
+					"type": map[string]any{
+						"type":        "string",
+						"description": "Optional vault edge type filter.",
+					},
+					"limit": map[string]any{
+						"type":        "integer",
+						"description": "Optional maximum number of edge results to return.",
+					},
+				},
+				"required":             []string{"node_id"},
+				"additionalProperties": false,
+			},
+			OutputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"created": map[string]any{"type": "boolean"},
+					"edges":   map[string]any{"type": "array"},
+				},
+				"required": []string{"created", "edges"},
+			},
+		},
+		{
 			Name:        "context_build",
 			Description: "Resolve or create a workspace from a project path, or use the active project scope, and build a compact markdown context pack.",
 			InputSchema: map[string]any{
@@ -1669,6 +1732,8 @@ func (s *Server) callTool(params toolCallParams) toolResult {
 		return s.vaultAppendTool(params.Arguments)
 	case "vault_edge_append":
 		return s.vaultEdgeAppendTool(params.Arguments)
+	case "vault_edge_query":
+		return s.vaultEdgeQueryTool(params.Arguments)
 	case "context_build":
 		return s.contextBuildTool(params.Arguments)
 	default:
@@ -3172,6 +3237,50 @@ func (s *Server) vaultEdgeAppendTool(args map[string]any) toolResult {
 	}
 	return successToolResult(
 		fmt.Sprintf("Appended vault edge %q in workspace %q.", edge.ID, workspaceName),
+		result,
+	)
+}
+
+func (s *Server) vaultEdgeQueryTool(args map[string]any) toolResult {
+	projectPath, err := s.scopedProjectPathArgOrActive(args, "vault_edge_query")
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	nodeID, ok := stringArg(args, "node_id")
+	if !ok {
+		return errorToolResult(`tool "vault_edge_query" requires string argument "node_id"`, nil)
+	}
+	limit, err := intArgOrDefault(args, "limit", 10)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	if limit < 0 {
+		return errorToolResult(`tool "vault_edge_query" requires "limit" to be >= 0`, nil)
+	}
+
+	workspaceName, created, err := s.app.ResolveOrCreateWorkspaceByProjectPath(projectPath)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	edges, err := s.app.VaultQueryEdges(workspaceName, app.VaultEdgeQueryOptions{
+		NodeID:    strings.TrimSpace(nodeID),
+		Direction: strings.TrimSpace(stringArgOrDefault(args, "direction", "")),
+		Type:      strings.TrimSpace(stringArgOrDefault(args, "type", "")),
+		Limit:     limit,
+	})
+	if err != nil {
+		return errorToolResult(err.Error(), map[string]any{
+			"workspace_name": workspaceName,
+			"created":        created,
+		})
+	}
+
+	result := vaultEdgeQueryResult{
+		Created: created,
+		Edges:   edges,
+	}
+	return successToolResult(
+		fmt.Sprintf("Loaded %d vault edges for workspace %q.", len(edges), workspaceName),
 		result,
 	)
 }
