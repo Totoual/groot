@@ -68,7 +68,7 @@ Advanced usage stays available through:
 - `groot context ...`
 - `groot mcp`
 
-For the full CLI reference, use [docs/reference.md](/Users/aristotelistriantafyllidis/Documents/groot/docs/reference.md).
+For the full CLI reference, use [docs/reference.md](docs/reference.md).
 
 ## MCP
 
@@ -84,15 +84,15 @@ Recommended flow:
 - activate a project with `workspace_activate`
 - use the same runtime operations through structured tools
 
-For MCP tool contracts and schemas, use [docs/agent-contract.md](/Users/aristotelistriantafyllidis/Documents/groot/docs/agent-contract.md).
+For MCP tool contracts and schemas, use [docs/agent-contract.md](docs/agent-contract.md).
 
 ## Docs
 
-- [docs/runtime-model-v1.md](/Users/aristotelistriantafyllidis/Documents/groot/docs/runtime-model-v1.md)
+- [docs/runtime-model-v1.md](docs/runtime-model-v1.md)
   Runtime model and product direction.
-- [docs/reference.md](/Users/aristotelistriantafyllidis/Documents/groot/docs/reference.md)
+- [docs/reference.md](docs/reference.md)
   CLI reference, shell hook details, manifests, toolchains, and runtime behavior.
-- [docs/agent-contract.md](/Users/aristotelistriantafyllidis/Documents/groot/docs/agent-contract.md)
+- [docs/agent-contract.md](docs/agent-contract.md)
   MCP contract and structured tool/resource behavior.
-- [docs/agent.md](/Users/aristotelistriantafyllidis/Documents/groot/docs/agent.md)
+- [docs/agent.md](docs/agent.md)
   Agent-facing product direction.
