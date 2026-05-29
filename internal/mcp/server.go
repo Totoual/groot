@@ -1646,6 +1646,10 @@ func (s *Server) tools() []toolDefinition {
 						"type":        "string",
 						"description": "Task description to ground.",
 					},
+					"mode": map[string]any{
+						"type":        "string",
+						"description": "Optional context build mode: narrow, handoff, or broad.",
+					},
 				},
 				"required":             []string{"task"},
 				"additionalProperties": false,
@@ -3374,12 +3378,15 @@ func (s *Server) contextBuildTool(args map[string]any) toolResult {
 	if !ok {
 		return errorToolResult(`tool "context_build" requires string argument "task"`, nil)
 	}
+	mode := strings.TrimSpace(stringArgOrDefault(args, "mode", string(app.ContextModeNarrow)))
 
 	workspaceName, created, err := s.app.ResolveOrCreateWorkspaceByProjectPath(projectPath)
 	if err != nil {
 		return errorToolResult(err.Error(), nil)
 	}
-	context, err := s.app.BuildContextPack(workspaceName, task)
+	context, err := s.app.BuildContextPackWithOptions(workspaceName, task, app.ContextBuildOptions{
+		Mode: app.ContextMode(mode),
+	})
 	if err != nil {
 		return errorToolResult(err.Error(), map[string]any{
 			"workspace_name": workspaceName,

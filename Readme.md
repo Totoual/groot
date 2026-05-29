@@ -53,17 +53,20 @@ That sets up Groot under `~/.groot` and installs the shell integration.
 groot open ~/Documents/crawlly --setup
 ```
 
-Useful next commands:
+Daily usage:
 
 ```bash
-groot enter ~/Documents/crawlly
-groot status ~/Documents/crawlly
-groot task start crawlly test
-groot service start crawlly api
-groot index update crawlly
-groot vault resume crawlly "vault relationship queries"
-groot context build crawlly "continue unfinished vault work"
+groot status crawlly
+groot resume crawlly
+groot search crawlly "vault edge"
 ```
+
+Advanced usage stays available through:
+
+- `groot index ...`
+- `groot vault ...`
+- `groot context ...`
+- `groot mcp`
 
 For the full CLI reference, use [docs/reference.md](/Users/aristotelistriantafyllidis/Documents/groot/docs/reference.md).
 

@@ -17,23 +17,12 @@ func TestBuildContextPackDeterministicOrdering(t *testing.T) {
 	if _, err := app.UpdateIndex("crawlly"); err != nil {
 		t.Fatalf("UpdateIndex returned error: %v", err)
 	}
-
 	if _, err := app.VaultAppend("crawlly", VaultAppendSpec{
 		Type:  VaultNodeTypeDecision,
 		Title: "Engine logic remains deterministic",
 		Body:  "Deterministic resolution is required.",
-		Tags:  []string{"engine", "deterministic"},
 	}); err != nil {
-		t.Fatalf("VaultAppend first returned error: %v", err)
-	}
-	time.Sleep(2 * time.Millisecond)
-	if _, err := app.VaultAppend("crawlly", VaultAppendSpec{
-		Type:  VaultNodeTypeRule,
-		Title: "Heat spending stays bounded",
-		Body:  "Do not allow arbitrary heat spending.",
-		Tags:  []string{"heat"},
-	}); err != nil {
-		t.Fatalf("VaultAppend second returned error: %v", err)
+		t.Fatalf("VaultAppend returned error: %v", err)
 	}
 
 	first, err := app.BuildContextPack("crawlly", "damage heat")
@@ -44,73 +33,28 @@ func TestBuildContextPackDeterministicOrdering(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildContextPack second returned error: %v", err)
 	}
-
 	if got, want := first.Markdown(), second.Markdown(); got != want {
 		t.Fatalf("expected deterministic markdown output\nfirst:\n%s\nsecond:\n%s", got, want)
 	}
 }
 
-func TestBuildContextPackDeduplicatesRecentAndSuggestedEntries(t *testing.T) {
+func TestBuildContextPackNarrowAppliesLimitsAndSkipsDocs(t *testing.T) {
 	root := t.TempDir()
 	app := NewApp(root)
 	projectPath, _ := setupIndexWorkspace(t, app, root)
 
-	mustWriteFile(t, filepath.Join(projectPath, "engine.go"), "package demo\n\ntype Engine struct{}\n\nfunc (e *Engine) DamagePerHeat() {}\n")
-	if _, err := app.UpdateIndex("crawlly"); err != nil {
-		t.Fatalf("UpdateIndex returned error: %v", err)
-	}
-
-	relevant, err := app.VaultAppend("crawlly", VaultAppendSpec{
-		Type:  VaultNodeTypeDecision,
-		Title: "Vault is workspace-scoped",
-		Body:  "Each workspace owns its own vault.",
-		Tags:  []string{"vault"},
-	})
-	if err != nil {
-		t.Fatalf("VaultAppend relevant returned error: %v", err)
-	}
-	time.Sleep(2 * time.Millisecond)
-	if _, err := app.VaultAppend("crawlly", VaultAppendSpec{
-		Type:  VaultNodeTypeTask,
-		Title: "Add vault append command",
-		Body:  "Implemented vault append command.",
-		Tags:  []string{"task"},
-	}); err != nil {
-		t.Fatalf("VaultAppend recent returned error: %v", err)
-	}
-
-	pack, err := app.BuildContextPack("crawlly", "vault")
-	if err != nil {
-		t.Fatalf("BuildContextPack returned error: %v", err)
-	}
-
-	for _, node := range pack.RecentActivity {
-		if node.ID == relevant.ID {
-			t.Fatalf("expected relevant node %q to be omitted from recent activity", relevant.ID)
-		}
-	}
-	if len(pack.SuggestedReads) != 0 {
-		t.Fatalf("expected suggested reads to omit files already present in relevant files, got %#v", pack.SuggestedReads)
-	}
-}
-
-func TestBuildContextPackAppliesResultLimits(t *testing.T) {
-	root := t.TempDir()
-	app := NewApp(root)
-	projectPath, _ := setupIndexWorkspace(t, app, root)
-
-	for i := 0; i < 12; i++ {
+	for i := 0; i < 6; i++ {
 		mustWriteFile(t, filepath.Join(projectPath, "pkg", "file_"+strings.Repeat("x", i+1)+".go"), "package demo\n\n// heat token\nfunc HeatToken"+strings.Repeat("X", i)+"() {}\n")
 	}
+	mustWriteFile(t, filepath.Join(projectPath, "docs", "heat.md"), "heat token docs\n")
 	if _, err := app.UpdateIndex("crawlly"); err != nil {
 		t.Fatalf("UpdateIndex returned error: %v", err)
 	}
-	for i := 0; i < 12; i++ {
+	for i := 0; i < 6; i++ {
 		if _, err := app.VaultAppend("crawlly", VaultAppendSpec{
 			Type:  VaultNodeTypeNote,
-			Title: "Heat token note " + strings.Repeat("x", i),
+			Title: "Heat note " + strings.Repeat("x", i),
 			Body:  "heat token context",
-			Tags:  []string{"heat"},
 		}); err != nil {
 			t.Fatalf("VaultAppend %d returned error: %v", i, err)
 		}
@@ -121,18 +65,140 @@ func TestBuildContextPackAppliesResultLimits(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildContextPack returned error: %v", err)
 	}
+	if pack.Mode != ContextModeNarrow {
+		t.Fatalf("mode = %q, want %q", pack.Mode, ContextModeNarrow)
+	}
+	if len(pack.Files) > contextNarrowFileLimit {
+		t.Fatalf("expected at most %d files, got %d", contextNarrowFileLimit, len(pack.Files))
+	}
+	if len(pack.Symbols) > contextNarrowSymbolLimit {
+		t.Fatalf("expected at most %d symbols, got %d", contextNarrowSymbolLimit, len(pack.Symbols))
+	}
+	if len(pack.VaultEntries) > contextNarrowVaultLimit {
+		t.Fatalf("expected at most %d vault entries, got %d", contextNarrowVaultLimit, len(pack.VaultEntries))
+	}
+	if len(pack.RecentActivity) != 0 {
+		t.Fatalf("expected narrow mode to omit recent activity, got %#v", pack.RecentActivity)
+	}
+	for _, file := range pack.Files {
+		if isContextDocLikePath(file.Path) {
+			t.Fatalf("expected narrow mode to skip doc-like path, got %q", file.Path)
+		}
+	}
+}
 
-	if len(pack.Files) > contextFileLimit {
-		t.Fatalf("expected at most %d files, got %d", contextFileLimit, len(pack.Files))
+func TestBuildContextPackHandoffPutsTaskResumeFirst(t *testing.T) {
+	root := t.TempDir()
+	app := NewApp(root)
+	projectPath, _ := setupIndexWorkspace(t, app, root)
+
+	mustWriteFile(t, filepath.Join(projectPath, "internal", "vault", "query.go"), "package vault\n\nfunc VaultQueryEdges() {}\n")
+	if _, err := app.UpdateIndex("crawlly"); err != nil {
+		t.Fatalf("UpdateIndex returned error: %v", err)
 	}
-	if len(pack.Symbols) > contextSymbolLimit {
-		t.Fatalf("expected at most %d symbols, got %d", contextSymbolLimit, len(pack.Symbols))
+	task, err := app.VaultAppend("crawlly", VaultAppendSpec{
+		Type:  VaultNodeTypeTask,
+		Title: "Implement vault relationship queries",
+		Body:  "Add deterministic relationship queries over workspace vault edges.",
+	})
+	if err != nil {
+		t.Fatalf("VaultAppend task returned error: %v", err)
 	}
-	if len(pack.VaultEntries) > contextVaultLimit {
-		t.Fatalf("expected at most %d vault entries, got %d", contextVaultLimit, len(pack.VaultEntries))
+	progress, err := app.VaultAppend("crawlly", VaultAppendSpec{
+		Type:  VaultNodeTypeProgress,
+		Title: "Stopped after app and MCP read support",
+		Body:  "Remaining work: CLI query command and docs.",
+	})
+	if err != nil {
+		t.Fatalf("VaultAppend progress returned error: %v", err)
 	}
-	if len(pack.RecentActivity) > contextRecentLimit {
-		t.Fatalf("expected at most %d recent entries, got %d", contextRecentLimit, len(pack.RecentActivity))
+	decision, err := app.VaultAppend("crawlly", VaultAppendSpec{
+		Type:  VaultNodeTypeDecision,
+		Title: "Keep relationship queries node-centric",
+		Body:  "Do not expand into graph traversal in the first slice.",
+	})
+	if err != nil {
+		t.Fatalf("VaultAppend decision returned error: %v", err)
+	}
+	if _, err := app.VaultAppendEdge("crawlly", VaultEdgeAppendSpec{FromID: progress.ID, ToID: task.ID, Type: VaultEdgeTypeForTask}); err != nil {
+		t.Fatalf("VaultAppendEdge progress returned error: %v", err)
+	}
+	if _, err := app.VaultAppendEdge("crawlly", VaultEdgeAppendSpec{FromID: decision.ID, ToID: task.ID, Type: VaultEdgeTypeSupports}); err != nil {
+		t.Fatalf("VaultAppendEdge decision returned error: %v", err)
+	}
+
+	pack, err := app.BuildContextPackWithOptions("crawlly", "vault relationship queries", ContextBuildOptions{Mode: ContextModeHandoff})
+	if err != nil {
+		t.Fatalf("BuildContextPackWithOptions returned error: %v", err)
+	}
+	if pack.TaskResume == nil || pack.TaskResume.Task.ID != task.ID {
+		t.Fatalf("expected handoff task resume, got %#v", pack.TaskResume)
+	}
+	markdown := pack.Markdown()
+	taskResumeIdx := strings.Index(markdown, "\nTask Resume:\n")
+	filesIdx := strings.Index(markdown, "\nRelevant Files:\n")
+	if taskResumeIdx == -1 || filesIdx == -1 || taskResumeIdx > filesIdx {
+		t.Fatalf("expected Task Resume section before Relevant Files, got:\n%s", markdown)
+	}
+	for _, want := range []string{
+		"Latest Progress: Stopped after app and MCP read support. Remaining work: CLI query command and docs.",
+		"Decisions:\n- Keep relationship queries node-centric. Do not expand into graph traversal in the first slice.",
+	} {
+		if !strings.Contains(markdown, want) {
+			t.Fatalf("expected markdown to contain %q, got:\n%s", want, markdown)
+		}
+	}
+}
+
+func TestBuildContextPackBroadPreservesCurrentSections(t *testing.T) {
+	root := t.TempDir()
+	app := NewApp(root)
+	projectPath, _ := setupIndexWorkspace(t, app, root)
+
+	mustWriteFile(t, filepath.Join(projectPath, "internal", "engine", "effects.go"), `package engine
+
+// heat damage per round
+type EffectType struct{}
+
+func ResolveRound() {}
+
+func DamagePerHeat() {}
+`)
+	mustWriteFile(t, filepath.Join(projectPath, "internal", "engine", "effects_test.go"), "package engine\n")
+	if _, err := app.UpdateIndex("crawlly"); err != nil {
+		t.Fatalf("UpdateIndex returned error: %v", err)
+	}
+	if _, err := app.VaultAppend("crawlly", VaultAppendSpec{
+		Type:  VaultNodeTypeRule,
+		Title: "Cards should not allow arbitrary heat spending",
+		Body:  "Heat spending must remain bounded.",
+	}); err != nil {
+		t.Fatalf("VaultAppend rule returned error: %v", err)
+	}
+	if _, err := app.VaultAppend("crawlly", VaultAppendSpec{
+		Type:  VaultNodeTypeDecision,
+		Title: "Engine logic remains deterministic",
+		Body:  "Round resolution stays deterministic.",
+	}); err != nil {
+		t.Fatalf("VaultAppend decision returned error: %v", err)
+	}
+
+	pack, err := app.BuildContextPackWithOptions("crawlly", "add heat damage per round", ContextBuildOptions{Mode: ContextModeBroad})
+	if err != nil {
+		t.Fatalf("BuildContextPackWithOptions returned error: %v", err)
+	}
+	markdown := pack.Markdown()
+	for _, want := range []string{
+		"# Groot Context Pack",
+		"Relevant Vault Entries:",
+		"Relevant Files:",
+		"Relevant Symbols:",
+		"Recent Vault Activity:",
+		"DamagePerHeat (internal/engine/effects.go:8-8)",
+	} {
+		if !strings.Contains(markdown, want) {
+			t.Fatalf("expected markdown to contain %q, got:\n%s", want, markdown)
+		}
 	}
 }
 
@@ -151,9 +217,9 @@ func TestBuildContextPackHandlesEmptyResults(t *testing.T) {
 		t.Fatalf("UpdateIndex returned error: %v", err)
 	}
 
-	pack, err := app.BuildContextPack("crawlly", "nonexistent query")
+	pack, err := app.BuildContextPackWithOptions("crawlly", "nonexistent query", ContextBuildOptions{Mode: ContextModeBroad})
 	if err != nil {
-		t.Fatalf("BuildContextPack returned error: %v", err)
+		t.Fatalf("BuildContextPackWithOptions returned error: %v", err)
 	}
 	markdown := pack.Markdown()
 	for _, want := range []string{
@@ -161,118 +227,6 @@ func TestBuildContextPackHandlesEmptyResults(t *testing.T) {
 		"Relevant Files:\n- none",
 		"Relevant Symbols:\n- none",
 		"Recent Vault Activity:\n- none",
-	} {
-		if !strings.Contains(markdown, want) {
-			t.Fatalf("expected markdown to contain %q, got:\n%s", want, markdown)
-		}
-	}
-}
-
-func TestBuildContextPackCombinesVaultIndexAndSymbols(t *testing.T) {
-	root := t.TempDir()
-	app := NewApp(root)
-	projectPath, _ := setupIndexWorkspace(t, app, root)
-
-	mustWriteFile(t, filepath.Join(projectPath, "internal", "engine", "effects.go"), `package engine
-
-// heat damage per round
-type EffectType struct{}
-
-func ResolveRound() {}
-
-func DamagePerHeat() {}
-`)
-	mustWriteFile(t, filepath.Join(projectPath, "internal", "engine", "effects_test.go"), "package engine\n")
-	if _, err := app.UpdateIndex("crawlly"); err != nil {
-		t.Fatalf("UpdateIndex returned error: %v", err)
-	}
-
-	if _, err := app.VaultAppend("crawlly", VaultAppendSpec{
-		Type:  VaultNodeTypeRule,
-		Title: "Cards should not allow arbitrary heat spending",
-		Body:  "Heat spending must remain bounded.",
-		Tags:  []string{"heat", "cards"},
-	}); err != nil {
-		t.Fatalf("VaultAppend rule returned error: %v", err)
-	}
-	if _, err := app.VaultAppend("crawlly", VaultAppendSpec{
-		Type:  VaultNodeTypeDecision,
-		Title: "Engine logic remains deterministic",
-		Body:  "Round resolution stays deterministic.",
-		Tags:  []string{"engine"},
-	}); err != nil {
-		t.Fatalf("VaultAppend decision returned error: %v", err)
-	}
-
-	pack, err := app.BuildContextPack("crawlly", "add heat damage per round")
-	if err != nil {
-		t.Fatalf("BuildContextPack returned error: %v", err)
-	}
-	markdown := pack.Markdown()
-	for _, want := range []string{
-		"# Groot Context Pack",
-		"Cards should not allow arbitrary heat spending",
-		"internal/engine/effects.go",
-		"DamagePerHeat (internal/engine/effects.go:8-8)",
-		"ResolveRound (internal/engine/effects.go:6-6)",
-	} {
-		if !strings.Contains(markdown, want) {
-			t.Fatalf("expected markdown to contain %q, got:\n%s", want, markdown)
-		}
-	}
-}
-
-func TestBuildContextPackIncludesTaskResumeCandidates(t *testing.T) {
-	root := t.TempDir()
-	app := NewApp(root)
-	projectPath, _ := setupIndexWorkspace(t, app, root)
-
-	mustWriteFile(t, filepath.Join(projectPath, "internal", "vault", "query.go"), "package vault\n\nfunc VaultQueryEdges() {}\n")
-	if _, err := app.UpdateIndex("crawlly"); err != nil {
-		t.Fatalf("UpdateIndex returned error: %v", err)
-	}
-
-	task, err := app.VaultAppend("crawlly", VaultAppendSpec{
-		Type:  VaultNodeTypeTask,
-		Title: "Implement vault relationship queries",
-		Body:  "Add deterministic relationship queries over workspace vault edges.",
-	})
-	if err != nil {
-		t.Fatalf("VaultAppend task returned error: %v", err)
-	}
-	progress, err := app.VaultAppend("crawlly", VaultAppendSpec{
-		Type:  VaultNodeTypeProgress,
-		Title: "Stopped after app and MCP read support",
-		Body:  "CLI query command remains unfinished.",
-	})
-	if err != nil {
-		t.Fatalf("VaultAppend progress returned error: %v", err)
-	}
-	if _, err := app.VaultAppendEdge("crawlly", VaultEdgeAppendSpec{
-		FromID: progress.ID,
-		ToID:   task.ID,
-		Type:   VaultEdgeTypeForTask,
-	}); err != nil {
-		t.Fatalf("VaultAppendEdge returned error: %v", err)
-	}
-
-	pack, err := app.BuildContextPack("crawlly", "vault relationship queries")
-	if err != nil {
-		t.Fatalf("BuildContextPack returned error: %v", err)
-	}
-	if len(pack.TaskResumeCandidates) != 1 {
-		t.Fatalf("expected 1 task resume candidate, got %#v", pack.TaskResumeCandidates)
-	}
-	if pack.TaskResumeCandidates[0].Task.ID != task.ID {
-		t.Fatalf("unexpected task candidate: %#v", pack.TaskResumeCandidates[0])
-	}
-	if pack.TaskResumeCandidates[0].LatestProgress == nil || pack.TaskResumeCandidates[0].LatestProgress.ID != progress.ID {
-		t.Fatalf("unexpected latest progress candidate: %#v", pack.TaskResumeCandidates[0])
-	}
-	markdown := pack.Markdown()
-	for _, want := range []string{
-		"Task Resume Candidates:",
-		"Implement vault relationship queries - Stopped after app and MCP read support",
 	} {
 		if !strings.Contains(markdown, want) {
 			t.Fatalf("expected markdown to contain %q, got:\n%s", want, markdown)

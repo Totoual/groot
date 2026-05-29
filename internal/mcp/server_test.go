@@ -841,6 +841,29 @@ func TestServerContextBuildToolReturnsMarkdownWithoutChangingOutput(t *testing.T
 	}); err != nil {
 		t.Fatalf("VaultAppend returned error: %v", err)
 	}
+	task, err := a.VaultAppend("crawlly", app.VaultAppendSpec{
+		Type:  app.VaultNodeTypeTask,
+		Title: "Implement vault relationship queries",
+		Body:  "Add deterministic relationship queries over workspace vault edges.",
+	})
+	if err != nil {
+		t.Fatalf("VaultAppend task returned error: %v", err)
+	}
+	progress, err := a.VaultAppend("crawlly", app.VaultAppendSpec{
+		Type:  app.VaultNodeTypeProgress,
+		Title: "Stopped after app and MCP read support",
+		Body:  "Remaining work: CLI query command and docs.",
+	})
+	if err != nil {
+		t.Fatalf("VaultAppend progress returned error: %v", err)
+	}
+	if _, err := a.VaultAppendEdge("crawlly", app.VaultEdgeAppendSpec{
+		FromID: progress.ID,
+		ToID:   task.ID,
+		Type:   app.VaultEdgeTypeForTask,
+	}); err != nil {
+		t.Fatalf("VaultAppendEdge returned error: %v", err)
+	}
 
 	server := NewServer(a)
 	request := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"context_build","arguments":{"path":"` + projectPath + `","task":"vault damage"}}}`
@@ -856,6 +879,7 @@ func TestServerContextBuildToolReturnsMarkdownWithoutChangingOutput(t *testing.T
 				Markdown string `json:"markdown"`
 				Context  struct {
 					Task string `json:"task"`
+					Mode string `json:"mode"`
 				} `json:"context"`
 			} `json:"structuredContent"`
 		} `json:"result"`
@@ -869,10 +893,31 @@ func TestServerContextBuildToolReturnsMarkdownWithoutChangingOutput(t *testing.T
 	if rpc.Result.StructuredContent.Context.Task != "vault damage" {
 		t.Fatalf("task = %q, want %q", rpc.Result.StructuredContent.Context.Task, "vault damage")
 	}
+	if rpc.Result.StructuredContent.Context.Mode != string(app.ContextModeNarrow) {
+		t.Fatalf("mode = %q, want %q", rpc.Result.StructuredContent.Context.Mode, app.ContextModeNarrow)
+	}
 	for _, want := range []string{"# Groot Context Pack", "Relevant Vault Entries:", "Relevant Files:", "Relevant Symbols:", "Engine.DamagePerHeat (engine.go:6-6)"} {
 		if !strings.Contains(rpc.Result.StructuredContent.Markdown, want) {
 			t.Fatalf("expected markdown to contain %q, got:\n%s", want, rpc.Result.StructuredContent.Markdown)
 		}
+	}
+
+	handoffRequest := `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"context_build","arguments":{"path":"` + projectPath + `","task":"vault relationship queries","mode":"handoff"}}}`
+	response, err = server.HandleMessage([]byte(handoffRequest))
+	if err != nil {
+		t.Fatalf("HandleMessage handoff context_build returned error: %v", err)
+	}
+	if err := json.Unmarshal(response, &rpc); err != nil {
+		t.Fatalf("Unmarshal handoff context_build returned error: %v", err)
+	}
+	if rpc.Result.IsError {
+		t.Fatal("expected handoff context_build success result")
+	}
+	if rpc.Result.StructuredContent.Context.Mode != string(app.ContextModeHandoff) {
+		t.Fatalf("handoff mode = %q, want %q", rpc.Result.StructuredContent.Context.Mode, app.ContextModeHandoff)
+	}
+	if !strings.Contains(rpc.Result.StructuredContent.Markdown, "Task Resume:") {
+		t.Fatalf("expected handoff markdown to contain Task Resume, got:\n%s", rpc.Result.StructuredContent.Markdown)
 	}
 }
 

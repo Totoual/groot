@@ -3,6 +3,7 @@ package commands
 import (
 	"flag"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/totoual/groot/internal/app"
@@ -14,6 +15,29 @@ func requireWorkspaceArg(a *app.App, raw string) (string, error) {
 		return "", err
 	}
 	return name, nil
+}
+
+func resolveWorkspaceOrProjectArg(a *app.App, raw string) (string, bool, error) {
+	name := strings.TrimSpace(raw)
+	if name == "" {
+		return "", false, fmt.Errorf("workspace name or project path required")
+	}
+	if _, err := a.EnsureWorkspace(name); err == nil {
+		return name, false, nil
+	}
+
+	projectPath, err := app.NormalizeProjectPath(name)
+	if err == nil {
+		if info, statErr := os.Stat(projectPath); statErr == nil && info.IsDir() {
+			resolved, resolveErr := resolveProjectWorkspace(a, projectPath)
+			if resolveErr != nil {
+				return "", false, resolveErr
+			}
+			return resolved.Name, true, nil
+		}
+	}
+
+	return "", false, fmt.Errorf("workspace %q not found", name)
 }
 
 func splitFlagArgsAndCommand(args []string) ([]string, []string) {
