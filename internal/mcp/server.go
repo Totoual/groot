@@ -198,14 +198,17 @@ type eventListResult struct {
 }
 
 type indexUpdateResult struct {
-	Created bool           `json:"created"`
-	Stats   app.IndexStats `json:"stats"`
+	Created bool              `json:"created"`
+	Stats   app.IndexStats    `json:"stats"`
+	Meta    app.IndexMetadata `json:"meta"`
+	Status  app.IndexStatus   `json:"status"`
 }
 
 type indexStatsResult struct {
 	Created bool              `json:"created"`
 	Stats   app.IndexStats    `json:"stats"`
 	Meta    app.IndexMetadata `json:"meta"`
+	Status  app.IndexStatus   `json:"status"`
 }
 
 type indexSearchResult struct {
@@ -1271,8 +1274,9 @@ func (s *Server) tools() []toolDefinition {
 					"created": map[string]any{"type": "boolean"},
 					"stats":   map[string]any{"type": "object"},
 					"meta":    map[string]any{"type": "object"},
+					"status":  map[string]any{"type": "object"},
 				},
-				"required": []string{"created", "stats", "meta"},
+				"required": []string{"created", "stats", "meta", "status"},
 			},
 		},
 		{
@@ -1293,8 +1297,10 @@ func (s *Server) tools() []toolDefinition {
 				"properties": map[string]any{
 					"created": map[string]any{"type": "boolean"},
 					"stats":   map[string]any{"type": "object"},
+					"meta":    map[string]any{"type": "object"},
+					"status":  map[string]any{"type": "object"},
 				},
-				"required": []string{"created", "stats"},
+				"required": []string{"created", "stats", "meta", "status"},
 			},
 		},
 		{
@@ -2863,10 +2869,26 @@ func (s *Server) indexUpdateTool(args map[string]any) toolResult {
 			"created":        created,
 		})
 	}
+	meta, err := s.app.IndexMetadata(workspaceName)
+	if err != nil {
+		return errorToolResult(err.Error(), map[string]any{
+			"workspace_name": workspaceName,
+			"created":        created,
+		})
+	}
+	status, err := s.app.IndexStatus(workspaceName)
+	if err != nil {
+		return errorToolResult(err.Error(), map[string]any{
+			"workspace_name": workspaceName,
+			"created":        created,
+		})
+	}
 
 	result := indexUpdateResult{
 		Created: created,
 		Stats:   stats,
+		Meta:    meta,
+		Status:  status,
 	}
 	return successToolResult(
 		fmt.Sprintf("Updated index for workspace %q.", workspaceName),
@@ -2898,11 +2920,19 @@ func (s *Server) indexStatsTool(args map[string]any) toolResult {
 			"created":        created,
 		})
 	}
+	status, err := s.app.IndexStatus(workspaceName)
+	if err != nil {
+		return errorToolResult(err.Error(), map[string]any{
+			"workspace_name": workspaceName,
+			"created":        created,
+		})
+	}
 
 	result := indexStatsResult{
 		Created: created,
 		Stats:   stats,
 		Meta:    meta,
+		Status:  status,
 	}
 	return successToolResult(
 		fmt.Sprintf("Loaded index stats for workspace %q.", workspaceName),

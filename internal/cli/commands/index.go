@@ -316,6 +316,10 @@ func (c *indexStatsCmd) Run(a *app.App, args []string) error {
 	if err != nil {
 		return err
 	}
+	status, err := a.IndexStatus(workspaceName)
+	if err != nil {
+		return err
+	}
 
 	fmt.Fprintf(os.Stdout, "Indexed: %t\n", meta.Indexed)
 	if meta.IndexedAt.IsZero() {
@@ -323,6 +327,8 @@ func (c *indexStatsCmd) Run(a *app.App, args []string) error {
 	} else {
 		fmt.Fprintf(os.Stdout, "Indexed At: %s\n", meta.IndexedAt.Format(time.RFC3339))
 	}
+	fmt.Fprintf(os.Stdout, "Fresh: %t\n", status.Fresh)
+	fmt.Fprintf(os.Stdout, "Status: %s\n", status.Reason)
 	fmt.Fprintf(os.Stdout, "Workspace: %s\n", meta.Workspace)
 	if meta.ProjectPath == "" {
 		fmt.Fprintln(os.Stdout, "Project Path: -")

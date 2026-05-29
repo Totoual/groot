@@ -52,7 +52,8 @@ func TestServerHandleInitializeAndListTools(t *testing.T) {
 	var listResponse struct {
 		Result struct {
 			Tools []struct {
-				Name string `json:"name"`
+				Name         string         `json:"name"`
+				OutputSchema map[string]any `json:"outputSchema"`
 			} `json:"tools"`
 		} `json:"result"`
 	}
@@ -69,6 +70,33 @@ func TestServerHandleInitializeAndListTools(t *testing.T) {
 	for _, want := range []string{"task_start", "task_declare", "task_delete", "task_list_declared", "task_status", "task_list", "task_logs", "task_stop", "service_start", "service_restart", "service_declare", "service_delete", "service_list_declared", "service_status", "service_list", "service_logs", "service_stop", "event_list", "index_update", "index_stats", "index_search", "index_symbols", "vault_init", "vault_recent", "vault_search", "vault_append", "vault_edge_append", "context_build"} {
 		if !slicesContainsString(names, want) {
 			t.Fatalf("missing tool %q in %#v", want, names)
+		}
+	}
+	for _, want := range []struct {
+		name     string
+		required []string
+	}{
+		{name: "index_update", required: []string{"created", "stats", "meta", "status"}},
+		{name: "index_stats", required: []string{"created", "stats", "meta", "status"}},
+	} {
+		schema := map[string]any(nil)
+		for _, tool := range listResponse.Result.Tools {
+			if tool.Name == want.name {
+				schema = tool.OutputSchema
+				break
+			}
+		}
+		if schema == nil {
+			t.Fatalf("missing output schema for %q", want.name)
+		}
+		required, ok := schema["required"].([]any)
+		if !ok {
+			t.Fatalf("expected required array in %q output schema, got %#v", want.name, schema)
+		}
+		for _, field := range want.required {
+			if !slicesContainsAnyString(required, field) {
+				t.Fatalf("expected %q output schema to require %q, got %#v", want.name, field, required)
+			}
 		}
 	}
 }
@@ -94,6 +122,20 @@ func TestServerIndexUpdateToolReturnsStructuredContent(t *testing.T) {
 					FileCount   int `json:"file_count"`
 					SymbolCount int `json:"symbol_count"`
 				} `json:"stats"`
+				Meta struct {
+					Indexed     bool   `json:"indexed"`
+					IndexedAt   string `json:"indexed_at"`
+					Workspace   string `json:"workspace"`
+					ProjectPath string `json:"project_path"`
+				} `json:"meta"`
+				Status struct {
+					Fresh      bool   `json:"fresh"`
+					Stale      bool   `json:"stale"`
+					Reason     string `json:"reason"`
+					IndexedAt  string `json:"indexed_at"`
+					Workspace  string `json:"workspace"`
+					AgeSeconds int64  `json:"age_seconds"`
+				} `json:"status"`
 			} `json:"structuredContent"`
 		} `json:"result"`
 	}
@@ -108,6 +150,18 @@ func TestServerIndexUpdateToolReturnsStructuredContent(t *testing.T) {
 	}
 	if rpc.Result.StructuredContent.Stats.SymbolCount == 0 {
 		t.Fatal("expected index_update to return extracted symbols")
+	}
+	if !rpc.Result.StructuredContent.Meta.Indexed || rpc.Result.StructuredContent.Meta.IndexedAt == "" {
+		t.Fatalf("expected index_update to return metadata, got %#v", rpc.Result.StructuredContent.Meta)
+	}
+	if rpc.Result.StructuredContent.Meta.Workspace != "crawlly" || rpc.Result.StructuredContent.Meta.ProjectPath != projectPath {
+		t.Fatalf("unexpected index_update meta identity: %#v", rpc.Result.StructuredContent.Meta)
+	}
+	if !rpc.Result.StructuredContent.Status.Fresh || rpc.Result.StructuredContent.Status.Stale || rpc.Result.StructuredContent.Status.Reason != "fresh" {
+		t.Fatalf("expected index_update to return fresh status, got %#v", rpc.Result.StructuredContent.Status)
+	}
+	if rpc.Result.StructuredContent.Status.Workspace != "crawlly" || rpc.Result.StructuredContent.Status.IndexedAt == "" {
+		t.Fatalf("unexpected index_update status identity: %#v", rpc.Result.StructuredContent.Status)
 	}
 }
 
@@ -141,6 +195,18 @@ func TestServerIndexStatsToolReturnsStructuredContent(t *testing.T) {
 					SymbolCount int    `json:"symbol_count"`
 					TermCount   int    `json:"term_count"`
 				} `json:"meta"`
+				Status struct {
+					Fresh         bool   `json:"fresh"`
+					Stale         bool   `json:"stale"`
+					Reason        string `json:"reason"`
+					IndexedAt     string `json:"indexed_at"`
+					Workspace     string `json:"workspace"`
+					ProjectPath   string `json:"project_path"`
+					FileCount     int    `json:"file_count"`
+					SymbolCount   int    `json:"symbol_count"`
+					TermCount     int    `json:"term_count"`
+					MaxAgeSeconds int64  `json:"max_age_seconds"`
+				} `json:"status"`
 			} `json:"structuredContent"`
 		} `json:"result"`
 	}
@@ -163,6 +229,24 @@ func TestServerIndexStatsToolReturnsStructuredContent(t *testing.T) {
 		rpc.Result.StructuredContent.Meta.SymbolCount != rpc.Result.StructuredContent.Stats.SymbolCount ||
 		rpc.Result.StructuredContent.Meta.TermCount != rpc.Result.StructuredContent.Stats.TermCount {
 		t.Fatalf("expected meta counts to match stats, got meta=%#v stats=%#v", rpc.Result.StructuredContent.Meta, rpc.Result.StructuredContent.Stats)
+	}
+	if !rpc.Result.StructuredContent.Status.Fresh || rpc.Result.StructuredContent.Status.Stale || rpc.Result.StructuredContent.Status.Reason != "fresh" {
+		t.Fatalf("expected fresh index status, got %#v", rpc.Result.StructuredContent.Status)
+	}
+	if rpc.Result.StructuredContent.Status.IndexedAt != rpc.Result.StructuredContent.Meta.IndexedAt {
+		t.Fatalf("expected status indexed_at to match meta indexed_at, got status=%#v meta=%#v", rpc.Result.StructuredContent.Status, rpc.Result.StructuredContent.Meta)
+	}
+	if rpc.Result.StructuredContent.Status.Workspace != rpc.Result.StructuredContent.Meta.Workspace ||
+		rpc.Result.StructuredContent.Status.ProjectPath != rpc.Result.StructuredContent.Meta.ProjectPath {
+		t.Fatalf("expected status identity to match meta, got status=%#v meta=%#v", rpc.Result.StructuredContent.Status, rpc.Result.StructuredContent.Meta)
+	}
+	if rpc.Result.StructuredContent.Status.FileCount != rpc.Result.StructuredContent.Meta.FileCount ||
+		rpc.Result.StructuredContent.Status.SymbolCount != rpc.Result.StructuredContent.Meta.SymbolCount ||
+		rpc.Result.StructuredContent.Status.TermCount != rpc.Result.StructuredContent.Meta.TermCount {
+		t.Fatalf("expected status counts to match meta, got status=%#v meta=%#v", rpc.Result.StructuredContent.Status, rpc.Result.StructuredContent.Meta)
+	}
+	if rpc.Result.StructuredContent.Status.MaxAgeSeconds <= 0 {
+		t.Fatalf("expected positive max_age_seconds, got %#v", rpc.Result.StructuredContent.Status)
 	}
 }
 
@@ -2195,6 +2279,15 @@ func writeServiceManifestForMCPTest(t *testing.T, a *app.App, projectPath string
 func slicesContainsString(items []string, want string) bool {
 	for _, item := range items {
 		if item == want {
+			return true
+		}
+	}
+	return false
+}
+
+func slicesContainsAnyString(items []any, want string) bool {
+	for _, item := range items {
+		if value, ok := item.(string); ok && value == want {
 			return true
 		}
 	}

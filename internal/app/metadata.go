@@ -18,6 +18,23 @@ type IndexMetadata struct {
 	TermCount   int       `json:"term_count"`
 }
 
+const DefaultIndexFreshnessMaxAge = 24 * time.Hour
+
+type IndexStatus struct {
+	Indexed       bool      `json:"indexed"`
+	Fresh         bool      `json:"fresh"`
+	Stale         bool      `json:"stale"`
+	Reason        string    `json:"reason"`
+	IndexedAt     time.Time `json:"indexed_at"`
+	Workspace     string    `json:"workspace"`
+	ProjectPath   string    `json:"project_path"`
+	FileCount     int       `json:"file_count"`
+	SymbolCount   int       `json:"symbol_count"`
+	TermCount     int       `json:"term_count"`
+	AgeSeconds    int64     `json:"age_seconds"`
+	MaxAgeSeconds int64     `json:"max_age_seconds"`
+}
+
 type VaultMetadata struct {
 	Workspace      string    `json:"workspace"`
 	VaultUpdatedAt time.Time `json:"vault_updated_at"`
@@ -82,6 +99,53 @@ func (a *App) IndexMetadata(workspaceName string) (IndexMetadata, error) {
 		meta.Indexed = true
 	}
 	return meta, nil
+}
+
+func (a *App) IndexStatus(workspaceName string) (IndexStatus, error) {
+	return a.indexStatusAt(workspaceName, time.Now().UTC(), DefaultIndexFreshnessMaxAge)
+}
+
+func (a *App) indexStatusAt(workspaceName string, now time.Time, maxAge time.Duration) (IndexStatus, error) {
+	meta, err := a.IndexMetadata(workspaceName)
+	if err != nil {
+		return IndexStatus{}, err
+	}
+
+	status := IndexStatus{
+		Indexed:       meta.Indexed,
+		Fresh:         false,
+		Stale:         true,
+		Reason:        "missing_metadata",
+		IndexedAt:     meta.IndexedAt,
+		Workspace:     meta.Workspace,
+		ProjectPath:   meta.ProjectPath,
+		FileCount:     meta.FileCount,
+		SymbolCount:   meta.SymbolCount,
+		TermCount:     meta.TermCount,
+		MaxAgeSeconds: int64(maxAge / time.Second),
+	}
+	if !meta.Indexed {
+		return status, nil
+	}
+	if meta.IndexedAt.IsZero() {
+		status.Reason = "missing_indexed_at"
+		return status, nil
+	}
+
+	age := now.Sub(meta.IndexedAt)
+	if age < 0 {
+		age = 0
+	}
+	status.AgeSeconds = int64(age / time.Second)
+	if maxAge > 0 && age > maxAge {
+		status.Reason = "stale"
+		return status, nil
+	}
+
+	status.Fresh = true
+	status.Stale = false
+	status.Reason = "fresh"
+	return status, nil
 }
 
 func (a *App) writeVaultMetadata(workspaceName, wsPath string, updatedAt time.Time) error {

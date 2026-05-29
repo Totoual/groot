@@ -102,7 +102,7 @@ func (e *Engine) DamagePerHeat() {}
 	if strings.TrimSpace(stderr) != "" {
 		t.Fatalf("expected stderr to stay quiet, got %q", stderr)
 	}
-	for _, want := range []string{"Indexed: true", "Indexed At:", "Workspace: crawlly", "Project Path: " + projectPath, "Files: 2", "Symbols:"} {
+	for _, want := range []string{"Indexed: true", "Indexed At:", "Fresh: true", "Status: fresh", "Workspace: crawlly", "Project Path: " + projectPath, "Files: 2", "Symbols:"} {
 		if !strings.Contains(stdout, want) {
 			t.Fatalf("unexpected stats output: %q", stdout)
 		}
@@ -129,7 +129,7 @@ func TestIndexStatsCmdHandlesMissingMetadata(t *testing.T) {
 	if strings.TrimSpace(stderr) != "" {
 		t.Fatalf("expected stderr to stay quiet, got %q", stderr)
 	}
-	for _, want := range []string{"Indexed: false", "Indexed At: -", "Workspace: crawlly", "Project Path: " + projectPath} {
+	for _, want := range []string{"Indexed: false", "Indexed At: -", "Fresh: false", "Status: missing_metadata", "Workspace: crawlly", "Project Path: " + projectPath} {
 		if !strings.Contains(stdout, want) {
 			t.Fatalf("unexpected stats output: %q", stdout)
 		}

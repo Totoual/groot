@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestInitIndexCreatesWorkspaceScopedFiles(t *testing.T) {
@@ -284,6 +285,72 @@ func TestIndexMetadataReturnsEmptyFreshnessWhenMetadataMissing(t *testing.T) {
 	}
 	if meta.FileCount != 0 || meta.SymbolCount != 0 || meta.TermCount != 0 {
 		t.Fatalf("expected zero counts without update, got %#v", meta)
+	}
+}
+
+func TestIndexStatusReturnsMissingMetadataState(t *testing.T) {
+	root := t.TempDir()
+	app := NewApp(root)
+	projectPath, _ := setupIndexWorkspace(t, app, root)
+
+	status, err := app.indexStatusAt("crawlly", time.Unix(200, 0).UTC(), DefaultIndexFreshnessMaxAge)
+	if err != nil {
+		t.Fatalf("indexStatusAt returned error: %v", err)
+	}
+	if status.Fresh || !status.Stale || status.Reason != "missing_metadata" {
+		t.Fatalf("unexpected status: %#v", status)
+	}
+	if status.Workspace != "crawlly" || status.ProjectPath != projectPath {
+		t.Fatalf("unexpected status identity: %#v", status)
+	}
+}
+
+func TestIndexStatusReturnsFreshStateWithinMaxAge(t *testing.T) {
+	root := t.TempDir()
+	app := NewApp(root)
+	projectPath, wsPath := setupIndexWorkspace(t, app, root)
+
+	mustWriteFile(t, filepath.Join(projectPath, "notes.txt"), "workspace note\n")
+	if _, err := app.UpdateIndex("crawlly"); err != nil {
+		t.Fatalf("UpdateIndex returned error: %v", err)
+	}
+
+	meta, err := readJSONFile[IndexMetadata](indexMetaPath(wsPath))
+	if err != nil {
+		t.Fatalf("readJSONFile index metadata returned error: %v", err)
+	}
+	status, err := app.indexStatusAt("crawlly", meta.IndexedAt.Add(2*time.Hour), 24*time.Hour)
+	if err != nil {
+		t.Fatalf("indexStatusAt returned error: %v", err)
+	}
+	if !status.Fresh || status.Stale || status.Reason != "fresh" {
+		t.Fatalf("unexpected status: %#v", status)
+	}
+	if status.AgeSeconds != int64((2*time.Hour)/time.Second) {
+		t.Fatalf("unexpected age_seconds: %#v", status)
+	}
+}
+
+func TestIndexStatusReturnsStaleStateWhenOlderThanMaxAge(t *testing.T) {
+	root := t.TempDir()
+	app := NewApp(root)
+	projectPath, wsPath := setupIndexWorkspace(t, app, root)
+
+	mustWriteFile(t, filepath.Join(projectPath, "notes.txt"), "workspace note\n")
+	if _, err := app.UpdateIndex("crawlly"); err != nil {
+		t.Fatalf("UpdateIndex returned error: %v", err)
+	}
+
+	meta, err := readJSONFile[IndexMetadata](indexMetaPath(wsPath))
+	if err != nil {
+		t.Fatalf("readJSONFile index metadata returned error: %v", err)
+	}
+	status, err := app.indexStatusAt("crawlly", meta.IndexedAt.Add(48*time.Hour), 24*time.Hour)
+	if err != nil {
+		t.Fatalf("indexStatusAt returned error: %v", err)
+	}
+	if status.Fresh || !status.Stale || status.Reason != "stale" {
+		t.Fatalf("unexpected status: %#v", status)
 	}
 }
 
