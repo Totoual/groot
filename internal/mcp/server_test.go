@@ -59,14 +59,14 @@ func TestServerHandleInitializeAndListTools(t *testing.T) {
 	if err := json.Unmarshal(response, &listResponse); err != nil {
 		t.Fatalf("Unmarshal tools/list response returned error: %v", err)
 	}
-	if len(listResponse.Result.Tools) != 37 {
-		t.Fatalf("len(tools) = %d, want %d", len(listResponse.Result.Tools), 37)
+	if len(listResponse.Result.Tools) != 38 {
+		t.Fatalf("len(tools) = %d, want %d", len(listResponse.Result.Tools), 38)
 	}
 	names := make([]string, 0, len(listResponse.Result.Tools))
 	for _, tool := range listResponse.Result.Tools {
 		names = append(names, tool.Name)
 	}
-	for _, want := range []string{"task_start", "task_declare", "task_delete", "task_list_declared", "task_status", "task_list", "task_logs", "task_stop", "service_start", "service_restart", "service_declare", "service_delete", "service_list_declared", "service_status", "service_list", "service_logs", "service_stop", "event_list", "index_update", "index_stats", "index_search", "index_symbols", "vault_init", "vault_recent", "vault_search", "vault_append", "context_build"} {
+	for _, want := range []string{"task_start", "task_declare", "task_delete", "task_list_declared", "task_status", "task_list", "task_logs", "task_stop", "service_start", "service_restart", "service_declare", "service_delete", "service_list_declared", "service_status", "service_list", "service_logs", "service_stop", "event_list", "index_update", "index_stats", "index_search", "index_symbols", "vault_init", "vault_recent", "vault_search", "vault_append", "vault_edge_append", "context_build"} {
 		if !slicesContainsString(names, want) {
 			t.Fatalf("missing tool %q in %#v", want, names)
 		}
@@ -300,6 +300,68 @@ func TestServerVaultSearchAndAppendToolsReturnStructuredContent(t *testing.T) {
 	}
 	if len(searchRPC.Result.StructuredContent.Nodes) == 0 || searchRPC.Result.StructuredContent.Nodes[0].Node.Title != "Vault is workspace-scoped" {
 		t.Fatalf("unexpected vault_search nodes: %#v", searchRPC.Result.StructuredContent.Nodes)
+	}
+}
+
+func TestServerVaultEdgeAppendToolReturnsStructuredContent(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+	projectPath := setupMCPIndexedWorkspace(t, a, root)
+
+	from, err := a.VaultAppend("crawlly", app.VaultAppendSpec{
+		Type:  app.VaultNodeTypeTask,
+		Title: "Implement edge tool",
+		Body:  "Wire through MCP.",
+	})
+	if err != nil {
+		t.Fatalf("VaultAppend from returned error: %v", err)
+	}
+	to, err := a.VaultAppend("crawlly", app.VaultAppendSpec{
+		Type:  app.VaultNodeTypeDecision,
+		Title: "Keep edges minimal",
+		Body:  "Append-only and directional.",
+	})
+	if err != nil {
+		t.Fatalf("VaultAppend to returned error: %v", err)
+	}
+
+	server := NewServer(a)
+	request := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"vault_edge_append","arguments":{"path":"` + projectPath + `","from_id":"` + from.ID + `","to_id":"` + to.ID + `","type":"depends_on"}}}`
+	response, err := server.HandleMessage([]byte(request))
+	if err != nil {
+		t.Fatalf("HandleMessage vault_edge_append returned error: %v", err)
+	}
+
+	var rpc struct {
+		Result struct {
+			IsError           bool `json:"isError"`
+			StructuredContent struct {
+				Edge struct {
+					Type   string `json:"type"`
+					FromID string `json:"from_id"`
+					ToID   string `json:"to_id"`
+				} `json:"edge"`
+			} `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(response, &rpc); err != nil {
+		t.Fatalf("Unmarshal vault_edge_append returned error: %v", err)
+	}
+	if rpc.Result.IsError {
+		t.Fatal("expected vault_edge_append success result")
+	}
+	if rpc.Result.StructuredContent.Edge.Type != app.VaultEdgeTypeDependsOn ||
+		rpc.Result.StructuredContent.Edge.FromID != from.ID ||
+		rpc.Result.StructuredContent.Edge.ToID != to.ID {
+		t.Fatalf("unexpected appended edge: %#v", rpc.Result.StructuredContent.Edge)
+	}
+
+	stats, err := a.VaultStats("crawlly")
+	if err != nil {
+		t.Fatalf("VaultStats returned error: %v", err)
+	}
+	if stats.EdgeCount != 1 || stats.ChangeCount != 3 {
+		t.Fatalf("unexpected stats after MCP edge append: %#v", stats)
 	}
 }
 

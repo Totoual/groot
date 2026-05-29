@@ -17,6 +17,13 @@ const (
 	VaultNodeTypeNote     = "note"
 	VaultNodeTypeFile     = "file"
 	VaultNodeTypeSymbol   = "symbol"
+
+	VaultEdgeTypeDependsOn   = "depends_on"
+	VaultEdgeTypeImplements  = "implements"
+	VaultEdgeTypeReferences  = "references"
+	VaultEdgeTypeSupports    = "supports"
+	VaultEdgeTypeContradicts = "contradicts"
+	VaultEdgeTypeSupersedes  = "supersedes"
 )
 
 var supportedVaultNodeTypes = map[string]struct{}{
@@ -28,6 +35,15 @@ var supportedVaultNodeTypes = map[string]struct{}{
 	VaultNodeTypeNote:     {},
 	VaultNodeTypeFile:     {},
 	VaultNodeTypeSymbol:   {},
+}
+
+var supportedVaultEdgeTypes = map[string]struct{}{
+	VaultEdgeTypeDependsOn:   {},
+	VaultEdgeTypeImplements:  {},
+	VaultEdgeTypeReferences:  {},
+	VaultEdgeTypeSupports:    {},
+	VaultEdgeTypeContradicts: {},
+	VaultEdgeTypeSupersedes:  {},
 }
 
 type VaultNode struct {
@@ -67,6 +83,12 @@ type VaultAppendSpec struct {
 	Source     string
 	Confidence float64
 	Status     string
+}
+
+type VaultEdgeAppendSpec struct {
+	FromID string
+	ToID   string
+	Type   string
 }
 
 type VaultSearchOptions struct {
@@ -189,6 +211,100 @@ func (a *App) VaultAppend(workspaceName string, spec VaultAppendSpec) (VaultNode
 	}
 
 	return node, nil
+}
+
+func (a *App) VaultAppendEdge(workspaceName string, spec VaultEdgeAppendSpec) (VaultEdge, error) {
+	if err := a.InitVault(workspaceName); err != nil {
+		return VaultEdge{}, err
+	}
+
+	fromID := strings.TrimSpace(spec.FromID)
+	if fromID == "" {
+		return VaultEdge{}, fmt.Errorf("vault edge from_id required")
+	}
+	toID := strings.TrimSpace(spec.ToID)
+	if toID == "" {
+		return VaultEdge{}, fmt.Errorf("vault edge to_id required")
+	}
+	if fromID == toID {
+		return VaultEdge{}, fmt.Errorf("vault edge requires distinct from_id and to_id")
+	}
+
+	edgeType := strings.ToLower(strings.TrimSpace(spec.Type))
+	if _, ok := supportedVaultEdgeTypes[edgeType]; !ok {
+		return VaultEdge{}, fmt.Errorf("unsupported vault edge type %q", spec.Type)
+	}
+
+	nodes, err := a.vaultNodes(workspaceName)
+	if err != nil {
+		return VaultEdge{}, err
+	}
+	nodeIDs := make(map[string]struct{}, len(nodes))
+	for _, node := range nodes {
+		nodeIDs[node.ID] = struct{}{}
+	}
+	if _, ok := nodeIDs[fromID]; !ok {
+		return VaultEdge{}, fmt.Errorf("vault edge from_id %q not found", fromID)
+	}
+	if _, ok := nodeIDs[toID]; !ok {
+		return VaultEdge{}, fmt.Errorf("vault edge to_id %q not found", toID)
+	}
+
+	edges, err := a.vaultEdges(workspaceName)
+	if err != nil {
+		return VaultEdge{}, err
+	}
+	for _, edge := range edges {
+		if edge.FromID == fromID && edge.ToID == toID && edge.Type == edgeType {
+			return VaultEdge{}, fmt.Errorf("vault edge %q from %q to %q already exists", edgeType, fromID, toID)
+		}
+	}
+
+	edgeID, err := newVaultRecordID("edge")
+	if err != nil {
+		return VaultEdge{}, err
+	}
+	now := time.Now().UTC()
+	edge := VaultEdge{
+		ID:        edgeID,
+		FromID:    fromID,
+		ToID:      toID,
+		Type:      edgeType,
+		CreatedAt: now,
+	}
+
+	wsPath, err := a.EnsureWorkspace(workspaceName)
+	if err != nil {
+		return VaultEdge{}, err
+	}
+	if err := appendJSONLRecord(vaultEdgesPath(wsPath), edge); err != nil {
+		return VaultEdge{}, err
+	}
+
+	changeID, err := newVaultRecordID("chg")
+	if err != nil {
+		return VaultEdge{}, err
+	}
+	change := VaultChange{
+		ID:        changeID,
+		Kind:      "edge.appended",
+		Timestamp: now,
+		Summary:   fmt.Sprintf("Appended vault edge %q from %s to %s.", edge.Type, edge.FromID, edge.ToID),
+		Payload: map[string]any{
+			"edge_id": edge.ID,
+			"type":    edge.Type,
+			"from_id": edge.FromID,
+			"to_id":   edge.ToID,
+		},
+	}
+	if err := appendJSONLRecord(vaultChangesPath(wsPath), change); err != nil {
+		return VaultEdge{}, err
+	}
+	if err := a.writeVaultMetadata(workspaceName, wsPath, now); err != nil {
+		return VaultEdge{}, err
+	}
+
+	return edge, nil
 }
 
 func (a *App) VaultSearch(workspaceName, query string, opts VaultSearchOptions) ([]VaultSearchHit, error) {

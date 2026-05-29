@@ -233,6 +233,11 @@ type vaultAppendResult struct {
 	Node    app.VaultNode `json:"node"`
 }
 
+type vaultEdgeAppendResult struct {
+	Created bool          `json:"created"`
+	Edge    app.VaultEdge `json:"edge"`
+}
+
 type vaultInitResult struct {
 	Created bool `json:"created"`
 }
@@ -1487,6 +1492,41 @@ func (s *Server) tools() []toolDefinition {
 			},
 		},
 		{
+			Name:        "vault_edge_append",
+			Description: "Resolve or create a workspace from a project path, or use the active project scope, and append one vault edge between existing vault nodes.",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"path": map[string]any{
+						"type":        "string",
+						"description": "Optional absolute or ~/ project path. When omitted, the active project scope is used if exactly one project is active.",
+					},
+					"from_id": map[string]any{
+						"type":        "string",
+						"description": "Source vault node id.",
+					},
+					"to_id": map[string]any{
+						"type":        "string",
+						"description": "Destination vault node id.",
+					},
+					"type": map[string]any{
+						"type":        "string",
+						"description": "Vault edge type.",
+					},
+				},
+				"required":             []string{"from_id", "to_id", "type"},
+				"additionalProperties": false,
+			},
+			OutputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"created": map[string]any{"type": "boolean"},
+					"edge":    map[string]any{"type": "object"},
+				},
+				"required": []string{"created", "edge"},
+			},
+		},
+		{
 			Name:        "context_build",
 			Description: "Resolve or create a workspace from a project path, or use the active project scope, and build a compact markdown context pack.",
 			InputSchema: map[string]any{
@@ -1621,6 +1661,8 @@ func (s *Server) callTool(params toolCallParams) toolResult {
 		return s.vaultSearchTool(params.Arguments)
 	case "vault_append":
 		return s.vaultAppendTool(params.Arguments)
+	case "vault_edge_append":
+		return s.vaultEdgeAppendTool(params.Arguments)
 	case "context_build":
 		return s.contextBuildTool(params.Arguments)
 	default:
@@ -3056,6 +3098,50 @@ func (s *Server) vaultAppendTool(args map[string]any) toolResult {
 	}
 	return successToolResult(
 		fmt.Sprintf("Appended vault node %q in workspace %q.", node.ID, workspaceName),
+		result,
+	)
+}
+
+func (s *Server) vaultEdgeAppendTool(args map[string]any) toolResult {
+	projectPath, err := s.scopedProjectPathArgOrActive(args, "vault_edge_append")
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	fromID, ok := stringArg(args, "from_id")
+	if !ok {
+		return errorToolResult(`tool "vault_edge_append" requires string argument "from_id"`, nil)
+	}
+	toID, ok := stringArg(args, "to_id")
+	if !ok {
+		return errorToolResult(`tool "vault_edge_append" requires string argument "to_id"`, nil)
+	}
+	edgeType, ok := stringArg(args, "type")
+	if !ok {
+		return errorToolResult(`tool "vault_edge_append" requires string argument "type"`, nil)
+	}
+
+	workspaceName, created, err := s.app.ResolveOrCreateWorkspaceByProjectPath(projectPath)
+	if err != nil {
+		return errorToolResult(err.Error(), nil)
+	}
+	edge, err := s.app.VaultAppendEdge(workspaceName, app.VaultEdgeAppendSpec{
+		FromID: strings.TrimSpace(fromID),
+		ToID:   strings.TrimSpace(toID),
+		Type:   strings.TrimSpace(edgeType),
+	})
+	if err != nil {
+		return errorToolResult(err.Error(), map[string]any{
+			"workspace_name": workspaceName,
+			"created":        created,
+		})
+	}
+
+	result := vaultEdgeAppendResult{
+		Created: created,
+		Edge:    edge,
+	}
+	return successToolResult(
+		fmt.Sprintf("Appended vault edge %q in workspace %q.", edge.ID, workspaceName),
 		result,
 	)
 }
