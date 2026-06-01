@@ -71,6 +71,7 @@ func TestRouterPrintHelpIncludesSortedCommands(t *testing.T) {
 		&stubCmd{name: "resume", help: "Resume work"},
 		&stubCmd{name: "search", help: "Search workspaces"},
 		&stubCmd{name: "status", help: "Status path"},
+		&stubCmd{name: "sync", help: "Sync workspaces"},
 		&stubCmd{name: "task", help: "Manage tasks"},
 		&stubCmd{name: "open", help: "Open path"},
 		&stubCmd{name: "export", help: "Export path"},
@@ -99,9 +100,10 @@ func TestRouterPrintHelpIncludesSortedCommands(t *testing.T) {
 	searchIdx := strings.Index(output, "search")
 	shellHookIdx := strings.Index(output, "shell-hook")
 	statusIdx := strings.Index(output, "status")
+	syncIdx := strings.Index(output, "sync")
 	taskIdx := strings.Index(output, "task")
 	wsIdx := strings.Index(output, "ws")
-	if !(enterIdx < execIdx && execIdx < exportIdx && exportIdx < importIdx && importIdx < initIdx && initIdx < mcpIdx && mcpIdx < openIdx && openIdx < resumeIdx && resumeIdx < searchIdx && searchIdx < shellHookIdx && shellHookIdx < statusIdx && statusIdx < taskIdx && taskIdx < wsIdx) {
+	if !(enterIdx < execIdx && execIdx < exportIdx && exportIdx < importIdx && importIdx < initIdx && initIdx < mcpIdx && mcpIdx < openIdx && openIdx < resumeIdx && resumeIdx < searchIdx && searchIdx < shellHookIdx && shellHookIdx < statusIdx && statusIdx < syncIdx && syncIdx < taskIdx && taskIdx < wsIdx) {
 		t.Fatalf("expected sorted commands, got output %q", output)
 	}
 }

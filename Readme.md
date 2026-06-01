@@ -56,6 +56,7 @@ groot open ~/Documents/crawlly --setup
 Daily usage:
 
 ```bash
+groot sync crawlly
 groot status crawlly
 groot resume crawlly
 groot search crawlly "vault edge"

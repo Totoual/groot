@@ -48,6 +48,7 @@ func main() {
 		&commands.ServiceCmd{},
 		&commands.ShellHookCmd{},
 		&commands.StatusCmd{},
+		&commands.SyncCmd{},
 		&commands.TaskCmd{},
 		&commands.VaultCmd{},
 		&commands.VersionCmd{},

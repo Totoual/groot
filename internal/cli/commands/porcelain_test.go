@@ -163,6 +163,102 @@ func TestPorcelainCommandsPrintHelp(t *testing.T) {
 	if !strings.Contains(searchOut, "usage: groot search <workspace> <query>") {
 		t.Fatalf("unexpected search help output: %q", searchOut)
 	}
+
+	syncOut, _, err := captureCommandOutput(func() error {
+		return (&SyncCmd{}).Run(a, []string{"-h"})
+	})
+	if err != nil {
+		t.Fatalf("sync help returned error: %v", err)
+	}
+	if !strings.Contains(syncOut, "usage: groot sync <workspace>") {
+		t.Fatalf("unexpected sync help output: %q", syncOut)
+	}
+}
+
+func TestSyncCmdUpdatesMissingIndexAndPrintsBeforeAfter(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+	projectPath := setupTaskProject(t, a, root)
+	if err := os.MkdirAll(filepath.Join(projectPath, "internal", "app"), 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(projectPath, "internal", "app", "vault.go"), []byte("package app\n\nfunc VaultQueryEdges() {}\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile returned error: %v", err)
+	}
+	task, err := a.VaultAppend("crawlly", app.VaultAppendSpec{
+		Type:  app.VaultNodeTypeTask,
+		Title: "Implement vault relationship queries",
+		Body:  "Add deterministic relationship queries over workspace vault edges.",
+	})
+	if err != nil {
+		t.Fatalf("VaultAppend task returned error: %v", err)
+	}
+	progress, err := a.VaultAppend("crawlly", app.VaultAppendSpec{
+		Type:  app.VaultNodeTypeProgress,
+		Title: "Stopped after app and MCP read support",
+		Body:  "Remaining work: CLI query command and docs.",
+	})
+	if err != nil {
+		t.Fatalf("VaultAppend progress returned error: %v", err)
+	}
+	if _, err := a.VaultAppendEdge("crawlly", app.VaultEdgeAppendSpec{
+		FromID: progress.ID,
+		ToID:   task.ID,
+		Type:   app.VaultEdgeTypeForTask,
+	}); err != nil {
+		t.Fatalf("VaultAppendEdge returned error: %v", err)
+	}
+
+	stdout, stderr, err := captureCommandOutput(func() error {
+		return (&SyncCmd{}).Run(a, []string{"crawlly"})
+	})
+	if err != nil {
+		t.Fatalf("sync returned error: %v", err)
+	}
+	if strings.TrimSpace(stderr) != "" {
+		t.Fatalf("expected stderr to stay quiet, got %q", stderr)
+	}
+	for _, want := range []string{
+		"Workspace: crawlly",
+		"Project Path: " + projectPath,
+		"Index Before: missing_metadata",
+		"Index Action: updated",
+		"Index After: fresh",
+		"Vault: 2 nodes, 1 edges, 3 changes",
+		"Latest Task: Implement vault relationship queries [active]",
+		"Latest Progress: Stopped after app and MCP read support [active]",
+		"Counts:",
+		"Files: 0 -> 1",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("expected sync output to contain %q, got:\n%s", want, stdout)
+		}
+	}
+}
+
+func TestSyncCmdSkipsFreshIndexUpdate(t *testing.T) {
+	root := t.TempDir()
+	a := app.NewApp(root)
+	setupPorcelainWorkspace(t, a, root)
+
+	stdout, stderr, err := captureCommandOutput(func() error {
+		return (&SyncCmd{}).Run(a, []string{"crawlly"})
+	})
+	if err != nil {
+		t.Fatalf("sync returned error: %v", err)
+	}
+	if strings.TrimSpace(stderr) != "" {
+		t.Fatalf("expected stderr to stay quiet, got %q", stderr)
+	}
+	for _, want := range []string{
+		"Index Before: fresh",
+		"Index Action: no update needed",
+		"Index After: fresh",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("expected fresh sync output to contain %q, got:\n%s", want, stdout)
+		}
+	}
 }
 
 func setupPorcelainWorkspace(t *testing.T, a *app.App, root string) string {
