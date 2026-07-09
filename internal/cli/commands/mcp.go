@@ -24,10 +24,13 @@ func (c *MCPCmd) Run(a *app.App, args []string) error {
 	fs.SetOutput(os.Stdout)
 	var projectScopes stringListFlag
 	var workspaceScopes stringListFlag
+	httpMode := fs.Bool("http", false, "serve MCP over Streamable HTTP instead of stdio")
+	listenAddr := fs.String("listen", "127.0.0.1:8080", "HTTP listen address for --http")
+	endpoint := fs.String("endpoint", "/mcp", "HTTP MCP endpoint path for --http")
 	fs.Var(&projectScopes, "project", "limit MCP access to a project path; may be provided multiple times")
 	fs.Var(&workspaceScopes, "workspace", "limit MCP access to a bound workspace; may be provided multiple times")
 	fs.Usage = func() {
-		fmt.Fprintln(fs.Output(), "usage: groot mcp [--project path ...] [--workspace name ...]")
+		fmt.Fprintln(fs.Output(), "usage: groot mcp [--http] [--listen addr] [--endpoint path] [--project path ...] [--workspace name ...]")
 		fmt.Fprintln(fs.Output())
 		fmt.Fprintln(fs.Output(), c.Help())
 	}
@@ -51,6 +54,9 @@ func (c *MCPCmd) Run(a *app.App, args []string) error {
 	server := mcp.NewServer(a)
 	if len(allowedProjects) > 0 {
 		server = mcp.NewScopedServer(a, allowedProjects)
+	}
+	if *httpMode {
+		return server.ListenHTTP(*listenAddr, *endpoint)
 	}
 	return server.Serve(os.Stdin, os.Stdout)
 }
