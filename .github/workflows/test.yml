@@ -7,6 +7,7 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -31,66 +32,3 @@ jobs:
 
       - name: Run test suite
         run: bash scripts/test.sh
-
-  docker-mcp-smoke:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Validate Docker Compose config
-        run: docker compose config
-
-      - name: Build MCP HTTP image
-        run: docker compose build
-
-      - name: Start MCP HTTP server
-        run: docker compose up -d
-
-      - name: Verify MCP initialize over HTTP
-        run: |
-          curl --fail --silent --show-error --retry 10 --retry-delay 1 \
-            -X POST http://127.0.0.1:8080/mcp \
-            -H 'Content-Type: application/json' \
-            -H 'Accept: application/json, text/event-stream' \
-            --data '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}' \
-            | grep '"protocolVersion":"2025-06-18"'
-
-      - name: Verify MCP tools list over HTTP
-        run: |
-          response="$(
-            curl --fail --silent --show-error \
-              -X POST http://127.0.0.1:8080/mcp \
-              -H 'Content-Type: application/json' \
-              -H 'Accept: application/json, text/event-stream' \
-              --data '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
-          )"
-          printf '%s\n' "$response" \
-            | jq -r '.result.tools[].name'
-          printf '%s\n' "$response" \
-            | jq -e '
-                [.result.tools[].name] as $tools
-                | ($tools | length) == 40
-                and ($tools | index("workspace_status") != null)
-                and ($tools | index("task_start") != null)
-                and ($tools | index("service_start") != null)
-                and ($tools | index("index_search") != null)
-                and ($tools | index("vault_search") != null)
-                and ($tools | index("context_build") != null)
-              '
-
-      - name: Verify MCP notification over HTTP
-        run: |
-          status="$(
-            curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
-              -X POST http://127.0.0.1:8080/mcp \
-              -H 'Content-Type: application/json' \
-              -H 'Accept: application/json, text/event-stream' \
-              --data '{"jsonrpc":"2.0","method":"notifications/initialized"}'
-          )"
-          test "$status" = "202"
-
-      - name: Stop MCP HTTP server
-        if: always()
-        run: docker compose down --volumes

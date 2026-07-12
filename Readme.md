@@ -73,16 +73,17 @@ For the full CLI reference, use [docs/reference.md](docs/reference.md).
 
 ## MCP
 
-Groot exposes the same runtime over MCP.
+Groot exposes the same runtime over MCP. Docker packaging is not included in
+this repository; run the MCP server directly from the Groot binary.
 
 ```bash
 groot mcp
 ```
 
-For VS Code over HTTP, run the Docker Compose service:
+For VS Code over HTTP, start the MCP server with the HTTP transport:
 
 ```bash
-docker compose up --build
+groot mcp --http --listen 127.0.0.1:8080 --endpoint /mcp
 ```
 
 Then connect VS Code to:
@@ -108,7 +109,8 @@ To configure Groot globally in VS Code:
 }
 ```
 
-This makes Groot available across VS Code workspaces. Keep the Docker Compose service running while VS Code is using the MCP server.
+This makes Groot available across VS Code workspaces. Keep the Groot MCP
+process running while VS Code is using the MCP server.
 
 Recommended flow:
 
