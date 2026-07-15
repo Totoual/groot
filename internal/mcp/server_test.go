@@ -3,6 +3,8 @@ package mcp
 import (
 	"bytes"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -2496,6 +2498,63 @@ func TestServerServeUsesNewlineDelimitedMessages(t *testing.T) {
 	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
 	if len(lines) != 2 {
 		t.Fatalf("expected 2 response lines, got %d: %q", len(lines), out.String())
+	}
+}
+
+func TestHTTPHandlerAcceptsJSONRPCPost(t *testing.T) {
+	server := NewServer(app.NewApp(t.TempDir()))
+	handler := NewHTTPHandler(server, "/mcp")
+
+	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}`))
+	res := httptest.NewRecorder()
+	handler.ServeHTTP(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", res.Code, http.StatusOK, res.Body.String())
+	}
+	if got := res.Header().Get("MCP-Protocol-Version"); got != ProtocolVersion {
+		t.Fatalf("MCP-Protocol-Version = %q, want %q", got, ProtocolVersion)
+	}
+
+	var rpc struct {
+		Result struct {
+			ProtocolVersion string `json:"protocolVersion"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(res.Body.Bytes(), &rpc); err != nil {
+		t.Fatalf("Unmarshal HTTP initialize response returned error: %v", err)
+	}
+	if rpc.Result.ProtocolVersion != ProtocolVersion {
+		t.Fatalf("protocolVersion = %q, want %q", rpc.Result.ProtocolVersion, ProtocolVersion)
+	}
+}
+
+func TestHTTPHandlerReturnsAcceptedForNotification(t *testing.T) {
+	server := NewServer(app.NewApp(t.TempDir()))
+	handler := NewHTTPHandler(server, "/mcp")
+
+	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","method":"notifications/initialized"}`))
+	res := httptest.NewRecorder()
+	handler.ServeHTTP(res, req)
+
+	if res.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d: %s", res.Code, http.StatusAccepted, res.Body.String())
+	}
+	if body := strings.TrimSpace(res.Body.String()); body != "" {
+		t.Fatalf("body = %q, want empty", body)
+	}
+}
+
+func TestHTTPHandlerRejectsGETStream(t *testing.T) {
+	server := NewServer(app.NewApp(t.TempDir()))
+	handler := NewHTTPHandler(server, "/mcp")
+
+	req := httptest.NewRequest(http.MethodGet, "/mcp", nil)
+	res := httptest.NewRecorder()
+	handler.ServeHTTP(res, req)
+
+	if res.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status = %d, want %d", res.Code, http.StatusMethodNotAllowed)
 	}
 }
 
